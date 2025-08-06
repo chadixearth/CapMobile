@@ -1,0 +1,136 @@
+import React, { useState } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { supabase } from '../../services/supabase';
+import * as Routes from '../../constants/routes';
+
+const MAROON = '#6B2E2B';
+
+export default function LoginScreen({ navigation, setRole }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleLogin = async () => {
+    setError('');
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+    } else if (data?.user) {
+      // Get role from user_metadata
+      const userRole = data.user.user_metadata?.role || 'tourist';
+      setRole(userRole);
+      navigation.replace(Routes.MAIN);
+    } else {
+      setError('Login failed.');
+    }
+  };
+
+  return (
+    <View style={styles.root}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Login</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholderTextColor="#aaa"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholderTextColor="#aaa"
+        />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <TouchableOpacity
+          style={[styles.button, loading && { opacity: 0.7 }]}
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.link} onPress={() => navigation.navigate('Registration', { role: 'tourist' })}>
+          Don't have an account? <Text style={styles.linkBold}>Register</Text>
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: MAROON,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 28,
+    width: '88%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 32,
+    color: MAROON,
+    letterSpacing: 1,
+  },
+  input: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 18,
+    fontSize: 16,
+    color: '#222',
+    backgroundColor: '#faf8f6',
+  },
+  button: {
+    backgroundColor: MAROON,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    marginTop: 8,
+    width: '100%',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 17,
+    letterSpacing: 1,
+  },
+  link: {
+    color: MAROON,
+    marginTop: 22,
+    textDecorationLine: 'underline',
+    fontSize: 15,
+  },
+  linkBold: {
+    fontWeight: 'bold',
+    color: MAROON,
+  },
+  error: {
+    color: 'red',
+    marginBottom: 8,
+    textAlign: 'center',
+    width: '100%',
+  },
+});

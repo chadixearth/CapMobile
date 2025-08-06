@@ -1,22 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import BackButton from '../../components/BackButton';
+import * as Routes from '../../constants/routes';
 
 const WelcomeScreen = ({ navigation }) => {
   // Placeholder handlers for navigation
   const handleViewMap = () => {
-    // navigation.navigate('Map');
+    navigation.navigate(Routes.MAP_VIEW);
   };
   const handleGetStarted = () => {
-    navigation.navigate('Registration');
+    navigation.navigate(Routes.REGISTRATION);
   };
   const handleLogin = () => {
-    navigation.navigate('Login');
+    navigation.navigate(Routes.LOGIN);
   };
-  const handleDriver = () => {
-    navigation.navigate('Registration'); // Update if you have a separate DriverRegistration screen
-  };
-  const handleOwner = () => {
-    navigation.navigate('Registration'); // Update if you have a separate OwnerRegistration screen
+  const handleRoleSelect = (role) => {
+    navigation.navigate(Routes.REGISTRATION, { role });
   };
 
   return (
@@ -31,20 +30,20 @@ const WelcomeScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.button} onPress={handleViewMap}>
           <Text style={styles.buttonText}>View Map</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
-          <Text style={styles.buttonText}>Get Started</Text>
+        <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('tourist')}>
+          <Text style={styles.buttonText}>Get Started as Tourist</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('driver')}>
+          <Text style={styles.buttonText}>Get Started as Driver</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('owner')}>
+          <Text style={styles.buttonText}>Get Started as Owner</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.linksContainer}>
         <Text style={styles.linkText}>
           Have an account?{' '}
           <Text style={styles.link} onPress={handleLogin}>login</Text>
-        </Text>
-        <Text style={styles.linkText}>
-          Apply as <Text style={styles.link} onPress={handleDriver}>Driver</Text>
-        </Text>
-        <Text style={styles.linkText}>
-          Register as <Text style={styles.link} onPress={handleOwner}>Owner</Text>
         </Text>
       </View>
     </View>

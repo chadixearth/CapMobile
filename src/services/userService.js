@@ -1,0 +1,1 @@
+export { createAccountWithEmail } from './authService';
