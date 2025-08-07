@@ -7,6 +7,7 @@ import RegistrationScreen from '../screens/auth/RegistrationScreen';
 import MapViewScreen from '../screens/map/MapViewScreen';
 import AccountDetailsScreen from '../screens/main/AccountDetailsScreen';
 import NotificationScreen from '../screens/main/NotificationScreen';
+import RequestBookingScreen from '../screens/main/requestBookingScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import * as Routes from '../constants/routes';
@@ -30,6 +31,7 @@ export default function RootNavigator() {
       </Stack.Screen>
       <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
       <Stack.Screen name={Routes.NOTIFICATION} component={NotificationScreen} />
+      <Stack.Screen name={Routes.REQUEST_BOOKING} component={RequestBookingScreen} />
     </Stack.Navigator>
   );
 } 

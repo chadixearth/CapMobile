@@ -1,37 +1,35 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8081/api';
+const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/'; 
 
 export async function createBooking(bookingData) {
   try {
-    console.log('Creating booking with data:', bookingData);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}/booking/create/`, {
+    const response = await fetch(`${API_BASE_URL}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(bookingData),
+      signal: controller.signal,
     });
     
-    console.log('Response status:', response.status);
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Server error response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const contentType = response.headers.get('content-type');
-    console.log('Content-Type:', contentType);
     
     if (!contentType || !contentType.includes('application/json')) {
       const responseText = await response.text();
-      console.error('Non-JSON response received:', responseText.substring(0, 500));
       throw new Error(`Expected JSON but received: ${contentType || 'unknown'}`);
     }
     
     const data = await response.json();
-    console.log('Successfully created booking:', data);
     return data;
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -41,8 +39,6 @@ export async function createBooking(bookingData) {
 
 export async function getBookings(filters = {}) {
   try {
-    console.log('Fetching bookings with filters:', filters);
-    
     const queryParams = new URLSearchParams();
     Object.keys(filters).forEach(key => {
       if (filters[key]) {
@@ -50,21 +46,23 @@ export async function getBookings(filters = {}) {
       }
     });
     
-    const url = `${API_BASE_URL}/booking/list/?${queryParams.toString()}`;
-    console.log('Request URL:', url);
+    const url = `${API_BASE_URL}?${queryParams.toString()}`;
     
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    console.log('Response status:', response.status);
+    const response = await fetch(url, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Server error response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const data = await response.json();
-    console.log('Successfully fetched bookings:', data);
     return data;
   } catch (error) {
     console.error('Error fetching bookings:', error);
@@ -74,20 +72,21 @@ export async function getBookings(filters = {}) {
 
 export async function getBooking(bookingId) {
   try {
-    console.log('Fetching booking with ID:', bookingId);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}/booking/${bookingId}/`);
+    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
+      signal: controller.signal,
+    });
     
-    console.log('Response status:', response.status);
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Server error response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const data = await response.json();
-    console.log('Successfully fetched booking:', data);
     return data;
   } catch (error) {
     console.error('Error fetching booking:', error);
@@ -97,26 +96,26 @@ export async function getBooking(bookingId) {
 
 export async function updateBookingStatus(bookingId, status) {
   try {
-    console.log('Updating booking status:', { bookingId, status });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}/booking/${bookingId}/status/`, {
+    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ status }),
+      signal: controller.signal,
     });
     
-    console.log('Response status:', response.status);
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Server error response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const data = await response.json();
-    console.log('Successfully updated booking status:', data);
     return data;
   } catch (error) {
     console.error('Error updating booking status:', error);
@@ -126,25 +125,97 @@ export async function updateBookingStatus(bookingId, status) {
 
 export async function cancelBooking(bookingId) {
   try {
-    console.log('Cancelling booking with ID:', bookingId);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}/booking/${bookingId}/cancel/`, {
+    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
       method: 'DELETE',
+      signal: controller.signal,
     });
     
-    console.log('Response status:', response.status);
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Server error response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const data = await response.json();
-    console.log('Successfully cancelled booking:', data);
     return data;
   } catch (error) {
     console.error('Error cancelling booking:', error);
+    throw error;
+  }
+}
+
+export async function getBookingByReference(reference) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}reference/${reference}/`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching booking by reference:', error);
+    throw error;
+  }
+}
+
+export async function getCustomerBookings(customerId) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}customer/${customerId}/`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching customer bookings:', error);
+    throw error;
+  }
+}
+
+export async function getBookingStats() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}stats/`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching booking stats:', error);
     throw error;
   }
 }

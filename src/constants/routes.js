@@ -6,6 +6,7 @@ export const MAIN = 'Main';
 export const MAP_VIEW = 'MapView';
 export const ACCOUNT_DETAILS = 'AccountDetails';
 export const NOTIFICATION = 'Notification';
+export const REQUEST_BOOKING = 'RequestBooking';
 
 // Tab names
 export const HOME = 'Home';

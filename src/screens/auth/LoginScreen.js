@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { supabase } from '../../services/supabase';
 import * as Routes from '../../constants/routes';
 
@@ -29,39 +29,60 @@ export default function LoginScreen({ navigation, setRole }) {
   };
 
   return (
-    <View style={styles.root}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Login</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor="#aaa"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#aaa"
-        />
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity
-          style={[styles.button, loading && { opacity: 0.7 }]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.link} onPress={() => navigation.navigate('Registration', { role: 'tourist' })}>
-          Don't have an account? <Text style={styles.linkBold}>Register</Text>
-        </Text>
-      </View>
-    </View>
+    <KeyboardAvoidingView 
+      style={styles.root} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          <Text style={styles.title}>Login</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholderTextColor="#aaa"
+            autoCorrect={false}
+            spellCheck={false}
+            returnKeyType="next"
+            blurOnSubmit={false}
+            editable={true}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholderTextColor="#aaa"
+            autoCorrect={false}
+            spellCheck={false}
+            returnKeyType="done"
+            blurOnSubmit={true}
+            editable={true}
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <TouchableOpacity
+            style={[styles.button, loading && { opacity: 0.7 }]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.link} onPress={() => navigation.navigate('Registration', { role: 'tourist' })}>
+            Don't have an account? <Text style={styles.linkBold}>Register</Text>
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -69,8 +90,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: MAROON,
+  },
+  scrollContainer: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 20,
   },
   card: {
     backgroundColor: '#fff',
@@ -101,6 +126,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#222',
     backgroundColor: '#faf8f6',
+    minHeight: 48,
   },
   button: {
     backgroundColor: MAROON,

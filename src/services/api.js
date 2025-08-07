@@ -1,12 +1,17 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8081/api';
-const FALLBACK_BASE_URL = 'http://192.168.1.100:8000/api'; // Fallback URL
+const API_BASE_URL = 'http://10.196.222.213:8000/api';
 
 export async function fetchExampleData() {
   try {
-    // IMPORTANT: Replace with your computer's LAN IP address so your phone can access the backend
-    // Example: http://192.168.1.100:8000/api/example/
-    const response = await fetch('http://192.168.X.X:8000/api/example/');
+    // Create an AbortController for manual timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}/example/`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
     if (!response.ok) {
       throw new Error('Network response was not ok');
     }
@@ -16,23 +21,28 @@ export async function fetchExampleData() {
   }
 }
 
-
-
 export async function requestRide({ pickup, destination, userId }) {
-  // IMPORTANT: Replace with your backend's ride request endpoint and LAN IP
-  const url = 'http://192.168.X.X:8000/api/request-ride/';
+  const url = `${API_BASE_URL}/request-ride/`;
   const body = JSON.stringify({
     pickup,
     destination,
     userId,
   });
+  
+  // Create an AbortController for manual timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body,
+    signal: controller.signal,
   });
+  
+  clearTimeout(timeoutId);
   if (!response.ok) {
     throw new Error('Failed to request ride');
   }

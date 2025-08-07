@@ -7,10 +7,11 @@ import Button from '../../components/Button';
 import Notification from '../../components/Notification';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
-import { tourPackageService } from '../../services/tourpackage/fetchPackage';
+import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 
 import { supabase } from '../../services/supabase';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import * as Routes from '../../constants/routes';
 
 // Remove the hardcoded tourPackages array
 // const tourPackages = [
@@ -114,11 +115,11 @@ export default function TouristHomeScreen({ navigation }) {
         console.log('✅ Successfully fetched packages:', packages);
         
         setTourPackages(Array.isArray(packages) ? packages : []);
-        setDataSource('API (tourPackageService)');
+        setDataSource('Real API Data');
         setNetworkStatus('Connected');
       } catch (error) {
         console.error('❌ Error fetching packages:', error);
-        setDataSource('Error');
+        setDataSource('Mock Data (API Error)');
         setTourPackages([]);
         setNetworkStatus('Failed');
       } finally {
@@ -305,21 +306,35 @@ export default function TouristHomeScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.testButton}
             onPress={async () => {
-              console.log('Testing tourPackageService...');
-              try {
-                const packages = await tourPackageService.getAllPackages();
-                console.log('Test Response:', packages);
-                Alert.alert('API Test Success', 
-                  `Successfully fetched ${packages.length} packages\n` +
-                  `First package: ${packages[0]?.package_name || 'N/A'}`
-                );
+              console.log('Testing connection...');
+                             try {
+                 const result = await testConnection();
+                 console.log('Connection test result:', result);
+                 if (result.success) {
+                   Alert.alert('Connection Test Success', 
+                     `✅ Found working API endpoint!\n\n` +
+                     `URL: ${result.url}\n` +
+                     `Status: ${result.status}\n\n` +
+                     `Response preview:\n${result.text}`
+                   );
+                 } else {
+                   Alert.alert('Connection Test Failed', 
+                     `Error: ${result.error}\n\n` +
+                     `Tested URLs:\n${result.testedUrls?.slice(0, 3).join('\n')}...\n\n` +
+                     `Please check:\n` +
+                     `1. Your backend server is running\n` +
+                     `2. Your computer's IP is correct: 10.196.222.213\n` +
+                     `3. Your phone and computer are on the same network\n` +
+                     `4. Your API endpoints are configured correctly`
+                   );
+                 }
               } catch (error) {
                 console.error('Test failed:', error);
-                Alert.alert('API Test Failed', error.message);
+                Alert.alert('Connection Test Failed', error.message);
               }
             }}
           >
-            <Text style={styles.testButtonText}>Test API</Text>
+            <Text style={styles.testButtonText}>Test Connection</Text>
           </TouchableOpacity>
         </View>
         {loadingPackages ? (
@@ -385,23 +400,40 @@ export default function TouristHomeScreen({ navigation }) {
                   </Text>
                 )}
                 
-                {/* Status */}
-                <Text style={[
-                  styles.packageStatus, 
-                  { color: pkg.is_active ? '#4CAF50' : '#F44336' }
-                ]}>
-                  {pkg.is_active ? 'Available' : 'Unavailable'}
-                </Text>
+                {/* Route */}
+                {pkg.route && (
+                  <Text style={styles.packageInfo}>Route: {pkg.route}</Text>
+                )}
                 
-                <Button 
-                  title="Book" 
-                  onPress={() => {
-                    navigation.navigate('RequestBooking', {
-                      packageId: pkg.id,
-                      packageData: pkg
-                    });
-                  }} 
-                />
+                {/* Expiration */}
+                {pkg.expiration_date && (
+                  <Text style={styles.packageInfo}>Expires: {pkg.expiration_date}</Text>
+                )}
+                
+                {/* Status */}
+                <View style={styles.statusContainer}>
+                  <Text style={[
+                    styles.packageStatus, 
+                    { color: pkg.is_active ? '#4CAF50' : '#F44336' }
+                  ]}>
+                    {pkg.is_active ? 'Available' : 'Unavailable'}
+                  </Text>
+                  {pkg.is_expired && (
+                    <Text style={[styles.packageStatus, { color: '#FF9800' }]}>
+                      Expired
+                    </Text>
+                  )}
+                </View>
+                
+                                 <Button 
+                   title="Book" 
+                   onPress={() => {
+                     navigation.navigate(Routes.REQUEST_BOOKING, {
+                       packageId: pkg.id,
+                       packageData: pkg
+                     });
+                   }} 
+                 />
               </View>
             ))}
           </View>
@@ -615,5 +647,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    marginBottom: 8,
   },
 }); 
