@@ -172,12 +172,24 @@ export async function getBookingByReference(reference) {
   }
 }
 
-export async function getCustomerBookings(customerId) {
+export async function getCustomerBookings(customerId, filters = {}) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}customer/${customerId}/`, {
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        queryParams.append(key, filters[key]);
+      }
+    });
+    
+    const url = `${API_BASE_URL}customer/${customerId}/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    
+    console.log('Fetching customer bookings from:', url);
+    
+    const response = await fetch(url, {
       signal: controller.signal,
     });
     
@@ -185,10 +197,12 @@ export async function getCustomerBookings(customerId) {
     
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('API Error Response:', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
     const data = await response.json();
+    console.log('Customer bookings response:', data);
     return data;
   } catch (error) {
     console.error('Error fetching customer bookings:', error);
