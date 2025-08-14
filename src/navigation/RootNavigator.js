@@ -10,6 +10,7 @@ import NotificationScreen from '../screens/main/NotificationScreen';
 import RequestBookingScreen from '../screens/main/requestBookingScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
+import OwnerTabs from './OwnerTabs';
 import * as Routes from '../constants/routes';
 
 const Stack = createNativeStackNavigator();
@@ -27,7 +28,7 @@ export default function RootNavigator() {
       </Stack.Screen>
       <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
       <Stack.Screen name={Routes.MAIN}>
-        {() => (role === 'driver' ? <DriverTabs /> : <MainTabs />)}
+        {() => (role === 'driver' ? <DriverTabs /> : role === 'owner' ? <OwnerTabs /> : <MainTabs />)}
       </Stack.Screen>
       <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
       <Stack.Screen name={Routes.NOTIFICATION} component={NotificationScreen} />
