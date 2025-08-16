@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import ProfileItem from '../../components/ProfileItem';
+import * as Routes from '../../constants/routes';
 import Button from '../../components/Button';
 import { getCurrentUser, getUserProfile, logoutUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
@@ -90,7 +91,8 @@ export default function MenuScreen({ navigation }) {
         {/* Activity Section */}
         <Text style={styles.sectionTitle}>Activity</Text>
         <View style={styles.sectionBox}>
-          <ProfileItem icon={<Ionicons name="person-outline" size={22} color="#6B2E2B" />} label="Account Details" onPress={() => navigation.navigate('AccountDetails')} />
+          <ProfileItem icon={<Ionicons name="person-outline" size={22} color="#6B2E2B" />} label="Account Details" onPress={() => navigation.navigate(Routes.ACCOUNT_DETAILS)} />
+          <ProfileItem icon={<Ionicons name="car-outline" size={22} color="#6B2E2B" />} label="Tartanilla Carriages" onPress={() => navigation.navigate(Routes.TARTANILLA_CARRIAGES)} />
           <ProfileItem icon={<Ionicons name="star-outline" size={22} color="#6B2E2B" />} label="Reviews" />
         </View>
 
