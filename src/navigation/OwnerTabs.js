@@ -2,7 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
-import AccountDetailsScreen from '../screens/main/AccountDetailsScreen';
+import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import * as Routes from '../constants/routes';
 
@@ -32,7 +32,7 @@ export default function OwnerTabs() {
       />
       <Tab.Screen
         name={Routes.PROFILE}
-        component={AccountDetailsScreen}
+        component={MenuScreen}
         options={{ headerShown: false }}
       />
     </Tab.Navigator>

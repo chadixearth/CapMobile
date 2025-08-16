@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { supabase } from '../../services/supabase';
+import { loginUser } from '../../services/authService';
 import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
@@ -14,17 +14,26 @@ export default function LoginScreen({ navigation, setRole }) {
   const handleLogin = async () => {
     setError('');
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-    } else if (data?.user) {
-      // Get role from user_metadata
-      const userRole = data.user.user_metadata?.role || 'tourist';
-      setRole(userRole);
-      navigation.replace(Routes.MAIN);
-    } else {
-      setError('Login failed.');
+    
+    try {
+      // Only allow mobile roles (no admin)
+      const allowedRoles = ['tourist', 'driver', 'owner'];
+      const result = await loginUser(email, password, allowedRoles);
+      
+      setLoading(false);
+      
+      if (result.success) {
+        // Get role from user data
+        const userRole = result.user?.role || 'tourist';
+        setRole(userRole);
+        navigation.replace(Routes.MAIN);
+      } else {
+        setError(result.error || 'Login failed.');
+      }
+    } catch (error) {
+      setLoading(false);
+      setError('Network error. Please try again.');
+      console.error('Login error:', error);
     }
   };
 

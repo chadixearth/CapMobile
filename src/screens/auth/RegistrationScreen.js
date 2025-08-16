@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { createAccountWithEmail } from '../../services/userService';
+import { registerUser } from '../../services/authService';
 
 const MAROON = '#6B2E2B';
 
@@ -12,10 +12,23 @@ const RegistrationScreen = ({ navigation, route }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const role = route?.params?.role || 'tourist';
+  
+  // Additional fields for driver/owner
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  
+  // Driver specific fields
+  const [licenseNumber, setLicenseNumber] = useState('');
+  
+  // Owner specific fields
+  const [businessName, setBusinessName] = useState('');
+  const [businessPermit, setBusinessPermit] = useState('');
 
   const handleRegister = async () => {
     setError('');
     setSuccess('');
+    
     if (!email || !password || !confirmPassword) {
       setError('Please enter email, password, and confirm your password.');
       return;
@@ -24,24 +37,96 @@ const RegistrationScreen = ({ navigation, route }) => {
       setError('Passwords do not match.');
       return;
     }
+    
+    // Validate additional fields for driver/owner
+    if (role === 'driver' || role === 'owner') {
+      if (!firstName || !lastName || !phone) {
+        setError('Please fill in all required fields.');
+        return;
+      }
+      
+      if (role === 'driver' && !licenseNumber) {
+        setError('License number is required for drivers.');
+        return;
+      }
+      
+      if (role === 'owner' && (!businessName || !businessPermit)) {
+        setError('Business name and permit are required for owners.');
+        return;
+      }
+    }
+    
+    // Validate role for mobile app (no admin)
+    const validMobileRoles = ['tourist', 'driver', 'owner'];
+    if (!validMobileRoles.includes(role)) {
+      setError(`Invalid role. Please select: ${validMobileRoles.join(', ')}`);
+      return;
+    }
+    
     setLoading(true);
-    const { error } = await createAccountWithEmail(email, password, role);
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-    } else {
-      setSuccess('Registration successful! Please check your email to verify your account.');
-      Alert.alert(
-        'Registration Successful',
-        'Please check your email to verify your account.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('Login'),
-          },
-        ],
-        { cancelable: false }
-      );
+    
+    try {
+      // Prepare additional data based on role
+      let additionalData = {};
+      
+      if (role === 'driver') {
+        additionalData = {
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+          license_number: licenseNumber
+        };
+      } else if (role === 'owner') {
+        additionalData = {
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+          business_name: businessName,
+          business_permit: businessPermit
+        };
+      }
+      
+      const result = await registerUser(email, password, role, additionalData);
+      setLoading(false);
+      
+      if (result.success) {
+        setSuccess(result.message || 'Registration successful!');
+        
+        // Handle different registration outcomes
+        if (result.status === 'pending_approval') {
+          // Driver/Owner registration - pending admin approval
+          Alert.alert(
+            'Registration Submitted',
+            result.message || `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once your account is approved.`,
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.navigate('Login'),
+              },
+            ],
+            { cancelable: false }
+          );
+        } else {
+          // Tourist/Admin registration - direct with email verification
+          Alert.alert(
+            'Registration Successful',
+            result.message || 'Please check your email to verify your account.',
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.navigate('Login'),
+              },
+            ],
+            { cancelable: false }
+          );
+        }
+      } else {
+        setError(result.error || 'Registration failed.');
+      }
+    } catch (error) {
+      setLoading(false);
+      setError('Network error. Please try again.');
+      console.error('Registration error:', error);
     }
   };
 
@@ -58,6 +143,16 @@ const RegistrationScreen = ({ navigation, route }) => {
       >
         <View style={styles.card}>
           <Text style={styles.title}>Register as {role.charAt(0).toUpperCase() + role.slice(1)}</Text>
+          {(role === 'driver' || role === 'owner') && (
+            <Text style={styles.infoText}>
+              Your registration will be submitted for admin approval. You will receive an email confirmation once approved.
+            </Text>
+          )}
+          {role === 'tourist' && (
+            <Text style={styles.infoText}>
+              You will receive an email verification link after registration.
+            </Text>
+          )}
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -94,10 +189,99 @@ const RegistrationScreen = ({ navigation, route }) => {
             placeholderTextColor="#aaa"
             autoCorrect={false}
             spellCheck={false}
-            returnKeyType="done"
-            blurOnSubmit={true}
+            returnKeyType={role === 'tourist' ? 'done' : 'next'}
+            blurOnSubmit={role === 'tourist'}
             editable={true}
           />
+          
+          {/* Additional fields for driver/owner */}
+          {(role === 'driver' || role === 'owner') && (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="First Name"
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                editable={true}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Last Name"
+                value={lastName}
+                onChangeText={setLastName}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                editable={true}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                editable={true}
+              />
+            </>
+          )}
+          
+          {/* Driver specific fields */}
+          {role === 'driver' && (
+            <TextInput
+              style={styles.input}
+              placeholder="License Number"
+              value={licenseNumber}
+              onChangeText={setLicenseNumber}
+              placeholderTextColor="#aaa"
+              autoCorrect={false}
+              spellCheck={false}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              editable={true}
+            />
+          )}
+          
+          {/* Owner specific fields */}
+          {role === 'owner' && (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Business Name"
+                value={businessName}
+                onChangeText={setBusinessName}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                editable={true}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Business Permit Number"
+                value={businessPermit}
+                onChangeText={setBusinessPermit}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="done"
+                blurOnSubmit={true}
+                editable={true}
+              />
+            </>
+          )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {success ? <Text style={styles.success}>{success}</Text> : null}
           <TouchableOpacity
@@ -143,9 +327,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 32,
+    marginBottom: 16,
     color: MAROON,
     letterSpacing: 1,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 8,
+    lineHeight: 20,
   },
   input: {
     width: '100%',

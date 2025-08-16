@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
+import { getCurrentUser } from '../../services/authService';
 
 export default function BookScreen({ navigation }) {
   const [bookings, setBookings] = useState([]);
@@ -19,20 +20,32 @@ export default function BookScreen({ navigation }) {
     try {
       setLoading(true);
       
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // Check new auth system first
+      let currentUser = await getCurrentUser();
+      let userId = null;
       
-      if (userError || !user) {
-        Alert.alert('Error', 'Please log in to view your bookings');
-        return;
+      if (currentUser) {
+        // User is logged in via new auth system
+        console.log('Current user (new auth):', currentUser);
+        setUser(currentUser);
+        userId = currentUser.id;
+      } else {
+        // Fallback to Supabase for existing users
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          Alert.alert('Error', 'Please log in to view your bookings');
+          return;
+        }
+
+        console.log('Current user (Supabase):', user);
+        setUser(user);
+        userId = user.id;
       }
 
-      console.log('Current user:', user);
-      setUser(user);
-
       // Fetch user's bookings
-      console.log('Fetching bookings for user ID:', user.id);
-      const bookingsData = await getCustomerBookings(user.id);
+      console.log('Fetching bookings for user ID:', userId);
+      const bookingsData = await getCustomerBookings(userId);
       console.log('Bookings data received:', bookingsData);
       
       // Handle different response formats
@@ -213,7 +226,7 @@ export default function BookScreen({ navigation }) {
         <View style={styles.header}>
           <Text style={styles.title}>My Bookings</Text>
           <Text style={styles.subtitle}>
-            {user?.user_metadata?.name || user?.email || 'User'}'s booking history
+            {user?.name || user?.user_metadata?.name || user?.email || 'User'}'s booking history
           </Text>
           <TouchableOpacity 
             style={styles.debugButton}

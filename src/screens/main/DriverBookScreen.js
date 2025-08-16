@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings } from '../../services/tourpackage/acceptBooking';
+import { getCurrentUser } from '../../services/authService';
 
 export default function DriverBookScreen({ navigation }) {
   const [availableBookings, setAvailableBookings] = useState([]);
@@ -24,23 +25,35 @@ export default function DriverBookScreen({ navigation }) {
     try {
       setLoading(true);
       
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // Check new auth system first
+      let currentUser = await getCurrentUser();
+      let userId = null;
       
-      if (userError || !user) {
-        Alert.alert('Error', 'Please log in to view bookings');
-        setLoading(false);
-        return;
-      }
+      if (currentUser) {
+        // User is logged in via new auth system
+        console.log('Current driver user (new auth):', currentUser);
+        setUser(currentUser);
+        userId = currentUser.id;
+      } else {
+        // Fallback to Supabase for existing users
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          Alert.alert('Error', 'Please log in to view bookings');
+          setLoading(false);
+          return;
+        }
 
-      console.log('Current driver user:', user);
-      setUser(user);
+        console.log('Current driver user (Supabase):', user);
+        setUser(user);
+        userId = user.id;
+      }
 
       // Fetch both available bookings and driver's accepted bookings
       try {
         await Promise.all([
-          fetchAvailableBookings(user.id),
-          fetchDriverBookings(user.id)
+          fetchAvailableBookings(userId),
+          fetchDriverBookings(userId)
         ]);
       } catch (error) {
         console.error('Error in Promise.all:', error);
@@ -150,7 +163,7 @@ export default function DriverBookScreen({ navigation }) {
       // Use the service to accept the booking
       const result = await driverAcceptBooking(selectedBooking.id, {
         driver_id: user.id,
-        driver_name: user.user_metadata?.name || user.email || 'Driver',
+        driver_name: user.name || user.user_metadata?.name || user.email || 'Driver',
       });
 
       console.log('Accept booking response:', result);
@@ -380,7 +393,7 @@ export default function DriverBookScreen({ navigation }) {
             {activeTab === 'available' ? 'Available Bookings' : 'Booking History'}
           </Text>
           <Text style={styles.subtitle}>
-            {user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : 'accepted'} bookings
+            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : 'accepted'} bookings
           </Text>
           <View style={styles.headerButtons}>
             <TouchableOpacity 

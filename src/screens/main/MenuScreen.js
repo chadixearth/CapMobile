@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert } fr
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import ProfileItem from '../../components/ProfileItem';
 import Button from '../../components/Button';
+import { getCurrentUser, getUserProfile, logoutUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -11,9 +12,28 @@ export default function MenuScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   const fetchUser = async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (data?.user) {
-      setUser(data.user);
+    try {
+      // Try to get current user from new auth system
+      const currentUser = await getCurrentUser();
+      if (currentUser) {
+        // Try to get detailed profile from API
+        const profileResult = await getUserProfile(currentUser.id);
+        
+        let userData = currentUser;
+        if (profileResult.success && profileResult.data) {
+          userData = { ...currentUser, ...profileResult.data };
+        }
+        
+        setUser(userData);
+      } else {
+        // Fallback to Supabase for existing users
+        const { data, error } = await supabase.auth.getUser();
+        if (data?.user) {
+          setUser(data.user);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user:', error);
     }
     setLoading(false);
   };
@@ -29,11 +49,21 @@ export default function MenuScreen({ navigation }) {
   );
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigation.replace('Login');
+    try {
+      // Use new logout function which handles both API logout and local storage cleanup
+      await logoutUser();
+      // Also sign out from Supabase for compatibility
+      await supabase.auth.signOut();
+      navigation.replace('Login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if logout fails, navigate to login screen
+      navigation.replace('Login');
+    }
   };
 
-  const name = user?.user_metadata?.name || '';
+  // Handle both new auth system and Supabase user data formats
+  const name = user?.name || user?.full_name || user?.user_metadata?.name || '';
   const email = user?.email || '';
   const avatarUrl = name
     ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`

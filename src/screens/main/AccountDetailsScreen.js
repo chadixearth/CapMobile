@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+
 import EditableField from '../../components/EditableField';
 import Button from '../../components/Button';
 import BackButton from '../../components/BackButton';
+import { getCurrentUser, getUserProfile, updateUserProfile } from '../../services/authService';
+import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
 
 export default function AccountDetailsScreen({ navigation }) {
@@ -29,49 +31,65 @@ export default function AccountDetailsScreen({ navigation }) {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        const fullName = data.user.user_metadata?.name || '';
-        const nameParts = fullName.split(' ');
-        setFirstName(nameParts[0] || '');
-        setMiddleName(nameParts[1] || '');
-        setLastName(nameParts[2] || '');
-        setEmail(data.user.email || '');
-        setPhone(data.user.user_metadata?.phone || '');
-        setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
+      try {
+        // Get current user from stored session
+        const currentUser = await getCurrentUser();
+        if (currentUser) {
+          // Try to get detailed profile from API
+          const profileResult = await getUserProfile(currentUser.id);
+          
+          let userData = currentUser;
+          if (profileResult.success && profileResult.data) {
+            userData = { ...currentUser, ...profileResult.data };
+          }
+          
+          // Parse name if available - handle both API formats
+          const fullName = userData.name || userData.full_name || '';
+          const nameParts = fullName.split(' ');
+          setFirstName(userData.first_name || nameParts[0] || '');
+          setMiddleName(userData.middle_name || nameParts[1] || '');
+          setLastName(userData.last_name || nameParts[2] || '');
+          setEmail(userData.email || '');
+          setPhone(userData.phone || '');
+          setPhotoUrl(userData.profile_photo || userData.profile_photo_url || userData.avatar_url || '');
+        } else {
+          // Fallback to Supabase if no session found (for compatibility)
+          const { data } = await supabase.auth.getUser();
+          if (data?.user) {
+            const fullName = data.user.user_metadata?.name || '';
+            const nameParts = fullName.split(' ');
+            setFirstName(nameParts[0] || '');
+            setMiddleName(nameParts[1] || '');
+            setLastName(nameParts[2] || '');
+            setEmail(data.user.email || '');
+            setPhone(data.user.user_metadata?.phone || '');
+            setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        setError('Failed to load user data');
       }
     };
     fetchUser();
   }, []);
 
   const handlePickImage = async () => {
-    if (Platform.OS === 'web') {
-      Alert.alert('Not supported', 'Photo upload is only supported on mobile devices.');
-      return;
-    }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Permission to access media library is required!');
-      return;
-    }
     try {
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.IMAGE,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
-      if (pickerResult.canceled) {
-        Alert.alert('Cancelled', 'Image selection was cancelled.');
-        return;
-      }
-      if (pickerResult.assets && pickerResult.assets.length > 0) {
-        uploadImage(pickerResult.assets[0].uri);
-      } else {
-        Alert.alert('Error', 'No image selected.');
-      }
-    } catch (err) {
-      Alert.alert('Error', 'Failed to open image picker.');
+      const photoService = new MobilePhotoUpload();
+      
+      // Pick image using the service
+      const image = await photoService.pickImage();
+      if (!image) return; // User cancelled or error occurred
+      
+      console.log('Selected image:', image);
+      
+      // Upload the selected image
+      await uploadImage(image.uri);
+
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
 
@@ -79,30 +97,106 @@ export default function AccountDetailsScreen({ navigation }) {
     try {
       setUploading(true);
       setError('');
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileExt = uri.split('.').pop();
-      const fileName = `profile_${Date.now()}.${fileExt}`;
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-      if (!userId) throw new Error('User not found');
-      const uploadPath = `${userId}/${fileName}`;
-      const { data, error: uploadError } = await supabase.storage
-        .from('profile-photos')
-        .upload(uploadPath, blob, { upsert: true });
-      console.log('Upload response:', data, uploadError);
-      if (uploadError) throw uploadError;
-      // Get public URL
-      const { data: publicUrlData, error: publicUrlError } = supabase.storage.from('profile-photos').getPublicUrl(uploadPath);
-      console.log('Public URL response:', publicUrlData, publicUrlError);
-      if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL');
-      setPhotoUrl(publicUrlData.publicUrl);
-      // Save to user_metadata
-      await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
-      setSuccess('Profile photo updated!');
+      setSuccess('');
+      
+      console.log('Starting photo upload for URI:', uri);
+      
+      // Check if user is logged in via new auth system
+      const currentUser = await getCurrentUser();
+      console.log('Current user:', currentUser);
+      
+      if (currentUser) {
+        // Use MobilePhotoUpload service
+        console.log('Using MobilePhotoUpload service for photo upload');
+        const photoService = new MobilePhotoUpload();
+        const result = await photoService.uploadProfilePhoto(currentUser.id, uri);
+        console.log('Upload result:', result);
+        
+        if (result.success) {
+          console.log('Photo uploaded successfully, URL:', result.photo_url);
+          
+          // Update local state immediately
+          setPhotoUrl(result.photo_url);
+          
+          // Try to update the user profile with the new photo URL
+          try {
+            const profileUpdateData = {
+              profile_photo_url: result.photo_url
+            };
+            
+            console.log('Updating profile with photo URL:', profileUpdateData);
+            const updateResult = await updateUserProfile(currentUser.id, profileUpdateData);
+            console.log('Profile update result:', updateResult);
+            
+            if (updateResult.success) {
+              setSuccess('Profile photo updated successfully!');
+              console.log('Profile updated successfully with photo URL');
+            } else {
+              // Photo upload succeeded but profile update failed
+              console.warn('Photo uploaded but profile update failed:', updateResult.error);
+              setSuccess('Photo uploaded successfully!');
+            }
+          } catch (profileError) {
+            console.error('Profile update error:', profileError);
+            // Still show success since the photo was uploaded
+            setSuccess('Photo uploaded successfully!');
+          }
+        } else {
+          console.error('Photo upload failed:', result.error);
+          throw new Error(result.error || 'Failed to upload photo');
+        }
+      } else {
+        console.log('Using Supabase fallback for photo upload');
+        // Fallback to Supabase for existing users
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const fileExt = uri.split('.').pop();
+        const fileName = `profile_${Date.now()}.${fileExt}`;
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
+        
+        if (!userId) {
+          throw new Error('User not found');
+        }
+        
+        const uploadPath = `${userId}/${fileName}`;
+        const { data, error: uploadError } = await supabase.storage
+          .from('profile-photos')
+          .upload(uploadPath, blob, { upsert: true });
+          
+        console.log('Supabase upload response:', data, uploadError);
+        if (uploadError) throw uploadError;
+        
+        // Get public URL
+        const { data: publicUrlData, error: publicUrlError } = supabase.storage
+          .from('profile-photos')
+          .getPublicUrl(uploadPath);
+          
+        console.log('Supabase public URL response:', publicUrlData, publicUrlError);
+        if (!publicUrlData?.publicUrl) {
+          throw new Error('Failed to get public URL');
+        }
+        
+        setPhotoUrl(publicUrlData.publicUrl);
+        
+        // Save to user_metadata
+        await supabase.auth.updateUser({ 
+          data: { profile_photo_url: publicUrlData.publicUrl } 
+        });
+        
+        setSuccess('Profile photo updated successfully!');
+      }
     } catch (err) {
-      setError(err.message || 'Failed to upload photo.');
       console.error('Upload error:', err);
+      const errorMessage = err.message || 'Failed to upload photo.';
+      setError(errorMessage);
+      
+      // Show user-friendly error message
+      Alert.alert(
+        'Upload Failed',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     } finally {
       setUploading(false);
     }
@@ -112,28 +206,59 @@ export default function AccountDetailsScreen({ navigation }) {
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    
     try {
       setUploading(true);
       setError('');
-      const fileExt = file.name.split('.').pop();
-      const fileName = `profile_${Date.now()}.${fileExt}`;
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-      if (!userId) throw new Error('User not found');
-      const uploadPath = `${userId}/${fileName}`;
-      const { data, error: uploadError } = await supabase.storage
-        .from('profile-photos')
-        .upload(uploadPath, file, { upsert: true });
-      console.log('Web Upload response:', data, uploadError);
-      if (uploadError) throw uploadError;
-      // Get public URL
-      const { data: publicUrlData, error: publicUrlError } = supabase.storage.from('profile-photos').getPublicUrl(uploadPath);
-      console.log('Web Public URL response:', publicUrlData, publicUrlError);
-      if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL');
-      setPhotoUrl(publicUrlData.publicUrl);
-      // Save to user_metadata
-      await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
-      setSuccess('Profile photo updated!');
+      
+      // Check if user is logged in via new auth system
+      const currentUser = await getCurrentUser();
+      
+      if (currentUser) {
+        // Convert file to data URI for upload
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const result = await uploadProfilePhoto(currentUser.id, e.target.result);
+            
+            if (result.success) {
+              setPhotoUrl(result.photoUrl);
+              setSuccess('Profile photo updated!');
+            } else {
+              throw new Error(result.error || 'Failed to upload photo');
+            }
+          } catch (err) {
+            setError(err.message || 'Failed to upload photo.');
+            console.error('Web Upload error:', err);
+          } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+        };
+        reader.readAsDataURL(file);
+        return; // Early return to avoid the finally block
+      } else {
+        // Fallback to Supabase for existing users
+        const fileExt = file.name.split('.').pop();
+        const fileName = `profile_${Date.now()}.${fileExt}`;
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
+        if (!userId) throw new Error('User not found');
+        const uploadPath = `${userId}/${fileName}`;
+        const { data, error: uploadError } = await supabase.storage
+          .from('profile-photos')
+          .upload(uploadPath, file, { upsert: true });
+        console.log('Web Upload response:', data, uploadError);
+        if (uploadError) throw uploadError;
+        // Get public URL
+        const { data: publicUrlData, error: publicUrlError } = supabase.storage.from('profile-photos').getPublicUrl(uploadPath);
+        console.log('Web Public URL response:', publicUrlData, publicUrlError);
+        if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL');
+        setPhotoUrl(publicUrlData.publicUrl);
+        // Save to user_metadata
+        await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
+        setSuccess('Profile photo updated!');
+      }
     } catch (err) {
       setError(err.message || 'Failed to upload photo.');
       console.error('Web Upload error:', err);
@@ -147,26 +272,67 @@ export default function AccountDetailsScreen({ navigation }) {
     setLoading(true);
     setError('');
     setSuccess('');
-    const name = [firstName, middleName, lastName].filter(Boolean).join(' ');
-    // Update user_metadata (name, phone, photo) and email
-    const updates = {
-      data: { name, phone, profile_photo_url: photoUrl },
-    };
-    const { error: metaError } = await supabase.auth.updateUser(updates);
-    let emailError = null;
-    if (email) {
-      // Only update email if changed
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user?.email !== email) {
-        const { error: eError } = await supabase.auth.updateUser({ email });
-        emailError = eError;
+    
+    try {
+      // Check if user is logged in via new auth system
+      const currentUser = await getCurrentUser();
+      
+      if (currentUser) {
+        // Use new profile update API
+        const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+        const profileData = {
+          name: fullName,
+          first_name: firstName,
+          middle_name: middleName,
+          last_name: lastName,
+          email: email,
+          phone: phone,
+          profile_photo: photoUrl,
+        };
+        
+        // Remove empty values
+        Object.keys(profileData).forEach(key => {
+          if (profileData[key] === '' || profileData[key] === null || profileData[key] === undefined) {
+            delete profileData[key];
+          }
+        });
+        
+        const result = await updateUserProfile(currentUser.id, profileData);
+        
+        if (result.success) {
+          setSuccess(result.message || 'Account details updated successfully!');
+          
+          // Note: Session will be updated on next app restart or when user logs in again
+          // For now, we'll just show success message
+        } else {
+          setError(result.error || 'Failed to update profile.');
+        }
+      } else {
+        // Fallback to Supabase for existing users
+        const name = [firstName, middleName, lastName].filter(Boolean).join(' ');
+        const updates = {
+          data: { name, phone, profile_photo_url: photoUrl },
+        };
+        const { error: metaError } = await supabase.auth.updateUser(updates);
+        let emailError = null;
+        if (email) {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData?.user?.email !== email) {
+            const { error: eError } = await supabase.auth.updateUser({ email });
+            emailError = eError;
+          }
+        }
+        if (metaError || emailError) {
+          setError(metaError?.message || emailError?.message || 'Failed to update account.');
+        } else {
+          setSuccess('Account details updated!');
+        }
       }
-    }
-    setLoading(false);
-    if (metaError || emailError) {
-      setError(metaError?.message || emailError?.message || 'Failed to update account.');
-    } else {
-      setSuccess('Account details updated!');
+    } catch (error) {
+      console.error('Save error:', error);
+      setError('Failed to save changes.');
+    } finally {
+      setLoading(false);
     }
   };
 

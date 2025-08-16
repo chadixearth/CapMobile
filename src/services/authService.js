@@ -1,21 +1,391 @@
-import { supabase } from './supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// API Configuration
+const API_BASE_URL = 'http://10.196.222.213:8000/api';
+
+// Session keys for AsyncStorage
+const SESSION_KEYS = {
+  ACCESS_TOKEN: 'access_token',
+  REFRESH_TOKEN: 'refresh_token',
+  USER_DATA: 'user_data',
+};
 
 /**
- * Registers a new user with email and password, and triggers Supabase email verification.
- * Stores the role in user_metadata.
+ * Helper function to make API requests with proper error handling
+ */
+async function apiRequest(endpoint, options = {}) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    const data = await response.json();
+    
+    return {
+      success: response.ok,
+      data,
+      status: response.status,
+    };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { success: false, error: 'Request timeout. Please try again.' };
+    }
+    return { success: false, error: error.message || 'Network error occurred' };
+  }
+}
+
+/**
+ * Store session data in AsyncStorage
+ */
+async function storeSession(sessionData) {
+  try {
+    if (sessionData.access_token) {
+      await AsyncStorage.setItem(SESSION_KEYS.ACCESS_TOKEN, sessionData.access_token);
+    }
+    if (sessionData.refresh_token) {
+      await AsyncStorage.setItem(SESSION_KEYS.REFRESH_TOKEN, sessionData.refresh_token);
+    }
+    if (sessionData.user) {
+      await AsyncStorage.setItem(SESSION_KEYS.USER_DATA, JSON.stringify(sessionData.user));
+    }
+  } catch (error) {
+    console.error('Error storing session:', error);
+  }
+}
+
+/**
+ * Get stored session data from AsyncStorage
+ */
+async function getStoredSession() {
+  try {
+    const accessToken = await AsyncStorage.getItem(SESSION_KEYS.ACCESS_TOKEN);
+    const refreshToken = await AsyncStorage.getItem(SESSION_KEYS.REFRESH_TOKEN);
+    const userData = await AsyncStorage.getItem(SESSION_KEYS.USER_DATA);
+    
+    return {
+      accessToken,
+      refreshToken,
+      user: userData ? JSON.parse(userData) : null,
+    };
+  } catch (error) {
+    console.error('Error getting stored session:', error);
+    return { accessToken: null, refreshToken: null, user: null };
+  }
+}
+
+/**
+ * Clear stored session data
+ */
+async function clearStoredSession() {
+  try {
+    await AsyncStorage.multiRemove([
+      SESSION_KEYS.ACCESS_TOKEN,
+      SESSION_KEYS.REFRESH_TOKEN,
+      SESSION_KEYS.USER_DATA,
+    ]);
+  } catch (error) {
+    console.error('Error clearing stored session:', error);
+  }
+}
+
+/**
+ * Register a new user with email, password, and role
+ * Supports roles: tourist, driver, owner (admin is web-only)
  * @param {string} email
  * @param {string} password
- * @param {string} role
- * @returns {Promise<{ user: object|null, error: object|null }>} Supabase response
+ * @param {string} role - Must be one of: tourist, driver, owner
+ * @param {object} additionalData - Optional additional user data
+ * @returns {Promise<{ success: boolean, user?: object, error?: string }>}
+ */
+export async function registerUser(email, password, role, additionalData = {}) {
+  // Validate role for mobile app (no admin)
+  const validMobileRoles = ['tourist', 'driver', 'owner'];
+  if (!validMobileRoles.includes(role)) {
+    return {
+      success: false,
+      error: `Invalid role. Mobile app supports: ${validMobileRoles.join(', ')}`,
+    };
+  }
+
+  const result = await apiRequest('/auth/register/', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      password,
+      role,
+      additional_data: additionalData,
+    }),
+  });
+
+  if (result.success && result.data.success) {
+    return {
+      success: true,
+      user: result.data.user,
+      message: result.data.message,
+      status: result.data.status, // Could be 'pending_approval' for driver/owner
+      registration_id: result.data.registration_id, // For pending registrations
+    };
+  }
+
+  return {
+    success: false,
+    error: result.data?.error || result.error || 'Registration failed',
+  };
+}
+
+/**
+ * Login user with email and password
+ * @param {string} email
+ * @param {string} password
+ * @param {string[]} allowedRoles - Optional array of allowed roles
+ * @returns {Promise<{ success: boolean, user?: object, session?: object, error?: string }>}
+ */
+export async function loginUser(email, password, allowedRoles = null) {
+  const result = await apiRequest('/auth/login/', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      password,
+      allowed_roles: allowedRoles,
+    }),
+  });
+
+  if (result.success && result.data.success) {
+    // Store session data
+    await storeSession({
+      access_token: result.data.session?.access_token,
+      refresh_token: result.data.session?.refresh_token,
+      user: result.data.user,
+    });
+
+    return {
+      success: true,
+      user: result.data.user,
+      session: result.data.session,
+      message: result.data.message,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.data?.error || result.error || 'Login failed',
+  };
+}
+
+/**
+ * Logout current user
+ * @returns {Promise<{ success: boolean, error?: string }>}
+ */
+export async function logoutUser() {
+  const result = await apiRequest('/auth/logout/', {
+    method: 'POST',
+  });
+
+  // Clear stored session regardless of API response
+  await clearStoredSession();
+
+  if (result.success && result.data.success) {
+    return {
+      success: true,
+      message: result.data.message,
+    };
+  }
+
+  // Even if API call fails, we consider logout successful if we cleared local data
+  return {
+    success: true,
+    message: 'Logged out successfully',
+  };
+}
+
+/**
+ * Get user profile by user ID
+ * @param {string} userId
+ * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
+ */
+export async function getUserProfile(userId) {
+  const result = await apiRequest(`/auth/profile/?user_id=${userId}`, {
+    method: 'GET',
+  });
+
+  if (result.success && result.data.success) {
+    return {
+      success: true,
+      data: result.data.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.data?.error || result.error || 'Failed to get user profile',
+  };
+}
+
+/**
+ * Check if user is logged in by verifying stored session
+ * @returns {Promise<{ isLoggedIn: boolean, user?: object }>}
+ */
+export async function checkAuthStatus() {
+  const session = await getStoredSession();
+  
+  return {
+    isLoggedIn: !!(session.accessToken && session.user),
+    user: session.user,
+    accessToken: session.accessToken,
+  };
+}
+
+/**
+ * Get current user data from stored session
+ * @returns {Promise<object|null>}
+ */
+export async function getCurrentUser() {
+  const session = await getStoredSession();
+  return session.user;
+}
+
+/**
+ * Update user profile information
+ * @param {string} userId
+ * @param {object} profileData - Profile data to update
+ * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
+ */
+export async function updateUserProfile(userId, profileData) {
+  const result = await apiRequest('/auth/profile/update/', {
+    method: 'PUT',
+    body: JSON.stringify({
+      user_id: userId,
+      profile_data: profileData,
+    }),
+  });
+
+  if (result.success && result.data.success) {
+    return {
+      success: true,
+      data: result.data.data,
+      message: result.data.message,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.data?.error || result.error || 'Failed to update profile',
+  };
+}
+
+/**j
+ * Upload profile photo
+ * @param {string} userId
+ * @param {string} photoUri - URI of the photo to upload
+ * @returns {Promise<{ success: boolean, photoUrl?: string, error?: string }>}
+ */
+export async function uploadProfilePhoto(userId, photoUri) {
+  try {
+    console.log('uploadProfilePhoto called with:', { userId, photoUri: photoUri.substring(0, 50) + '...' });
+    
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('user_id', userId);
+    
+    // Handle different platforms
+    if (photoUri.startsWith('data:')) {
+      // Data URI (web)
+      console.log('Handling data URI for web');
+      const response = await fetch(photoUri);
+      const blob = await response.blob();
+      formData.append('photo', blob, 'profile.jpg');
+    } else {
+      // File URI (mobile)
+      console.log('Handling file URI for mobile');
+      const fileExtension = photoUri.split('.').pop() || 'jpg';
+      const fileName = `profile.${fileExtension}`;
+      
+      // For React Native, we need to format the file object correctly
+      formData.append('photo', {
+        uri: photoUri,
+        type: `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`,
+        name: fileName,
+      });
+    }
+
+    console.log('Sending request to:', `${API_BASE_URL}/upload/profile-photo/`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for uploads
+
+    // Note: Don't set Content-Type header when using FormData - let the browser/RN set it
+    const response = await fetch(`${API_BASE_URL}/upload/profile-photo/`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    
+    console.log('Upload response status:', response.status);
+    
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    let data;
+    
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      console.log('Non-JSON response:', text);
+      data = { error: `Server returned non-JSON response: ${text}` };
+    }
+    
+    console.log('Upload response data:', data);
+
+    if (response.ok && data.success) {
+      return {
+        success: true,
+        photoUrl: data.photo_url || data.photoUrl,
+        message: data.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: data.error || data.message || `HTTP ${response.status}: ${response.statusText}`,
+    };
+  } catch (error) {
+    console.error('uploadProfilePhoto error:', error);
+    
+    if (error.name === 'AbortError') {
+      return { success: false, error: 'Upload timeout. Please try again.' };
+    }
+    
+    return { 
+      success: false, 
+      error: error.message || 'Failed to upload photo',
+    };
+  }
+}
+
+
+
+/**
+ * Legacy function for backward compatibility
+ * @deprecated Use registerUser instead
  */
 export async function createAccountWithEmail(email, password, role) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { role },
-    },
-  });
-  // data.user will be null until email is confirmed
-  return { user: data?.user ?? null, error };
+  const result = await registerUser(email, password, role);
+  
+  // Transform to match legacy format
+  if (result.success) {
+    return { user: result.user, error: null };
+  } else {
+    return { user: null, error: { message: result.error } };
+  }
 }
