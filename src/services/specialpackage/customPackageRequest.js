@@ -343,3 +343,152 @@ export async function updateCustomRequestStatus(requestId, requestType, updateDa
     };
   }
 }
+
+/**
+ * Get custom tour requests available for drivers to accept
+ * @returns {Promise<{ success: boolean, data?: array, error?: string }>}
+ */
+export async function getAvailableCustomTourRequestsForDrivers() {
+  try {
+    const result = await apiRequest('/custom-tour-requests/available-for-drivers/', {
+      method: 'GET',
+    });
+
+    if (result.success && result.data.success) {
+      const requests = result.data.data || [];
+      return {
+        success: true,
+        data: requests.map(req => ({ ...req, request_type: 'custom_tour' })),
+        count: requests.length,
+      };
+    }
+
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to fetch available custom tour requests',
+    };
+  } catch (error) {
+    console.error('Error fetching available custom tour requests for drivers:', error);
+    return {
+      success: false,
+      error: error.message || 'Network error occurred',
+    };
+  }
+}
+
+/**
+ * Driver accepts a custom tour request
+ * @param {string} requestId - Custom tour request ID
+ * @param {Object} driverData - Driver information
+ * @param {string} driverData.driver_id - Driver's ID
+ * @param {string} driverData.driver_name - Driver's name
+ * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
+ */
+export async function driverAcceptCustomTourRequest(requestId, driverData) {
+  try {
+    const result = await apiRequest(`/custom-tour-requests/driver-accept/${requestId}/`, {
+      method: 'POST',
+      body: JSON.stringify(driverData),
+    });
+
+    if (result.success && result.data.success) {
+      return {
+        success: true,
+        data: result.data.data,
+        message: result.data.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to accept custom tour request',
+    };
+  } catch (error) {
+    console.error('Error accepting custom tour request:', error);
+    return {
+      success: false,
+      error: error.message || 'Network error occurred',
+    };
+  }
+}
+
+/**
+ * Get special event requests available for owners to accept
+ * @returns {Promise<{ success: boolean, data?: array, error?: string }>}
+ */
+export async function getAvailableSpecialEventRequestsForOwners() {
+  try {
+    console.log('🌐 Service: Calling /special-event-requests/available-for-owners/');
+    const result = await apiRequest('/special-event-requests/available-for-owners/', {
+      method: 'GET',
+    });
+
+    console.log('🔍 Service: Raw API result:', JSON.stringify(result, null, 2));
+
+    if (result.success && result.data.success) {
+      const requests = result.data.data || [];
+      console.log(`✅ Service: Processing ${requests.length} special event requests`);
+      
+      const processedRequests = requests.map(req => ({ ...req, request_type: 'special_event' }));
+      console.log('📋 Service: First request sample:', JSON.stringify(processedRequests[0], null, 2));
+      
+      return {
+        success: true,
+        data: processedRequests,
+        count: processedRequests.length,
+      };
+    }
+
+    console.log('❌ Service: API call failed or returned unsuccessful response');
+    console.log('📋 Service: Result success:', result.success);
+    console.log('📋 Service: Data success:', result.data?.success);
+    console.log('📋 Service: Error:', result.data?.error || result.error);
+
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to fetch available special event requests',
+    };
+  } catch (error) {
+    console.error('💥 Service: Error fetching available special event requests for owners:', error);
+    return {
+      success: false,
+      error: error.message || 'Network error occurred',
+    };
+  }
+}
+
+/**
+ * Owner accepts a special event request
+ * @param {string} requestId - Special event request ID
+ * @param {Object} ownerData - Owner information
+ * @param {string} ownerData.owner_id - Owner's ID
+ * @param {string} ownerData.owner_name - Owner's name
+ * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
+ */
+export async function ownerAcceptSpecialEventRequest(requestId, ownerData) {
+  try {
+    const result = await apiRequest(`/special-event-requests/owner-accept/${requestId}/`, {
+      method: 'POST',
+      body: JSON.stringify(ownerData),
+    });
+
+    if (result.success && result.data.success) {
+      return {
+        success: true,
+        data: result.data.data,
+        message: result.data.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to accept special event request',
+    };
+  } catch (error) {
+    console.error('Error accepting special event request:', error);
+    return {
+      success: false,
+      error: error.message || 'Network error occurred',
+    };
+  }
+}

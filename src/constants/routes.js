@@ -18,4 +18,5 @@ export const BOOK = 'Book';
 export const PROFILE = 'Profile';
 export const EARNINGS = 'Earnings';
 export const BOOKINGS = 'Bookings';
+export const EVENTS = 'Events';
 export const MENU = 'Menu'; 

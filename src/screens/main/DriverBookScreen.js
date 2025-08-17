@@ -4,10 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings } from '../../services/tourpackage/acceptBooking';
+import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 
 export default function DriverBookScreen({ navigation }) {
   const [availableBookings, setAvailableBookings] = useState([]);
+  const [availableCustomTours, setAvailableCustomTours] = useState([]);
   const [driverBookings, setDriverBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,10 +51,11 @@ export default function DriverBookScreen({ navigation }) {
         userId = user.id;
       }
 
-      // Fetch both available bookings and driver's accepted bookings
+      // Fetch available bookings, custom tour requests, and driver's accepted bookings
       try {
         await Promise.all([
           fetchAvailableBookings(userId),
+          fetchAvailableCustomTours(),
           fetchDriverBookings(userId)
         ]);
       } catch (error) {
@@ -93,6 +96,24 @@ export default function DriverBookScreen({ navigation }) {
     } catch (error) {
       console.error('Error fetching available bookings:', error);
       setAvailableBookings([]);
+    }
+  };
+
+  const fetchAvailableCustomTours = async () => {
+    try {
+      console.log('Fetching available custom tour requests for drivers...');
+      const customToursData = await getAvailableCustomTourRequestsForDrivers();
+      console.log('Available custom tours response:', customToursData);
+      
+      if (customToursData && customToursData.success && Array.isArray(customToursData.data)) {
+        setAvailableCustomTours(customToursData.data);
+      } else {
+        console.log('Unexpected custom tours data format:', customToursData);
+        setAvailableCustomTours([]);
+      }
+    } catch (error) {
+      console.error('Error fetching available custom tours:', error);
+      setAvailableCustomTours([]);
     }
   };
 
@@ -160,22 +181,33 @@ export default function DriverBookScreen({ navigation }) {
     try {
       setAcceptingBooking(true);
       
-      // Use the service to accept the booking
-      const result = await driverAcceptBooking(selectedBooking.id, {
+      let result;
+      const driverData = {
         driver_id: user.id,
         driver_name: user.name || user.user_metadata?.name || user.email || 'Driver',
-      });
+      };
 
-      console.log('Accept booking response:', result);
+      // Check if this is a custom tour request or regular booking
+      if (selectedBooking.request_type === 'custom_tour') {
+        result = await driverAcceptCustomTourRequest(selectedBooking.id, driverData);
+      } else {
+        result = await driverAcceptBooking(selectedBooking.id, driverData);
+      }
+
+      console.log('Accept booking/request response:', result);
 
       if (result.success) {
-        Alert.alert('Success', 'Booking accepted successfully!', [
+        const message = selectedBooking.request_type === 'custom_tour' 
+          ? 'Custom tour request accepted successfully!' 
+          : 'Booking accepted successfully!';
+        
+        Alert.alert('Success', message, [
           {
             text: 'OK',
             onPress: () => {
               setShowAcceptModal(false);
               setSelectedBooking(null);
-              fetchUserAndBookings(); // Refresh both lists
+              fetchUserAndBookings(); // Refresh all lists
             },
           },
         ]);
@@ -201,6 +233,12 @@ export default function DriverBookScreen({ navigation }) {
       case 'completed':
         return '#4CAF50';
       case 'cancelled':
+        return '#F44336';
+      case 'pending':
+        return '#9C27B0';
+      case 'approved':
+        return '#4CAF50';
+      case 'rejected':
         return '#F44336';
       default:
         return '#757575';
@@ -318,6 +356,98 @@ export default function DriverBookScreen({ navigation }) {
     </View>
   );
 
+  const renderCustomTourCard = (tour) => (
+    <View key={tour.id} style={[styles.bookingCard, styles.customTourCard]}>
+      <View style={styles.bookingHeader}>
+        <View style={styles.bookingInfo}>
+          <Text style={styles.bookingReference}>
+            Custom Tour #{tour.id.substring(0, 8)}
+          </Text>
+          <View style={styles.customTourBadge}>
+            <Text style={styles.customTourBadgeText}>CUSTOM</Text>
+          </View>
+        </View>
+        <View style={styles.statusContainer}>
+          <Ionicons 
+            name={getStatusIcon(tour.status)} 
+            size={20} 
+            color={getStatusColor(tour.status)} 
+          />
+          <Text style={[styles.statusText, { color: getStatusColor(tour.status) }]}>
+            {tour.status?.replace('_', ' ') || 'Unknown'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.bookingDetails}>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Destination:</Text>
+          <Text style={styles.detailValue}>{tour.destination || 'N/A'}</Text>
+        </View>
+        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Customer:</Text>
+          <Text style={styles.detailValue}>{tour.customer_name || 'N/A'}</Text>
+        </View>
+        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Passengers:</Text>
+          <Text style={styles.detailValue}>{tour.number_of_pax || 'N/A'}</Text>
+        </View>
+        
+        {tour.pickup_location && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Pickup Location:</Text>
+            <Text style={styles.detailValue}>{tour.pickup_location}</Text>
+          </View>
+        )}
+        
+        {tour.preferred_date && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Preferred Date:</Text>
+            <Text style={styles.detailValue}>{formatDate(tour.preferred_date)}</Text>
+          </View>
+        )}
+        
+        {tour.preferred_duration_hours && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Duration:</Text>
+            <Text style={styles.detailValue}>{tour.preferred_duration_hours} hours</Text>
+          </View>
+        )}
+        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Contact:</Text>
+          <Text style={styles.detailValue}>{tour.contact_number || 'N/A'}</Text>
+        </View>
+        
+        {tour.approved_price && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Approved Price:</Text>
+            <Text style={styles.detailValue}>{formatCurrency(tour.approved_price)}</Text>
+          </View>
+        )}
+        
+        {tour.special_requests && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Special Requests:</Text>
+            <Text style={styles.detailValue}>{tour.special_requests}</Text>
+          </View>
+        )}
+      </View>
+
+      {tour.status === 'waiting_for_driver' && activeTab === 'available' && (
+        <TouchableOpacity 
+          style={[styles.acceptButton, styles.customTourAcceptButton]}
+          onPress={() => handleAcceptBooking(tour)}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+          <Text style={styles.acceptButtonText}>Accept Tour</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons 
@@ -326,11 +456,11 @@ export default function DriverBookScreen({ navigation }) {
         color="#ccc" 
       />
       <Text style={styles.emptyStateTitle}>
-        {activeTab === 'available' ? 'No Available Bookings' : 'No Booking History'}
+        {activeTab === 'available' ? 'No Available Bookings or Custom Tours' : 'No Booking History'}
       </Text>
       <Text style={styles.emptyStateSubtitle}>
         {activeTab === 'available' 
-          ? 'There are currently no bookings waiting for drivers. Check back later!'
+          ? 'There are currently no bookings or custom tours waiting for drivers. Check back later!'
           : 'You haven\'t accepted any bookings yet. Start by accepting available bookings!'
         }
       </Text>
@@ -376,6 +506,7 @@ export default function DriverBookScreen({ navigation }) {
   );
 
   const currentBookings = activeTab === 'available' ? availableBookings : driverBookings;
+  const currentCustomTours = activeTab === 'available' ? availableCustomTours : [];
 
   // Debug logging
   console.log('Current tab:', activeTab);
@@ -390,7 +521,7 @@ export default function DriverBookScreen({ navigation }) {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {activeTab === 'available' ? 'Available Bookings' : 'Booking History'}
+            {activeTab === 'available' ? 'Available Bookings & Custom Tours' : 'Booking History'}
           </Text>
           <Text style={styles.subtitle}>
             {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : 'accepted'} bookings
@@ -429,8 +560,11 @@ export default function DriverBookScreen({ navigation }) {
             }
             showsVerticalScrollIndicator={false}
           >
-            {currentBookings.length > 0 ? (
-              currentBookings.map(renderBookingCard)
+            {(currentBookings.length > 0 || currentCustomTours.length > 0) ? (
+              <>
+                {currentBookings.map(renderBookingCard)}
+                {currentCustomTours.map(renderCustomTourCard)}
+              </>
             ) : (
               renderEmptyState()
             )}
@@ -447,24 +581,47 @@ export default function DriverBookScreen({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Accept Booking</Text>
+            <Text style={styles.modalTitle}>
+              {selectedBooking?.request_type === 'custom_tour' ? 'Accept Custom Tour' : 'Accept Booking'}
+            </Text>
             <Text style={styles.modalText}>
-              Are you sure you want to accept this booking?
+              Are you sure you want to accept this {selectedBooking?.request_type === 'custom_tour' ? 'custom tour request' : 'booking'}?
             </Text>
             {selectedBooking && (
               <View style={styles.modalBookingInfo}>
-                <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Package:</Text> {selectedBooking.package_name}
-                </Text>
-                <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Date:</Text> {formatDate(selectedBooking.booking_date)}
-                </Text>
-                <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
-                </Text>
-                <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Pickup:</Text> {selectedBooking.pickup_address}
-                </Text>
+                {selectedBooking.request_type === 'custom_tour' ? (
+                  <>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Destination:</Text> {selectedBooking.destination || 'N/A'}
+                    </Text>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Customer:</Text> {selectedBooking.customer_name || 'N/A'}
+                    </Text>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                    </Text>
+                    {selectedBooking.preferred_date && (
+                      <Text style={styles.modalBookingText}>
+                        <Text style={styles.modalLabel}>Preferred Date:</Text> {formatDate(selectedBooking.preferred_date)}
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Package:</Text> {selectedBooking.package_name}
+                    </Text>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Date:</Text> {formatDate(selectedBooking.booking_date)}
+                    </Text>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                    </Text>
+                    <Text style={styles.modalBookingText}>
+                      <Text style={styles.modalLabel}>Pickup:</Text> {selectedBooking.pickup_address}
+                    </Text>
+                  </>
+                )}
               </View>
             )}
             <View style={styles.modalButtons}>
@@ -756,5 +913,26 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  // Custom tour card styles
+  customTourCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#9C27B0',
+  },
+  customTourBadge: {
+    backgroundColor: '#9C27B0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  customTourBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  customTourAcceptButton: {
+    backgroundColor: '#9C27B0',
   },
 });

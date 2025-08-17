@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
+import OwnerBookScreen from '../screens/main/OwnerBookScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import * as Routes from '../constants/routes';
@@ -13,15 +14,17 @@ export default function OwnerTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size }) => {
-          if (route.name === 'Home') {
+          if (route.name === Routes.HOME) {
             return <Ionicons name="home-outline" size={size} color={color} />;
-          } else if (route.name === 'Profile') {
+          } else if (route.name === Routes.EVENTS) {
+            return <Ionicons name="star-outline" size={size} color={color} />;
+          } else if (route.name === Routes.PROFILE) {
             return <Ionicons name="person-outline" size={size} color={color} />;
           }
         },
         tabBarActiveTintColor: '#6B2E2B',
         tabBarInactiveTintColor: '#aaa',
-        tabBarShowLabel: false,
+        tabBarShowLabel: true,
         headerShown: false,
       })}
     >
@@ -29,6 +32,11 @@ export default function OwnerTabs() {
         name={Routes.HOME}
         component={OwnerHomeScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')} /> }}
+      />
+      <Tab.Screen
+        name={Routes.EVENTS}
+        component={OwnerBookScreen}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name={Routes.PROFILE}
