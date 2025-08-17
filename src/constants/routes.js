@@ -8,6 +8,8 @@ export const ACCOUNT_DETAILS = 'AccountDetails';
 export const NOTIFICATION = 'Notification';
 export const REQUEST_BOOKING = 'RequestBooking';
 export const TARTANILLA_CARRIAGES = 'TartanillaCarriages';
+export const CUSTOM_PACKAGE_REQUEST = 'CustomPackageRequest';
+export const CUSTOM_REQUEST_HISTORY = 'CustomRequestHistory';
 
 // Tab names
 export const HOME = 'Home';

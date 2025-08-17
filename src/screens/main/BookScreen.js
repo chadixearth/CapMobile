@@ -228,15 +228,27 @@ export default function BookScreen({ navigation }) {
           <Text style={styles.subtitle}>
             {user?.name || user?.user_metadata?.name || user?.email || 'User'}'s booking history
           </Text>
-          <TouchableOpacity 
-            style={styles.debugButton}
-            onPress={() => {
-              console.log('Testing API connection...');
-              fetchUserAndBookings();
-            }}
-          >
-            <Text style={styles.debugButtonText}>Refresh</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {/* Only show custom request history for tourists */}
+            {(user?.role === 'tourist' || (!user?.role && user)) && (
+              <TouchableOpacity 
+                style={styles.historyButton}
+                onPress={() => navigation.navigate('CustomRequestHistory')}
+              >
+                <Ionicons name="time-outline" size={16} color="#fff" />
+                <Text style={styles.historyButtonText}>Custom Requests</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity 
+              style={styles.debugButton}
+              onPress={() => {
+                console.log('Testing API connection...');
+                fetchUserAndBookings();
+              }}
+            >
+              <Text style={styles.debugButtonText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
@@ -275,6 +287,27 @@ const styles = StyleSheet.create({
   header: {
     paddingVertical: 20,
     alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  historyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  historyButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   title: {
     fontSize: 24,

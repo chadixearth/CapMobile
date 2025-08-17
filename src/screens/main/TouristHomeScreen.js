@@ -293,7 +293,16 @@ export default function TouristHomeScreen({ navigation }) {
         />
 
         {/* Tour Packages */}
-        <Text style={styles.sectionTitle}>Tour Packages</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Tour Packages</Text>
+          <TouchableOpacity 
+            style={styles.customRequestButton}
+            onPress={() => navigation.navigate('CustomPackageRequest')}
+          >
+            <Ionicons name="add-circle-outline" size={16} color="#6B2E2B" />
+            <Text style={styles.customRequestButtonText}>Custom Request</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.networkStatusContainer}>
           <View>
             <Text style={[styles.networkStatus, { color: networkStatus === 'Connected' ? '#4CAF50' : '#F44336' }]}>
@@ -474,13 +483,34 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginVertical: 8,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginLeft: 16,
-    marginTop: 16,
-    marginBottom: 8,
     color: '#222',
+  },
+  customRequestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5E9E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+  },
+  customRequestButtonText: {
+    color: '#6B2E2B',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   networkStatusContainer: {
     flexDirection: 'row',
