@@ -1,12 +1,27 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  RefreshControl, 
+  TouchableOpacity, 
+  Alert, 
+  Modal, 
+  TextInput,
+  ActivityIndicator,
+  Dimensions
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import carriageService, { testCarriageConnection, setApiBaseUrl } from '../../services/tourpackage/fetchCarriage';
 import { useAuth } from '../../hooks/useAuth';
 
+const { width } = Dimensions.get('window');
 const MAROON = '#6B2E2B';
+const LIGHT_GRAY = '#f5f5f5';
+const DARK_GRAY = '#333';
 
 export default function TartanillaCarriagesScreen({ navigation }) {
   const auth = useAuth();
@@ -15,6 +30,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const [newCarriage, setNewCarriage] = useState({
     plate_number: '', 
     capacity: '4',
@@ -160,9 +176,25 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
-  const handleAddCarriage = async () => {
+  const validateForm = () => {
+    const errors = {};
     if (!newCarriage.plate_number.trim()) {
-      Alert.alert('Error', 'Plate number is required');
+      errors.plate_number = 'Plate number is required';
+    } else if (!/^[A-Z0-9-]+$/i.test(newCarriage.plate_number)) {
+      errors.plate_number = 'Enter a valid plate number';
+    }
+    
+    const capacity = parseInt(newCarriage.capacity);
+    if (isNaN(capacity) || capacity < 1 || capacity > 10) {
+      errors.capacity = 'Capacity must be between 1 and 10';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddCarriage = async () => {
+    if (!validateForm()) {
       return;
     }
 
@@ -222,16 +254,55 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           <Text style={styles.testConnectionButtonText}>Test API Connection</Text>
         </TouchableOpacity>
       )}
+      
+      {loading && <ActivityIndicator size="large" color={MAROON} style={{marginTop: 20}} />}
     </View>
   );
+
+  const getStatusTextStyle = (status) => {
+    switch (status) {
+      case 'available':
+        return { color: '#28a745' };
+      case 'in_use':
+        return { color: '#dc3545' };
+      case 'maintenance':
+        return { color: '#ffc107' };
+      default:
+        return { color: DARK_GRAY };
+    }
+  };
 
   const renderCarriageCard = (carriage) => (
     <View key={carriage.id || carriage.plate_number} style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{carriage.plate_number}</Text>
-        <View style={[styles.statusPill, getStatusStyle(carriage.status)]}>
-          <Text style={styles.statusText}>{(carriage.status || 'unknown').toUpperCase()}</Text>
+        <View style={styles.cardTitleContainer}>
+          <Ionicons name="car-sport" size={24} color={MAROON} style={styles.cardIcon} />
+          <Text style={styles.cardTitle}>{carriage.plate_number}</Text>
         </View>
+        <View style={[styles.statusPill, getStatusStyle(carriage.status)]}>
+          <Text style={styles.statusText}>{(carriage.status || 'unknown').replace('_', ' ').toUpperCase()}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.cardDetails}>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Capacity:</Text>
+          <Text style={styles.detailValue}>{carriage.capacity} persons</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Status:</Text>
+          <Text style={[styles.detailValue, getStatusTextStyle(carriage.status)]}>
+            {carriage.status ? carriage.status.replace('_', ' ') : 'N/A'}
+          </Text>
+        </View>
+        {carriage.notes && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Notes:</Text>
+            <Text style={[styles.detailValue, {flex: 1}]} numberOfLines={2}>
+              {carriage.notes}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.row}>
@@ -264,7 +335,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      <TARTRACKHeader 
+        title="My Carriages"
+        navigation={navigation}
+        rightComponent={
+          auth.user?.role === 'owner' && (
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setShowAddModal(true)}
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          )
+        }
+      />
 
       <View style={styles.content}>
         <View style={styles.header}>
@@ -288,19 +372,37 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           </View>
         </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading your carriages...</Text>
-          </View>
-        ) : (
-          <ScrollView
-            style={styles.scrollView}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            showsVerticalScrollIndicator={false}
-          >
-            {carriages.length > 0 ? carriages.map(renderCarriageCard) : renderEmptyState()}
-          </ScrollView>
-        )}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={carriages.length === 0 && styles.emptyScrollView}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[MAROON]}
+              tintColor={MAROON}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {carriages.length === 0 ? (
+            renderEmptyState()
+          ) : (
+            <View style={styles.carriagesList}>
+              {carriages.map(renderCarriageCard)}
+              
+              {auth.user?.role === 'owner' && (
+                <TouchableOpacity 
+                  style={[styles.card, styles.addCard]}
+                  onPress={() => setShowAddModal(true)}
+                >
+                  <Ionicons name="add-circle" size={40} color={MAROON} />
+                  <Text style={styles.addCardText}>Add New Carriage</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </ScrollView>
 
         {/* Add Carriage Modal */}
         <Modal
@@ -437,29 +539,51 @@ function getStatusStyle(status) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: LIGHT_GRAY,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
   },
   header: {
-    marginTop: 8,
-    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: MAROON,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  apiUrlContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: MAROON,
   },
   subtitle: {
     color: '#666',
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
   apiUrl: {
     color: '#999',
     fontSize: 12,
-    marginTop: 2,
+    marginLeft: 4,
     fontFamily: 'monospace',
   },
   headerButtons: {
@@ -468,17 +592,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: MAROON,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
   },
   refreshButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
   addButton: {
-    backgroundColor: MAROON,
+    backgroundColor: '#333',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -515,10 +642,57 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  emptyScrollView: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  carriagesList: {
+    padding: 16,
+  },
+  addCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+    borderStyle: 'dashed',
+    borderColor: MAROON,
+    backgroundColor: '#fafafa',
+  },
+  addCardText: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '600',
+    color: MAROON,
+  },
+  cardTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardIcon: {
+    marginRight: 8,
+  },
+  cardDetails: {
+    marginTop: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    width: 80,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
+    padding: 32,
   },
   emptyStateTitle: {
     marginTop: 12,

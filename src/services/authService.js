@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
-// For physical device: Use your computer's IP address (e.g., 10.196.222.213)
+// For physical device: Use your computer's IP address (e.g., 192.168.1.8)
 // For Android emulator: Use 10.0.2.2 (maps to host machine's localhost)
 // For iOS simulator: Use localhost or 127.0.0.1
-const API_BASE_URL = 'http://10.196.222.213:8000/api';
+const API_BASE_URL = 'http://192.168.1.8:8000/api';
 
 // Session keys for AsyncStorage
 const SESSION_KEYS = {
@@ -56,8 +56,8 @@ async function apiRequest(endpoint, options = {}) {
     
     // Check for specific network errors
     if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND')) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: `Cannot connect to server. Please check:\n1. API server is running on ${API_BASE_URL}\n2. Your device is on the same network\n3. Firewall allows port 8000` 
       };
     }

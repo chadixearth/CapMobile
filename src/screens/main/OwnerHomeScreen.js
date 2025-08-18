@@ -22,11 +22,14 @@ export default function OwnerHomeScreen({ navigation }) {
       </View>
 
       <View style={styles.row}>
-        <View style={styles.smallCard}>
+        <TouchableOpacity 
+          style={styles.smallCard}
+          onPress={() => navigation.navigate('TartanillaCarriages')}
+        >
           <Ionicons name="bus-outline" size={22} color="#6B2E2B" />
-          <Text style={styles.smallCardLabel}>Vehicles</Text>
+          <Text style={styles.smallCardLabel}>Carriages</Text>
           <Text style={styles.smallCardValue}>5</Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.smallCard}>
           <Ionicons name="people-outline" size={22} color="#6B2E2B" />
           <Text style={styles.smallCardLabel}>Drivers</Text>
