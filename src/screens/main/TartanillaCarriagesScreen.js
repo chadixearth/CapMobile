@@ -1,11 +1,26 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  RefreshControl, 
+  TouchableOpacity, 
+  Alert, 
+  Modal, 
+  TextInput,
+  ActivityIndicator,
+  Dimensions
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import carriageService, { testCarriageConnection, setApiBaseUrl } from '../../services/tourpackage/fetchCarriage';
 
+const { width } = Dimensions.get('window');
 const MAROON = '#6B2E2B';
+const LIGHT_GRAY = '#f5f5f5';
+const DARK_GRAY = '#333';
 
 export default function TartanillaCarriagesScreen({ navigation }) {
   const [carriages, setCarriages] = useState([]);
@@ -13,6 +28,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const [newCarriage, setNewCarriage] = useState({
     plate_number: '', 
     capacity: '4',
@@ -22,7 +38,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
-  const [currentApiUrl, setCurrentApiUrl] = useState('http://192.168.1.9:8000/api/tartanilla-carriages/');
+  const [currentApiUrl, setCurrentApiUrl] = useState('http://192.168.1.8:8000/api/tartanilla-carriages/');
 
   useEffect(() => {
     fetchUserAndCarriages();
@@ -102,7 +118,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = 'Failed to load carriages';
       
       if (err.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.8:8000';
       } else if (err.message.includes('HTTP error')) {
         errorMessage = `Server error: ${err.message}`;
       }
@@ -127,9 +143,25 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   }, [user]);
 
-  const handleAddCarriage = async () => {
+  const validateForm = () => {
+    const errors = {};
     if (!newCarriage.plate_number.trim()) {
-      Alert.alert('Error', 'Plate number is required');
+      errors.plate_number = 'Plate number is required';
+    } else if (!/^[A-Z0-9-]+$/i.test(newCarriage.plate_number)) {
+      errors.plate_number = 'Enter a valid plate number';
+    }
+    
+    const capacity = parseInt(newCarriage.capacity);
+    if (isNaN(capacity) || capacity < 1 || capacity > 10) {
+      errors.capacity = 'Capacity must be between 1 and 10';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddCarriage = async () => {
+    if (!validateForm()) {
       return;
     }
 
@@ -164,7 +196,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = error.message || 'Failed to add carriage';
       
       if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.8:8000';
       } else if (error.message.includes('HTTP error')) {
         errorMessage = `Server error: ${error.message}`;
       }
@@ -177,28 +209,86 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="car-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Carriages Found</Text>
-      <Text style={styles.emptyStateSubtitle}>
-        {user?.user_metadata?.role === 'owner'
-          ? 'You have not registered any tartanilla carriages yet.'
-          : 'Only owners can view their tartanilla carriages.'}
+      <Ionicons name="car-outline" size={80} color="#ddd" />
+      <Text style={styles.emptyStateTitle}>
+        {loading ? 'Loading...' : 'No Carriages Found'}
       </Text>
-      {user?.user_metadata?.role === 'owner' && (
-        <TouchableOpacity style={styles.testConnectionButton} onPress={testConnection}>
-          <Text style={styles.testConnectionButtonText}>Test API Connection</Text>
-        </TouchableOpacity>
+      <Text style={styles.emptyStateSubtitle}>
+        {loading 
+          ? 'Fetching your carriages...'
+          : user?.user_metadata?.role === 'owner'
+            ? 'You have not registered any tartanilla carriages yet.'
+            : 'Only owners can view their tartanilla carriages.'}
+      </Text>
+      
+      {user?.user_metadata?.role === 'owner' && !loading && (
+        <View style={styles.emptyStateActions}>
+          <TouchableOpacity 
+            style={[styles.button, {backgroundColor: MAROON, marginBottom: 10}]} 
+            onPress={() => setShowAddModal(true)}
+          >
+            <Ionicons name="add" size={20} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.buttonText}>Add New Carriage</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, {backgroundColor: '#555'}]} 
+            onPress={testConnection}
+          >
+            <Ionicons name="wifi" size={18} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.buttonText}>Test API Connection</Text>
+          </TouchableOpacity>
+        </View>
       )}
+      
+      {loading && <ActivityIndicator size="large" color={MAROON} style={{marginTop: 20}} />}
     </View>
   );
+
+  const getStatusTextStyle = (status) => {
+    switch (status) {
+      case 'available':
+        return { color: '#28a745' };
+      case 'in_use':
+        return { color: '#dc3545' };
+      case 'maintenance':
+        return { color: '#ffc107' };
+      default:
+        return { color: DARK_GRAY };
+    }
+  };
 
   const renderCarriageCard = (carriage) => (
     <View key={carriage.id || carriage.plate_number} style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{carriage.plate_number}</Text>
-        <View style={[styles.statusPill, getStatusStyle(carriage.status)]}>
-          <Text style={styles.statusText}>{(carriage.status || 'unknown').toUpperCase()}</Text>
+        <View style={styles.cardTitleContainer}>
+          <Ionicons name="car-sport" size={24} color={MAROON} style={styles.cardIcon} />
+          <Text style={styles.cardTitle}>{carriage.plate_number}</Text>
         </View>
+        <View style={[styles.statusPill, getStatusStyle(carriage.status)]}>
+          <Text style={styles.statusText}>{(carriage.status || 'unknown').replace('_', ' ').toUpperCase()}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.cardDetails}>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Capacity:</Text>
+          <Text style={styles.detailValue}>{carriage.capacity} persons</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Status:</Text>
+          <Text style={[styles.detailValue, getStatusTextStyle(carriage.status)]}>
+            {carriage.status ? carriage.status.replace('_', ' ') : 'N/A'}
+          </Text>
+        </View>
+        {carriage.notes && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Notes:</Text>
+            <Text style={[styles.detailValue, {flex: 1}]} numberOfLines={2}>
+              {carriage.notes}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.row}>
@@ -231,43 +321,86 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      <TARTRACKHeader 
+        title="My Carriages"
+        navigation={navigation}
+        rightComponent={
+          user?.user_metadata?.role === 'owner' && (
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setShowAddModal(true)}
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          )
+        }
+      />
 
       <View style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>My Tartanilla Carriages</Text>
-          <Text style={styles.subtitle}>
-            {user?.user_metadata?.name || user?.email || 'Owner'}
-          </Text>
-          <Text style={styles.apiUrl}>API: {currentApiUrl}</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.refreshButton} onPress={fetchUserAndCarriages}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-              <Ionicons name="add" size={20} color="#fff" />
-              <Text style={styles.addButtonText}>Add Carriage</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.testButton} onPress={testConnection}>
-              <Ionicons name="wifi-outline" size={16} color="#fff" />
-              <Text style={styles.testButtonText}>Test</Text>
-            </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={styles.title}>My Tartanilla Carriages</Text>
+            <Text style={styles.subtitle}>
+              {user?.user_metadata?.name || user?.email || 'Owner'}
+            </Text>
+            {__DEV__ && (
+              <TouchableOpacity 
+                onPress={testConnection}
+                style={styles.apiUrlContainer}
+              >
+                <Ionicons name="wifi" size={14} color="#666" />
+                <Text style={styles.apiUrl}>
+                  {currentApiUrl.replace('http://', '').replace('/api/tartanilla-carriages/', '')}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
+          
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={fetchUserAndCarriages}
+            disabled={loading}
+          >
+            <Ionicons 
+              name="refresh" 
+              size={20} 
+              color="#fff" 
+              style={refreshing ? { transform: [{ rotate: '360deg' }] } : null}
+            />
+          </TouchableOpacity>
         </View>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading your carriages...</Text>
-          </View>
-        ) : (
-          <ScrollView
-            style={styles.scrollView}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            showsVerticalScrollIndicator={false}
-          >
-            {carriages.length > 0 ? carriages.map(renderCarriageCard) : renderEmptyState()}
-          </ScrollView>
-        )}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={carriages.length === 0 && styles.emptyScrollView}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[MAROON]}
+              tintColor={MAROON}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {carriages.length === 0 ? (
+            renderEmptyState()
+          ) : (
+            <View style={styles.carriagesList}>
+              {carriages.map(renderCarriageCard)}
+              
+              {user?.user_metadata?.role === 'owner' && (
+                <TouchableOpacity 
+                  style={[styles.card, styles.addCard]}
+                  onPress={() => setShowAddModal(true)}
+                >
+                  <Ionicons name="add-circle" size={40} color={MAROON} />
+                  <Text style={styles.addCardText}>Add New Carriage</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </ScrollView>
 
         {/* Add Carriage Modal */}
         <Modal
@@ -404,29 +537,51 @@ function getStatusStyle(status) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: LIGHT_GRAY,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
   },
   header: {
-    marginTop: 8,
-    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: MAROON,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  apiUrlContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: MAROON,
   },
   subtitle: {
     color: '#666',
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
   apiUrl: {
     color: '#999',
     fontSize: 12,
-    marginTop: 2,
+    marginLeft: 4,
     fontFamily: 'monospace',
   },
   headerButtons: {
@@ -435,17 +590,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: MAROON,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
   },
   refreshButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
   addButton: {
-    backgroundColor: MAROON,
+    backgroundColor: '#333',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -482,10 +640,14 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  emptyScrollView: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
+    padding: 32,
   },
   emptyStateTitle: {
     marginTop: 12,

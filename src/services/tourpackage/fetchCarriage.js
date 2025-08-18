@@ -1,6 +1,6 @@
 // services/carriageService.js
 // Use your computer's IP address instead of localhost for mobile devices
-const API_BASE_URL = 'http://192.168.1.9:8000/api/tartanilla-carriages/';
+const API_BASE_URL = 'http://192.168.1.8:8000/api/tartanilla-carriages/';
 
 // Helper: timeout via AbortController
 const withTimeout = async (promiseFactory, ms = 10000) => {
@@ -51,12 +51,12 @@ const unwrapObject = (data) => {
 
 export const testCarriageConnection = async () => {
   const testUrls = [
-    'http://192.168.1.9:8000/api/tartanilla-carriages/',
-    'http://192.168.1.9:8000/api/carriages/',
-    'http://192.168.1.9:8000/tartanilla-carriages/',
-    'http://192.168.1.9:8000/carriages/',
-    'http://192.168.1.9:8000/api/',
-    'http://192.168.1.9:8000/',
+    'http://192.168.1.8:8000/api/tartanilla-carriages/',
+    'http://192.168.1.8:8000/api/carriages/',
+    'http://192.168.1.8:8000/tartanilla-carriages/',
+    'http://192.168.1.8:8000/carriages/',
+    'http://192.168.1.8:8000/api/',
+    'http://192.168.1.8:8000/',
   ];
 
   for (const url of testUrls) {

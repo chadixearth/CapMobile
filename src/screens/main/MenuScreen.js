@@ -92,7 +92,6 @@ export default function MenuScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Activity</Text>
         <View style={styles.sectionBox}>
           <ProfileItem icon={<Ionicons name="person-outline" size={22} color="#6B2E2B" />} label="Account Details" onPress={() => navigation.navigate(Routes.ACCOUNT_DETAILS)} />
-          <ProfileItem icon={<Ionicons name="car-outline" size={22} color="#6B2E2B" />} label="Tartanilla Carriages" onPress={() => navigation.navigate(Routes.TARTANILLA_CARRIAGES)} />
           <ProfileItem icon={<Ionicons name="star-outline" size={22} color="#6B2E2B" />} label="Reviews" />
         </View>
 
