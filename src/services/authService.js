@@ -1,6 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
+// For physical device: Use your computer's IP address (e.g., 10.196.222.213)
+// For Android emulator: Use 10.0.2.2 (maps to host machine's localhost)
+// For iOS simulator: Use localhost or 127.0.0.1
 const API_BASE_URL = 'http://10.196.222.213:8000/api';
 
 // Session keys for AsyncStorage
@@ -15,6 +18,8 @@ const SESSION_KEYS = {
  */
 async function apiRequest(endpoint, options = {}) {
   try {
+    console.log(`Making API request to: ${API_BASE_URL}${endpoint}`);
+    
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     
@@ -30,15 +35,33 @@ async function apiRequest(endpoint, options = {}) {
     clearTimeout(timeoutId);
     const data = await response.json();
     
+    console.log(`API response status: ${response.status}`);
+    
     return {
       success: response.ok,
       data,
       status: response.status,
     };
   } catch (error) {
+    console.error('API request error:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    
     if (error.name === 'AbortError') {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
+    
+    // Check for specific network errors
+    if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND')) {
+      return { 
+        success: false, 
+        error: `Cannot connect to server. Please check:\n1. API server is running on ${API_BASE_URL}\n2. Your device is on the same network\n3. Firewall allows port 8000` 
+      };
+    }
+    
     return { success: false, error: error.message || 'Network error occurred' };
   }
 }
