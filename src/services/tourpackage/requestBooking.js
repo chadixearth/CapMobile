@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/'; 
+const API_BASE_URL = 'http://192.168.1.8:8000/api/booking/'; 
 
 export async function createBooking(bookingData) {
   try {
@@ -15,7 +15,7 @@ export async function createBooking(bookingData) {
       signal: controller.signal,
     });
     
-    clearTimeout(timeoutId);
+    clearTimeout(timeoutId);  
     
     if (!response.ok) {
       const errorText = await response.text();
