@@ -8,13 +8,30 @@ import { getCurrentUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function BookScreen({ navigation }) {
+  // All hooks must be called at the top level, before any conditional returns
   const auth = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
 
-  // Show loading or redirect if not authenticated
+  // Handle authentication redirect in useEffect to avoid hooks rule violation
+  useEffect(() => {
+    if (!auth.loading && !auth.isAuthenticated) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }
+  }, [auth.loading, auth.isAuthenticated, navigation]);
+
+  useEffect(() => {
+    if (!auth.loading && auth.isAuthenticated) {
+      fetchUserAndBookings();
+    }
+  }, [auth.loading, auth.isAuthenticated]);
+
+  // Show loading while auth is being determined
   if (auth.loading) {
     return (
       <View style={styles.container}>
@@ -26,20 +43,10 @@ export default function BookScreen({ navigation }) {
     );
   }
 
+  // Return null while redirecting (but after all hooks have been called)
   if (!auth.isAuthenticated) {
-    // Redirect to welcome screen
-    React.useEffect(() => {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
-    }, [navigation]);
     return null;
   }
-
-  useEffect(() => {
-    fetchUserAndBookings();
-  }, []);
 
   const fetchUserAndBookings = async () => {
     try {

@@ -82,7 +82,7 @@ export const useAuth = () => {
   // Initialize auth state on hook mount
   useEffect(() => {
     checkAuth();
-  }, [checkAuth]);
+  }, []); // Remove checkAuth from dependencies to avoid infinite loop
 
   return {
     isAuthenticated,
