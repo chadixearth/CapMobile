@@ -1,13 +1,38 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { checkAuthStatus } from '../../services/authService';
 
-export default function SplashScreen({ navigation }) {
+export default function SplashScreen({ navigation, setRole }) {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('Welcome');
-    }, 2000); // 2 seconds
-    return () => clearTimeout(timer);
-  }, [navigation]);
+    const checkAuthentication = async () => {
+      try {
+        // Check if user is already logged in
+        const authStatus = await checkAuthStatus();
+        
+        if (authStatus.isLoggedIn && authStatus.user) {
+          // User is logged in, get their role and navigate to main screen
+          const userRole = authStatus.user.role || 'tourist';
+          if (setRole) {
+            setRole(userRole);
+          }
+          navigation.replace('Main');
+        } else {
+          // User is not logged in, show welcome screen
+          setTimeout(() => {
+            navigation.replace('Welcome');
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('Authentication check failed:', error);
+        // On error, default to welcome screen
+        setTimeout(() => {
+          navigation.replace('Welcome');
+        }, 1000);
+      }
+    };
+
+    checkAuthentication();
+  }, [navigation, setRole]);
 
   return (
     <View style={styles.container}>

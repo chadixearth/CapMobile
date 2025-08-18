@@ -19,19 +19,22 @@ import * as Routes from '../constants/routes';
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const [role, setRole] = React.useState(null); // null, 'tourist', or 'driver'
+  const [role, setRole] = React.useState(null); // null, 'tourist', 'driver', or 'owner'
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name={Routes.SPLASH} component={SplashScreen} />
+      <Stack.Screen name={Routes.SPLASH}>
+        {props => <SplashScreen {...props} setRole={setRole} />}
+      </Stack.Screen>
       <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
       <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
       <Stack.Screen name={Routes.LOGIN}>
-        {props => <LoginScreen {...props} setRole={setRole} />}
+        {props => <LoginScreen {...props} setRole={setRole} setIsAuthenticated={setIsAuthenticated} />}
       </Stack.Screen>
       <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
       <Stack.Screen name={Routes.MAIN}>
-        {() => (role === 'driver' ? <DriverTabs /> : role === 'owner' ? <OwnerTabs /> : <MainTabs />)}
+        {props => (role === 'driver' ? <DriverTabs {...props} setRole={setRole} /> : role === 'owner' ? <OwnerTabs {...props} setRole={setRole} /> : <MainTabs {...props} setRole={setRole} />)}
       </Stack.Screen>
       <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
       <Stack.Screen name={Routes.TARTANILLA_CARRIAGES} component={TartanillaCarriagesScreen} />

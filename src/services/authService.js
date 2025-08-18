@@ -260,11 +260,62 @@ export async function getUserProfile(userId) {
 export async function checkAuthStatus() {
   const session = await getStoredSession();
   
+  if (!session.accessToken || !session.user) {
+    return {
+      isLoggedIn: false,
+      user: null,
+      accessToken: null,
+    };
+  }
+
+  // TODO: Add token validation with backend if needed
+  // For now, we trust the stored session
   return {
-    isLoggedIn: !!(session.accessToken && session.user),
+    isLoggedIn: true,
     user: session.user,
     accessToken: session.accessToken,
   };
+}
+
+/**
+ * Validate current session with backend
+ * @returns {Promise<{ valid: boolean, user?: object }>}
+ */
+export async function validateSession() {
+  try {
+    const session = await getStoredSession();
+    
+    if (!session.accessToken || !session.user) {
+      return { valid: false };
+    }
+
+    // Make a simple API call to validate the session
+    const result = await apiRequest('/auth/validate-session/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+      },
+      body: JSON.stringify({
+        user_id: session.user.id,
+      }),
+    });
+
+    if (result.success && result.data.valid) {
+      return {
+        valid: true,
+        user: result.data.user || session.user,
+      };
+    } else {
+      // Session is invalid, clear it
+      await clearStoredSession();
+      return { valid: false };
+    }
+  } catch (error) {
+    console.error('Session validation failed:', error);
+    // On error, assume session is invalid and clear it
+    await clearStoredSession();
+    return { valid: false };
+  }
 }
 
 /**

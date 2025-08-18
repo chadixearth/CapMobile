@@ -4,10 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import carriageService, { testCarriageConnection, setApiBaseUrl } from '../../services/tourpackage/fetchCarriage';
+import { useAuth } from '../../hooks/useAuth';
 
 const MAROON = '#6B2E2B';
 
 export default function TartanillaCarriagesScreen({ navigation }) {
+  const auth = useAuth();
   const [carriages, setCarriages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,11 +24,95 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
-  const [currentApiUrl, setCurrentApiUrl] = useState('http://192.168.1.9:8000/api/tartanilla-carriages/');
+  const [currentApiUrl, setCurrentApiUrl] = useState('http://10.196.222.213:8000/api/tartanilla-carriages/');
+
+  // All callback functions need to be defined before the conditional return
+  const fetchUserAndCarriages = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // Use the authenticated user from auth hook
+      const currentUser = auth.user;
+      if (!currentUser) {
+        Alert.alert('Error', 'Please log in to view your carriages');
+        setLoading(false);
+        return;
+      }
+
+      setUser(currentUser);
+
+      // Only owners should see their carriages
+      const role = currentUser.role;
+      if (role !== 'owner') {
+        setCarriages([]);
+        setLoading(false);
+        return;
+      }
+
+      const data = await carriageService.getByOwner(currentUser.id);
+      setCarriages(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load carriages:', err);
+      let errorMessage = 'Failed to load carriages';
+      
+      if (err.message.includes('Network request failed')) {
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://10.196.222.213:8000';
+      } else if (err.message.includes('HTTP error')) {
+        errorMessage = `Server error: ${err.message}`;
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [auth.user]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (auth.user?.role === 'owner') {
+        const data = await carriageService.getByOwner(auth.user.id);
+        setCarriages(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Refresh error:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [auth.user]);
 
   useEffect(() => {
-    fetchUserAndCarriages();
-  }, []);
+    // Handle authentication redirect
+    if (!auth.loading && !auth.isAuthenticated) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+      return;
+    }
+    
+    // Load data when authenticated
+    if (auth.isAuthenticated) {
+      fetchUserAndCarriages();
+    }
+  }, [auth.loading, auth.isAuthenticated, fetchUserAndCarriages, navigation]);
+
+  // Show loading while checking authentication
+  if (auth.loading) {
+    return (
+      <View style={styles.container}>
+        <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Don't render anything if not authenticated (will redirect)
+  if (!auth.isAuthenticated) {
+    return null;
+  }
 
   const testConnection = async () => {
     try {
@@ -74,59 +160,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
-  const fetchUserAndCarriages = async () => {
-    try {
-      setLoading(true);
-
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        Alert.alert('Error', 'Please log in to view your carriages');
-        setLoading(false);
-        return;
-      }
-
-      setUser(user);
-
-      // Only owners should see their carriages
-      const role = user.user_metadata?.role;
-      if (role !== 'owner') {
-        setCarriages([]);
-        setLoading(false);
-        return;
-      }
-
-      const data = await carriageService.getByOwner(user.id);
-      setCarriages(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load carriages:', err);
-      let errorMessage = 'Failed to load carriages';
-      
-      if (err.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
-      } else if (err.message.includes('HTTP error')) {
-        errorMessage = `Server error: ${err.message}`;
-      }
-      
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      if (user?.user_metadata?.role === 'owner') {
-        const data = await carriageService.getByOwner(user.id);
-        setCarriages(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.error('Refresh error:', err);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [user]);
-
   const handleAddCarriage = async () => {
     if (!newCarriage.plate_number.trim()) {
       Alert.alert('Error', 'Plate number is required');
@@ -137,7 +170,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     try {
       const carriageData = {
         ...newCarriage,
-        assigned_owner_id: user.id,
+        assigned_owner_id: auth.user.id,
         capacity: parseInt(newCarriage.capacity) || 4
       };
 
@@ -164,7 +197,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = error.message || 'Failed to add carriage';
       
       if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://10.196.222.213:8000';
       } else if (error.message.includes('HTTP error')) {
         errorMessage = `Server error: ${error.message}`;
       }
@@ -180,11 +213,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       <Ionicons name="car-outline" size={64} color="#ccc" />
       <Text style={styles.emptyStateTitle}>No Carriages Found</Text>
       <Text style={styles.emptyStateSubtitle}>
-        {user?.user_metadata?.role === 'owner'
+        {auth.user?.role === 'owner'
           ? 'You have not registered any tartanilla carriages yet.'
           : 'Only owners can view their tartanilla carriages.'}
       </Text>
-      {user?.user_metadata?.role === 'owner' && (
+      {auth.user?.role === 'owner' && (
         <TouchableOpacity style={styles.testConnectionButton} onPress={testConnection}>
           <Text style={styles.testConnectionButtonText}>Test API Connection</Text>
         </TouchableOpacity>
@@ -237,7 +270,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         <View style={styles.header}>
           <Text style={styles.title}>My Tartanilla Carriages</Text>
           <Text style={styles.subtitle}>
-            {user?.user_metadata?.name || user?.email || 'Owner'}
+            {auth.user?.name || auth.user?.email || 'Owner'}
           </Text>
           <Text style={styles.apiUrl}>API: {currentApiUrl}</Text>
           <View style={styles.headerButtons}>

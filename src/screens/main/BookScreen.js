@@ -5,12 +5,37 @@ import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function BookScreen({ navigation }) {
+  const auth = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
+
+  // Show loading or redirect if not authenticated
+  if (auth.loading) {
+    return (
+      <View style={styles.container}>
+        <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    // Redirect to welcome screen
+    React.useEffect(() => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }, [navigation]);
+    return null;
+  }
 
   useEffect(() => {
     fetchUserAndBookings();

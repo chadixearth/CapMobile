@@ -1,16 +1,42 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import DriverHomeScreen from '../screens/main/DriverHomeScreen';
 import EarningsScreen from '../screens/main/EarningsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import DriverBookScreen from '../screens/main/DriverBookScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
+import { useAuth } from '../hooks/useAuth';
 import * as Routes from '../constants/routes';
 
 const Tab = createBottomTabNavigator();
 
-export default function DriverTabs() {
+export default function DriverTabs({ setRole }) {
+  const navigation = useNavigation();
+  const auth = useAuth();
+
+  React.useEffect(() => {
+    if (!auth.loading) {
+      if (!auth.isAuthenticated) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Welcome' }],
+        });
+      } else if (auth.role !== 'driver') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+      }
+    }
+  }, [auth.loading, auth.isAuthenticated, auth.role, navigation]);
+
+  // Show loading or redirect if not authenticated or wrong role
+  if (auth.loading || !auth.isAuthenticated || auth.role !== 'driver') {
+    return null;
+  }
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({

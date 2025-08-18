@@ -4,13 +4,15 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import ProfileItem from '../../components/ProfileItem';
 import * as Routes from '../../constants/routes';
 import Button from '../../components/Button';
-import { getCurrentUser, getUserProfile, logoutUser } from '../../services/authService';
+import { getCurrentUser, getUserProfile } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function MenuScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const auth = useAuth();
 
   const fetchUser = async () => {
     try {
@@ -51,15 +53,21 @@ export default function MenuScreen({ navigation }) {
 
   const handleLogout = async () => {
     try {
-      // Use new logout function which handles both API logout and local storage cleanup
-      await logoutUser();
-      // Also sign out from Supabase for compatibility
-      await supabase.auth.signOut();
-      navigation.replace('Login');
+      // Use the auth hook logout function
+      await auth.logout();
+      
+      // Reset navigation stack completely to prevent back navigation
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
     } catch (error) {
       console.error('Logout error:', error);
-      // Even if logout fails, navigate to login screen
-      navigation.replace('Login');
+      // Even if logout fails, navigate to welcome screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
     }
   };
 

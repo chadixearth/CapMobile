@@ -5,7 +5,7 @@ import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
 
-export default function LoginScreen({ navigation, setRole }) {
+export default function LoginScreen({ navigation, setRole, setIsAuthenticated }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,14 @@ export default function LoginScreen({ navigation, setRole }) {
         // Get role from user data
         const userRole = result.user?.role || 'tourist';
         setRole(userRole);
-        navigation.replace(Routes.MAIN);
+        if (setIsAuthenticated) {
+          setIsAuthenticated(true);
+        }
+        // Reset navigation stack to prevent going back to login
+        navigation.reset({
+          index: 0,
+          routes: [{ name: Routes.MAIN }],
+        });
       } else {
         setError(result.error || 'Login failed.');
       }

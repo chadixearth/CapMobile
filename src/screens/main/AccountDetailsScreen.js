@@ -8,8 +8,10 @@ import BackButton from '../../components/BackButton';
 import { getCurrentUser, getUserProfile, updateUserProfile } from '../../services/authService';
 import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function AccountDetailsScreen({ navigation }) {
+  const auth = useAuth();
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -18,6 +20,28 @@ export default function AccountDetailsScreen({ navigation }) {
   const [photoUrl, setPhotoUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Show loading or redirect if not authenticated
+  if (auth.loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    // Redirect to welcome screen
+    React.useEffect(() => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }, [navigation]);
+    return null;
+  }
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
