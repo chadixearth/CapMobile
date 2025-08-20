@@ -22,7 +22,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
-  const [currentApiUrl, setCurrentApiUrl] = useState('http://192.168.1.9:8000/api/tartanilla-carriages/');
+  const [currentApiUrl, setCurrentApiUrl] = useState('http://192.168.101.74:8000/api/tartanilla-carriages/');
 
   useEffect(() => {
     fetchUserAndCarriages();
@@ -102,7 +102,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = 'Failed to load carriages';
       
       if (err.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.101.74:8000';
       } else if (err.message.includes('HTTP error')) {
         errorMessage = `Server error: ${err.message}`;
       }
@@ -164,7 +164,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = error.message || 'Failed to add carriage';
       
       if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.1.9:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.101.74:8000';
       } else if (error.message.includes('HTTP error')) {
         errorMessage = `Server error: ${error.message}`;
       }

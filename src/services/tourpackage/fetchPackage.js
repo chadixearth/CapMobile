@@ -1,6 +1,6 @@
 // services/tourPackageService.js
 // Use your computer's IP address instead of localhost for mobile devices
-const API_BASE_URL = 'http://10.196.222.213:8000/api/tourpackage/'; // Your Django server on port 8000
+const API_BASE_URL = 'http://192.168.101.74:8000/api/tourpackage/'; // Your Django server on port 8000
 
 // Helper function to create a timeout promise
 const createTimeout = (ms) => {
@@ -67,14 +67,14 @@ const formatCoordinates = (packages) => {
 export const testConnection = async () => {
   const testUrls = [
     // Test Django REST Framework endpoints
-    'http://10.196.222.213:8000/api/tourpackage/',
-    'http://10.196.222.213:8000/api/tourpackages/',
-    'http://10.196.222.213:8000/api/packages/',
-    'http://10.196.222.213:8000/tourpackage/',
-    'http://10.196.222.213:8000/tourpackages/',
-    'http://10.196.222.213:8000/packages/',
-    'http://10.196.222.213:8000/api/',
-    'http://10.196.222.213:8000/',
+    'http://192.168.101.74:8000/api/tourpackage/',
+    'http://192.168.101.74:8000/api/tourpackages/',
+    'http://192.168.101.74:8000/api/packages/',
+    'http://192.168.101.74:8000/tourpackage/',
+    'http://192.168.101.74:8000/tourpackages/',
+    'http://192.168.101.74:8000/packages/',
+    'http://192.168.101.74:8000/api/',
+    'http://192.168.101.74:8000/',
   ];
 
   for (const url of testUrls) {

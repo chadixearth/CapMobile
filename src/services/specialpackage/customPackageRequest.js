@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8000/api';
+const API_BASE_URL = 'http://192.168.101.74:8000/api';
 
 /**
  * Helper function to make API requests with proper error handling

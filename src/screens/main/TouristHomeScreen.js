@@ -332,7 +332,7 @@ export default function TouristHomeScreen({ navigation }) {
                      `Tested URLs:\n${result.testedUrls?.slice(0, 3).join('\n')}...\n\n` +
                      `Please check:\n` +
                      `1. Your backend server is running\n` +
-                     `2. Your computer's IP is correct: 10.196.222.213\n` +
+                     `2. Your computer's IP is correct: 192.168.101.74\n` +
                      `3. Your phone and computer are on the same network\n` +
                      `4. Your API endpoints are configured correctly`
                    );
