@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView,
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import GoogleMap from '../../components/GoogleMap';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import Button from '../../components/Button';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
@@ -10,6 +11,7 @@ import { tourPackageService, testConnection } from '../../services/tourpackage/f
 
 import { supabase } from '../../services/supabase';
 import * as Routes from '../../constants/routes';
+
 
 // Remove the hardcoded tourPackages array
 // const tourPackages = [
@@ -218,7 +220,7 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      
+      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={20} color="#fff" />
@@ -309,31 +311,47 @@ export default function TouristHomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         <View style={styles.networkStatusContainer}>
-          <Text style={[styles.networkStatus, { color: networkStatus === 'Connected' ? '#4CAF50' : '#F44336' }]}>
-            Network: {networkStatus}
-          </Text>
-          <Text style={[styles.networkStatus, { color: '#666', fontSize: 10 }]}>
-            Data Source: {dataSource}
-          </Text>
-          {__DEV__ && (
-            <TouchableOpacity 
-              style={styles.testButton}
-              onPress={async () => {
-                try {
-                  const result = await testConnection();
-                  if (result.success) {
-                    Alert.alert('Connection Test Success', `URL: ${result.url}`);
-                  } else {
-                    Alert.alert('Connection Test Failed', result.error || 'Unknown error');
-                  }
-                } catch (error) {
-                  Alert.alert('Connection Test Failed', error.message);
-                }
-              }}
-            >
-              <Text style={styles.testButtonText}>Test</Text>
-            </TouchableOpacity>
-          )}
+          <View>
+            <Text style={[styles.networkStatus, { color: networkStatus === 'Connected' ? '#4CAF50' : '#F44336' }]}>
+              Network: {networkStatus}
+            </Text>
+            <Text style={[styles.networkStatus, { color: '#666', fontSize: 10 }]}>
+              Data Source: {dataSource}
+            </Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={async () => {
+              console.log('Testing connection...');
+                             try {
+                 const result = await testConnection();
+                 console.log('Connection test result:', result);
+                 if (result.success) {
+                   Alert.alert('Connection Test Success', 
+                     `✅ Found working API endpoint!\n\n` +
+                     `URL: ${result.url}\n` +
+                     `Status: ${result.status}\n\n` +
+                     `Response preview:\n${result.text}`
+                   );
+                 } else {
+                   Alert.alert('Connection Test Failed', 
+                     `Error: ${result.error}\n\n` +
+                     `Tested URLs:\n${result.testedUrls?.slice(0, 3).join('\n')}...\n\n` +
+                     `Please check:\n` +
+                     `1. Your backend server is running\n` +
+                     `2. Your computer's IP is correct: 10.196.222.213\n` +
+                     `3. Your phone and computer are on the same network\n` +
+                     `4. Your API endpoints are configured correctly`
+                   );
+                 }
+              } catch (error) {
+                console.error('Test failed:', error);
+                Alert.alert('Connection Test Failed', error.message);
+              }
+            }}
+          >
+            <Text style={styles.testButtonText}>Test Connection</Text>
+          </TouchableOpacity>
         </View>
         {loadingPackages ? (
           <Text style={{ textAlign: 'center', marginVertical: 16 }}>Loading packages...</Text>
@@ -950,4 +968,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-}); 
+});

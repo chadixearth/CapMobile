@@ -3,14 +3,34 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-const TARTRACKHeader = ({ onNotificationPress }) => (
+const TARTRACKHeader = ({
+  title = 'TARTRACK',
+  showBack = false,
+  onBackPress,
+  onNotificationPress,
+  rightComponent,
+}) => (
   <SafeAreaView edges={["top"]} style={styles.safeArea}>
     <View style={styles.header}>
-      <TouchableOpacity style={styles.iconBtn} onPress={onNotificationPress}>
-        <Ionicons name="notifications-outline" size={26} color="#6B2E2B" />
-      </TouchableOpacity>
-      <Text style={styles.title}>TARTRACK</Text>
-      <View style={{ width: 32 }} />
+      {showBack ? (
+        <TouchableOpacity style={styles.iconBtn} onPress={onBackPress}>
+          <Ionicons name="arrow-back" size={26} color="#6B2E2B" />
+        </TouchableOpacity>
+      ) : onNotificationPress ? (
+        <TouchableOpacity style={styles.iconBtn} onPress={onNotificationPress}>
+          <Ionicons name="notifications-outline" size={26} color="#6B2E2B" />
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 32 }} />
+      )}
+
+      <Text style={styles.title}>{title}</Text>
+
+      {rightComponent ? (
+        <View style={styles.rightSlot}>{rightComponent}</View>
+      ) : (
+        <View style={{ width: 32 }} />
+      )}
     </View>
   </SafeAreaView>
 );
@@ -33,6 +53,11 @@ const styles = StyleSheet.create({
     left: 16,
     zIndex: 2,
     padding: 4,
+  },
+  rightSlot: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 2,
   },
   title: {
     flex: 1,
