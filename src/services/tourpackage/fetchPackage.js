@@ -1,6 +1,6 @@
 // services/tourPackageService.js
 // Use your computer's IP address instead of localhost for mobile devices
-const API_BASE_URL = 'http://192.168.101.74:8000/api/tourpackage/'; // Your Django server on port 8000
+const API_BASE_URL = 'http://192.168.1.8:8000/api/tourpackage/'; // Your Django server on port 8000
 
 // Helper function to create a timeout promise
 const createTimeout = (ms) => {

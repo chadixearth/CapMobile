@@ -13,6 +13,7 @@ import { supabase } from '../../services/supabase';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import * as Routes from '../../constants/routes';
 
+
 // Remove the hardcoded tourPackages array
 // const tourPackages = [
 //   {
@@ -213,7 +214,18 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      <View style={styles.header}>
+        <Text style={styles.logo}>TARTRACK</Text>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity onPress={() => navigation.navigate('NotificationScreen')}>
+            <Ionicons name="notifications-outline" size={22} color="#222" style={styles.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Chat')}>
+            <Ionicons name="chatbubble-ellipses-outline" size={24} color="#222" style={styles.icon} />
+          </TouchableOpacity>
+          <Ionicons name="person-circle-outline" size={26} color="#222" style={styles.icon} />
+        </View>
+      </View>
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={20} color="#fff" />
@@ -685,4 +697,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-}); 
+});

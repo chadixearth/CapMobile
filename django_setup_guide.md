@@ -222,7 +222,7 @@ pip install djangorestframework supabase
 After setting this up:
 
 1. Restart your Django server
-2. Test the endpoint: `http://192.168.101.74:8000/api/tartanilla-carriages/`
+2. Test the endpoint: `http://192.168.1.8:8000/api/tartanilla-carriages/`
 3. Use the "Test" button in the mobile app
 
 ## 6. Expected API Endpoints
