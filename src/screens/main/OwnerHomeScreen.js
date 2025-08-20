@@ -11,6 +11,9 @@ export default function OwnerHomeScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.navigate('Notification')}>
             <Ionicons name="notifications-outline" size={22} color="#222" style={styles.icon} />
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Chat')}>
+            <Ionicons name="chatbubble-ellipses-outline" size={24} color="#222" style={styles.icon} />
+          </TouchableOpacity>
           <Ionicons name="person-circle-outline" size={26} color="#222" style={styles.icon} />
         </View>
       </View>

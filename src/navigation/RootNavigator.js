@@ -15,6 +15,7 @@ import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
 import * as Routes from '../constants/routes';
+import ChatNavigator from '../chat/navigation/ChatNavigator';
 
 const Stack = createNativeStackNavigator();
 
@@ -39,6 +40,7 @@ export default function RootNavigator() {
       <Stack.Screen name={Routes.REQUEST_BOOKING} component={RequestBookingScreen} />
       <Stack.Screen name={Routes.CUSTOM_PACKAGE_REQUEST} component={CustomPackageRequestScreen} />
       <Stack.Screen name={Routes.CUSTOM_REQUEST_HISTORY} component={CustomRequestHistoryScreen} />
+      <Stack.Screen name="Chat" component={ChatNavigator} />
     </Stack.Navigator>
   );
-} 
+}
