@@ -5,7 +5,7 @@ import { Alert, Platform, Linking } from 'react-native';
  * MobilePhotoUpload - A unified service for handling photo uploads across different user types
  */
 export default class MobilePhotoUpload {
-  constructor(baseUrl = 'http://10.196.222.213:8000/api') {
+  constructor(baseUrl = 'http://192.168.101.74:8000/api') {
     this.baseUrl = baseUrl;
   }
 
