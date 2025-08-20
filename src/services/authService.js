@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
-// For physical device: Use your computer's IP address (e.g., 192.168.101.74)
+// For physical device: Use your computer's IP address (e.g., 192.168.1.8)
 // For Android emulator: Use 10.0.2.2 (maps to host machine's localhost)
 // For iOS simulator: Use localhost or 127.0.0.1
-const API_BASE_URL = 'http://192.168.101.74:8000/api';
+const API_BASE_URL = 'http://192.168.1.8:8000/api';
 
 // Session keys for AsyncStorage
 const SESSION_KEYS = {
@@ -56,8 +56,8 @@ async function apiRequest(endpoint, options = {}) {
     
     // Check for specific network errors
     if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND')) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: `Cannot connect to server. Please check:\n1. API server is running on ${API_BASE_URL}\n2. Your device is on the same network\n3. Firewall allows port 8000` 
       };
     }
@@ -260,11 +260,62 @@ export async function getUserProfile(userId) {
 export async function checkAuthStatus() {
   const session = await getStoredSession();
   
+  if (!session.accessToken || !session.user) {
+    return {
+      isLoggedIn: false,
+      user: null,
+      accessToken: null,
+    };
+  }
+
+  // TODO: Add token validation with backend if needed
+  // For now, we trust the stored session
   return {
-    isLoggedIn: !!(session.accessToken && session.user),
+    isLoggedIn: true,
     user: session.user,
     accessToken: session.accessToken,
   };
+}
+
+/**
+ * Validate current session with backend
+ * @returns {Promise<{ valid: boolean, user?: object }>}
+ */
+export async function validateSession() {
+  try {
+    const session = await getStoredSession();
+    
+    if (!session.accessToken || !session.user) {
+      return { valid: false };
+    }
+
+    // Make a simple API call to validate the session
+    const result = await apiRequest('/auth/validate-session/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.accessToken}`,
+      },
+      body: JSON.stringify({
+        user_id: session.user.id,
+      }),
+    });
+
+    if (result.success && result.data.valid) {
+      return {
+        valid: true,
+        user: result.data.user || session.user,
+      };
+    } else {
+      // Session is invalid, clear it
+      await clearStoredSession();
+      return { valid: false };
+    }
+  } catch (error) {
+    console.error('Session validation failed:', error);
+    // On error, assume session is invalid and clear it
+    await clearStoredSession();
+    return { valid: false };
+  }
 }
 
 /**

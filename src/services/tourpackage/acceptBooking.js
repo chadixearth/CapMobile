@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'http://192.168.101.74:8000/api/booking/';
+const API_BASE_URL = 'http://192.168.1.8:8000/api/booking/';
 
 /**
  * Get all bookings available for drivers to accept

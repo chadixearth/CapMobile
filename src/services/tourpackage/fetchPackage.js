@@ -67,14 +67,14 @@ const formatCoordinates = (packages) => {
 export const testConnection = async () => {
   const testUrls = [
     // Test Django REST Framework endpoints
-    'http://192.168.101.74:8000/api/tourpackage/',
-    'http://192.168.101.74:8000/api/tourpackages/',
-    'http://192.168.101.74:8000/api/packages/',
-    'http://192.168.101.74:8000/tourpackage/',
-    'http://192.168.101.74:8000/tourpackages/',
-    'http://192.168.101.74:8000/packages/',
-    'http://192.168.101.74:8000/api/',
-    'http://192.168.101.74:8000/',
+    'http://192.168.1.8:8000/api/tourpackage/',
+    'http://192.168.1.8:8000/api/tourpackages/',
+    'http://192.168.1.8:8000/api/packages/',
+    'http://192.168.1.8:8000/tourpackage/',
+    'http://192.168.1.8:8000/tourpackages/',
+    'http://192.168.1.8:8000/packages/',
+    'http://192.168.1.8:8000/api/',
+    'http://192.168.1.8:8000/',
   ];
 
   for (const url of testUrls) {

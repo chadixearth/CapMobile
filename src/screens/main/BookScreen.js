@@ -5,16 +5,48 @@ import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function BookScreen({ navigation }) {
+  // All hooks must be called at the top level, before any conditional returns
+  const auth = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
 
+  // Handle authentication redirect in useEffect to avoid hooks rule violation
   useEffect(() => {
-    fetchUserAndBookings();
-  }, []);
+    if (!auth.loading && !auth.isAuthenticated) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }
+  }, [auth.loading, auth.isAuthenticated, navigation]);
+
+  useEffect(() => {
+    if (!auth.loading && auth.isAuthenticated) {
+      fetchUserAndBookings();
+    }
+  }, [auth.loading, auth.isAuthenticated]);
+
+  // Show loading while auth is being determined
+  if (auth.loading) {
+    return (
+      <View style={styles.container}>
+        <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Return null while redirecting (but after all hooks have been called)
+  if (!auth.isAuthenticated) {
+    return null;
+  }
 
   const fetchUserAndBookings = async () => {
     try {

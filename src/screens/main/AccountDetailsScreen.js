@@ -5,11 +5,14 @@ import { Ionicons } from '@expo/vector-icons';
 import EditableField from '../../components/EditableField';
 import Button from '../../components/Button';
 import BackButton from '../../components/BackButton';
-import { getCurrentUser, getUserProfile, updateUserProfile } from '../../services/authService';
+import { getCurrentUser, getUserProfile, updateUserProfile, uploadProfilePhoto } from '../../services/authService';
 import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function AccountDetailsScreen({ navigation }) {
+  // All hooks must be called at the top level, before any conditional returns
+  const auth = useAuth();
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -22,57 +25,87 @@ export default function AccountDetailsScreen({ navigation }) {
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
+  // Handle authentication redirect in useEffect to avoid hooks rule violation
+  useEffect(() => {
+    if (!auth.loading && !auth.isAuthenticated) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }
+  }, [auth.loading, auth.isAuthenticated, navigation]);
+
+  // Fetch user data - this hook must be called unconditionally
+  useEffect(() => {
+    // Only fetch if authenticated and not loading
+    if (!auth.loading && auth.isAuthenticated) {
+      const fetchUser = async () => {
+        try {
+          // Get current user from stored session
+          const currentUser = await getCurrentUser();
+          if (currentUser) {
+            // Try to get detailed profile from API
+            const profileResult = await getUserProfile(currentUser.id);
+            
+            let userData = currentUser;
+            if (profileResult.success && profileResult.data) {
+              userData = { ...currentUser, ...profileResult.data };
+            }
+            
+            // Parse name if available - handle both API formats
+            const fullName = userData.name || userData.full_name || '';
+            const nameParts = fullName.split(' ');
+            setFirstName(userData.first_name || nameParts[0] || '');
+            setMiddleName(userData.middle_name || nameParts[1] || '');
+            setLastName(userData.last_name || nameParts[2] || '');
+            setEmail(userData.email || '');
+            setPhone(userData.phone || '');
+            setPhotoUrl(userData.profile_photo || userData.profile_photo_url || userData.avatar_url || '');
+          } else {
+            // Fallback to Supabase if no session found (for compatibility)
+            const { data } = await supabase.auth.getUser();
+            if (data?.user) {
+              const fullName = data.user.user_metadata?.name || '';
+              const nameParts = fullName.split(' ');
+              setFirstName(nameParts[0] || '');
+              setMiddleName(nameParts[1] || '');
+              setLastName(nameParts[2] || '');
+              setEmail(data.user.email || '');
+              setPhone(data.user.user_metadata?.phone || '');
+              setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+          setError('Failed to load user data');
+        }
+      };
+      fetchUser();
+    }
+  }, [auth.loading, auth.isAuthenticated]);
+
+  // Show loading while auth is being determined
+  if (auth.loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Return null while redirecting (but after all hooks have been called)
+  if (!auth.isAuthenticated) {
+    return null;
+  }
+
   const avatarName = [firstName, middleName, lastName].filter(Boolean).join(' ');
   const avatarUrl = photoUrl
     ? photoUrl
     : avatarName
     ? `https://ui-avatars.com/api/?name=${encodeURIComponent(avatarName)}&background=6B2E2B&color=fff&size=128`
     : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        // Get current user from stored session
-        const currentUser = await getCurrentUser();
-        if (currentUser) {
-          // Try to get detailed profile from API
-          const profileResult = await getUserProfile(currentUser.id);
-          
-          let userData = currentUser;
-          if (profileResult.success && profileResult.data) {
-            userData = { ...currentUser, ...profileResult.data };
-          }
-          
-          // Parse name if available - handle both API formats
-          const fullName = userData.name || userData.full_name || '';
-          const nameParts = fullName.split(' ');
-          setFirstName(userData.first_name || nameParts[0] || '');
-          setMiddleName(userData.middle_name || nameParts[1] || '');
-          setLastName(userData.last_name || nameParts[2] || '');
-          setEmail(userData.email || '');
-          setPhone(userData.phone || '');
-          setPhotoUrl(userData.profile_photo || userData.profile_photo_url || userData.avatar_url || '');
-        } else {
-          // Fallback to Supabase if no session found (for compatibility)
-          const { data } = await supabase.auth.getUser();
-          if (data?.user) {
-            const fullName = data.user.user_metadata?.name || '';
-            const nameParts = fullName.split(' ');
-            setFirstName(nameParts[0] || '');
-            setMiddleName(nameParts[1] || '');
-            setLastName(nameParts[2] || '');
-            setEmail(data.user.email || '');
-            setPhone(data.user.user_metadata?.phone || '');
-            setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-        setError('Failed to load user data');
-      }
-    };
-    fetchUser();
-  }, []);
 
   const handlePickImage = async () => {
     try {
@@ -387,6 +420,8 @@ export default function AccountDetailsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA', paddingTop: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: '#6B2E2B', marginTop: 10 },
   title: { fontSize: 24, fontWeight: 'bold', alignSelf: 'center', marginTop: 48, marginBottom: 16, color: '#222' },
   avatarContainer: { alignItems: 'center', marginBottom: 12 },
   avatar: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, borderColor: '#6B2E2B', marginBottom: 8 },
