@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings } from '../../services/tourpackage/acceptBooking';
 import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest } from '../../services/specialpackage/customPackageRequest';
@@ -516,7 +515,6 @@ export default function DriverBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
       
       <View style={styles.content}>
         <View style={styles.header}>

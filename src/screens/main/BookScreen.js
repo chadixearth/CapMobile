@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
+
+const MAROON = '#6B2E2B';
 
 export default function BookScreen({ navigation }) {
   // All hooks must be called at the top level, before any conditional returns
@@ -14,6 +15,8 @@ export default function BookScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all'); // all | upcoming | completed | cancelled | pending | confirmed
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Handle authentication redirect in useEffect to avoid hooks rule violation
   useEffect(() => {
@@ -35,7 +38,6 @@ export default function BookScreen({ navigation }) {
   if (auth.loading) {
     return (
       <View style={styles.container}>
-        <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
@@ -250,10 +252,31 @@ export default function BookScreen({ navigation }) {
     </View>
   );
 
+  // Derived filtered list
+  const filterMatches = (booking) => {
+    const status = (booking.status || '').toLowerCase();
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'upcoming') return status === 'pending' || status === 'confirmed';
+    if (activeFilter === 'completed') return status === 'completed';
+    if (activeFilter === 'cancelled') return status === 'cancelled';
+    if (activeFilter === 'pending') return status === 'pending';
+    if (activeFilter === 'confirmed') return status === 'confirmed';
+    return true;
+  };
+
+  const searchMatches = (booking) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.trim().toLowerCase();
+    return (
+      (booking.booking_reference || '').toLowerCase().includes(q) ||
+      (booking.package_name || '').toLowerCase().includes(q)
+    );
+  };
+
+  const filteredBookings = bookings.filter((b) => filterMatches(b) && searchMatches(b));
+
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
-      
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>My Bookings</Text>
@@ -261,27 +284,56 @@ export default function BookScreen({ navigation }) {
             {user?.name || user?.user_metadata?.name || user?.email || 'User'}'s booking history
           </Text>
           <View style={styles.headerActions}>
-            {/* Only show custom request history for tourists */}
             {(user?.role === 'tourist' || (!user?.role && user)) && (
               <TouchableOpacity 
-                style={styles.historyButton}
+                style={styles.pillButton}
                 onPress={() => navigation.navigate('CustomRequestHistory')}
               >
                 <Ionicons name="time-outline" size={16} color="#fff" />
-                <Text style={styles.historyButtonText}>Custom Requests</Text>
+                <Text style={styles.pillButtonText}>Custom Requests</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity 
-              style={styles.debugButton}
-              onPress={() => {
-                console.log('Testing API connection...');
-                fetchUserAndBookings();
-              }}
+              style={[styles.pillButton, { backgroundColor: '#444' }]}
+              onPress={() => fetchUserAndBookings()}
             >
-              <Text style={styles.debugButtonText}>Refresh</Text>
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.pillButtonText}>Refresh</Text>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Search */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={18} color="#888" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by reference or package"
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#bbb" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Filters */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersRow}>
+          {['all','upcoming','confirmed','pending','completed','cancelled'].map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
+              onPress={() => setActiveFilter(f)}
+            >
+              <Text style={[styles.filterChipText, activeFilter === f && styles.filterChipTextActive]}>
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -290,13 +342,11 @@ export default function BookScreen({ navigation }) {
         ) : (
           <ScrollView 
             style={styles.scrollView}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             showsVerticalScrollIndicator={false}
           >
-            {bookings.length > 0 ? (
-              bookings.map(renderBookingCard)
+            {filteredBookings.length > 0 ? (
+              filteredBookings.map(renderBookingCard)
             ) : (
               renderEmptyState()
             )}
@@ -359,15 +409,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   bookingHeader: {
     flexDirection: 'row',
@@ -434,6 +483,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 24,
   },
   emptyStateTitle: {
     fontSize: 20,
@@ -450,7 +500,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   exploreButton: {
-    backgroundColor: '#6B2E2B',
+    backgroundColor: MAROON,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -461,15 +511,67 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   debugButton: {
-    backgroundColor: '#6B2E2B',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginTop: 8,
+    display: 'none',
   },
   debugButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#333',
+  },
+  filtersRow: {
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  filterChip: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    marginHorizontal: 4,
+  },
+  filterChipActive: {
+    backgroundColor: '#F5E9E2',
+    borderColor: '#E0CFC2',
+  },
+  filterChipText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  filterChipTextActive: {
+    color: MAROON,
+  },
+  pillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: MAROON,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  pillButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

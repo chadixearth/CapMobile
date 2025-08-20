@@ -16,6 +16,7 @@ import {
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/Button';
 import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
@@ -34,6 +35,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
     total_amount: 0,
     special_requests: '',
     contact_number: '',
+    contact_email: '',
     pickup_address: '',
   });
 
@@ -47,7 +49,9 @@ const RequestBookingScreen = ({ route, navigation }) => {
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    loadPackages();
+    if (!packageData) {
+      loadPackages();
+    }
     if (packageData) {
       setSelectedPackage(packageData);
       setFormData(prev => ({
@@ -78,13 +82,17 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
     // Recalculate total amount when package or number of pax changes
     if (field === 'package_id' || field === 'number_of_pax') {
-      const selectedPackage = packages.find(p => p.id === (field === 'package_id' ? value : formData.package_id));
-      if (selectedPackage) {
-        const newTotal = selectedPackage.price * (field === 'number_of_pax' ? value : formData.number_of_pax);
+      const pkg = selectedPackage || packages.find(p => p.id === (field === 'package_id' ? value : formData.package_id));
+      if (pkg) {
+        const maxPax = pkg.max_pax ? parseInt(pkg.max_pax) : null;
+        const desiredPax = field === 'number_of_pax' ? value : formData.number_of_pax;
+        const clampedPax = maxPax ? Math.min(desiredPax, maxPax) : desiredPax;
+        const newTotal = (Number(pkg.price) || 0) * clampedPax;
         setFormData(prev => ({
           ...prev,
+          number_of_pax: clampedPax,
           total_amount: newTotal,
-          pickup_address: selectedPackage.pickup_location || prev.pickup_address,
+          pickup_address: pkg.pickup_location || prev.pickup_address,
         }));
       }
     }
@@ -108,7 +116,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
       return false;
     }
 
-    const selectedPackageForValidation = packages.find(p => p.id === formData.package_id);
+    const selectedPackageForValidation = packages.find(p => p.id === formData.package_id) || selectedPackage;
     if (selectedPackageForValidation && selectedPackageForValidation.max_pax && formData.number_of_pax > selectedPackageForValidation.max_pax) {
       setErrorMessage(`Maximum passengers allowed: ${selectedPackageForValidation.max_pax}`);
       setShowErrorModal(true);
@@ -120,6 +128,30 @@ const RequestBookingScreen = ({ route, navigation }) => {
     today.setHours(0, 0, 0, 0);
     if (bookingDate < today) {
       setErrorMessage('Booking date cannot be in the past');
+      setShowErrorModal(true);
+      return false;
+    }
+
+    // Contact number validation (PH): starts with 09 or 63 and 10-13 digits total
+    if (formData.contact_number) {
+      const cn = String(formData.contact_number).replace(/\D/g, '');
+      const startsValid = cn.startsWith('09') || cn.startsWith('63');
+      if (!startsValid) {
+        setErrorMessage('Contact number must start with 09 or 63');
+        setShowErrorModal(true);
+        return false;
+      }
+      const len = cn.length;
+      if (len < 10 || len > 13) {
+        setErrorMessage('Contact number length is invalid');
+        setShowErrorModal(true);
+        return false;
+      }
+    }
+
+    // Email validation (basic @ presence)
+    if (formData.contact_email && !String(formData.contact_email).includes('@')) {
+      setErrorMessage('Please enter a valid email address');
       setShowErrorModal(true);
       return false;
     }
@@ -179,82 +211,89 @@ const RequestBookingScreen = ({ route, navigation }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <TARTRACKHeader title="Request Booking" />
-      
+      <TARTRACKHeader title="Request Booking" showBack onBackPress={() => navigation.goBack()} />
+
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.formContainer}>
-          <Text style={styles.sectionTitle}>Tour Package Details</Text>
-          
-          {/* Package Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Select Tour Package *</Text>
-            <TouchableOpacity
-              style={styles.pickerContainer}
-              onPress={() => setShowPackagePicker(true)}
-            >
-              <Text style={styles.pickerText}>
-                {formData.package_id ? 
-                  packages.find(p => p.id === formData.package_id)?.package_name || 'Select a package' :
-                  'Select a package'
-                }
-              </Text>
-            </TouchableOpacity>
+          {/* Package Summary Card */}
+          {selectedPackage && (
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryTitle} numberOfLines={1}>{selectedPackage.package_name}</Text>
+                <Text style={styles.summaryPrice}>₱{Number(selectedPackage.price || 0).toFixed(2)}</Text>
+              </View>
+              <View style={styles.summaryMeta}>
+                {selectedPackage.duration_hours ? (
+                  <View style={styles.metaPill}>
+                    <Ionicons name="time-outline" size={12} color="#6B2E2B" />
+                    <Text style={styles.metaText}>{selectedPackage.duration_hours}h</Text>
+                  </View>
+                ) : null}
+                {selectedPackage.max_pax ? (
+                  <View style={styles.metaPill}>
+                    <Ionicons name="people-outline" size={12} color="#6B2E2B" />
+                    <Text style={styles.metaText}>{selectedPackage.max_pax}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.sectionTitle}>Tour Package</Text>
+          <View style={[styles.pickerContainer, { borderColor: '#eee' }]}> 
+            <Text style={styles.pickerText} numberOfLines={1}>
+              {selectedPackage?.package_name || 'Selected package'}
+            </Text>
           </View>
 
-          {/* Booking Date */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Booking Date *</Text>
-            <TextInput
-              style={styles.input}
-              value={formatDate(formData.booking_date)}
-              placeholder="YYYY-MM-DD"
-              onChangeText={(text) => {
-                const date = new Date(text);
-                if (!isNaN(date.getTime())) {
-                  setFormData(prev => ({
-                    ...prev,
-                    booking_date: date,
-                  }));
-                }
-              }}
-            />
+          {/* Date & Time row */}
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }] }>
+              <Text style={styles.label}>Booking Date *</Text>
+              <TextInput
+                style={styles.input}
+                value={formatDate(formData.booking_date)}
+                placeholder="YYYY-MM-DD"
+                onChangeText={(text) => {
+                  const date = new Date(text);
+                  if (!isNaN(date.getTime())) {
+                    setFormData(prev => ({ ...prev, booking_date: date }));
+                  }
+                }}
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }] }>
+              <Text style={styles.label}>Pickup Time</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.pickup_time}
+                placeholder="HH:MM"
+                onChangeText={(text) => setFormData(prev => ({ ...prev, pickup_time: text }))}
+              />
+            </View>
           </View>
 
-          {/* Pickup Time */}
+          {/* Pax stepper */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pickup Time</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.pickup_time}
-              placeholder="HH:MM (24-hour format)"
-              onChangeText={(text) => {
-                setFormData(prev => ({
-                  ...prev,
-                  pickup_time: text,
-                }));
-              }}
-            />
+            <Text style={styles.label}>Passengers *</Text>
+            <View style={styles.stepperRow}>
+              <TouchableOpacity style={styles.stepperBtn} onPress={() => handleInputChange('number_of_pax', Math.max(1, formData.number_of_pax - 1))}>
+                <Ionicons name="remove" size={18} color="#6B2E2B" />
+              </TouchableOpacity>
+              <Text style={styles.stepperValue}>{formData.number_of_pax}</Text>
+              <TouchableOpacity style={styles.stepperBtn} onPress={() => handleInputChange('number_of_pax', formData.number_of_pax + 1)}>
+                <Ionicons name="add" size={18} color="#6B2E2B" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Number of Passengers */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Number of Passengers *</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.number_of_pax.toString()}
-              onChangeText={(value) => handleInputChange('number_of_pax', parseInt(value) || 0)}
-              keyboardType="numeric"
-              placeholder="Enter number of passengers"
-            />
+          {/* Total */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>₱{Number(formData.total_amount || 0).toFixed(2)}</Text>
           </View>
 
-          {/* Total Amount */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Total Amount</Text>
-            <Text style={styles.totalAmount}>₱{formData.total_amount.toFixed(2)}</Text>
-          </View>
-
-          <Text style={styles.sectionTitle}>Contact Information</Text>
+          <Text style={styles.sectionTitle}>Contact</Text>
 
           {/* Contact Number */}
           <View style={styles.inputGroup}>
@@ -263,8 +302,21 @@ const RequestBookingScreen = ({ route, navigation }) => {
               style={styles.input}
               value={formData.contact_number}
               onChangeText={(value) => handleInputChange('contact_number', value)}
-              placeholder="Enter your contact number"
+              placeholder="09XX XXX XXXX"
               keyboardType="phone-pad"
+            />
+          </View>
+
+          {/* Contact Email */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Contact Email</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.contact_email}
+              onChangeText={(value) => handleInputChange('contact_email', value)}
+              placeholder="your@email.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
           </View>
 
@@ -275,7 +327,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
               style={[styles.input, styles.textArea]}
               value={formData.pickup_address}
               onChangeText={(value) => handleInputChange('pickup_address', value)}
-              placeholder="Enter pickup address"
+              placeholder="Your pickup address"
               multiline
               numberOfLines={3}
             />
@@ -288,20 +340,17 @@ const RequestBookingScreen = ({ route, navigation }) => {
               style={[styles.input, styles.textArea]}
               value={formData.special_requests}
               onChangeText={(value) => handleInputChange('special_requests', value)}
-              placeholder="Any special requests or requirements"
+              placeholder="Any special requests or notes"
               multiline
               numberOfLines={4}
             />
           </View>
 
-          <View style={styles.buttonContainer}>
-            <Button
-              title={loading ? 'Creating Booking...' : 'Submit Booking'}
-              onPress={handleSubmit}
-              disabled={loading}
-              style={styles.submitButton}
-            />
-          </View>
+          <Button
+            title={loading ? 'Processing...' : 'Submit Booking'}
+            onPress={handleSubmit}
+            disabled={loading}
+          />
         </View>
       </ScrollView>
 
@@ -351,7 +400,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
          </View>
                </Modal>
 
-        {/* Success Modal */}
+            {/* Success Modal */}
         <SuccessModal
           visible={showSuccessModal}
           title="Booking Successful!"
@@ -385,14 +434,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   formContainer: {
-    padding: 20,
+    padding: 16,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginTop: 20,
-    marginBottom: 15,
+    marginTop: 16,
+    marginBottom: 12,
   },
   inputGroup: {
     marginBottom: 20,
@@ -419,14 +468,19 @@ const styles = StyleSheet.create({
   pickerContainer: {
     backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    justifyContent: 'center',
+    borderColor: '#E0CFC2',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexDirection: 'row',
   },
   pickerText: {
     fontSize: 16,
     color: '#333',
+    flex: 1,
+    marginRight: 8,
   },
   dateButton: {
     backgroundColor: '#fff',
@@ -440,23 +494,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  totalAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    textAlign: 'center',
-    padding: 12,
-    backgroundColor: '#f0f8ff',
-    borderRadius: 8,
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#007AFF',
+    borderColor: '#E0CFC2',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 8,
+  },
+  totalLabel: {
+    fontSize: 16,
+    color: '#555',
+    fontWeight: '600',
+  },
+  totalValue: {
+    fontSize: 18,
+    color: '#6B2E2B',
+    fontWeight: '800',
   },
   buttonContainer: {
     marginTop: 30,
     marginBottom: 20,
   },
   submitButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#6B2E2B',
   },
   loadingOverlay: {
     position: 'absolute',
@@ -509,7 +574,7 @@ const styles = StyleSheet.create({
     maxHeight: 400,
   },
   packageOption: {
-    padding: 16,
+    padding: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
@@ -522,13 +587,83 @@ const styles = StyleSheet.create({
   packageOptionPrice: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#6B2E2B',
     marginBottom: 4,
   },
   packageOptionDescription: {
     fontSize: 12,
     color: '#666',
     lineHeight: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepperBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperValue: {
+    minWidth: 24,
+    textAlign: 'center',
+    fontWeight: '700',
+    color: '#6B2E2B',
+  },
+  summaryCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    padding: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
+  },
+  summaryPrice: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#6B2E2B',
+  },
+  summaryMeta: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+  },
+  metaText: {
+    color: '#6B2E2B',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
 

@@ -10,6 +10,7 @@ export const REQUEST_BOOKING = 'RequestBooking';
 export const TARTANILLA_CARRIAGES = 'TartanillaCarriages';
 export const CUSTOM_PACKAGE_REQUEST = 'CustomPackageRequest';
 export const CUSTOM_REQUEST_HISTORY = 'CustomRequestHistory';
+export const GOODS_SERVICES = 'GoodsServices';
 
 // Tab names
 export const HOME = 'Home';

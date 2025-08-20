@@ -7,6 +7,7 @@ import EarningsScreen from '../screens/main/EarningsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import DriverBookScreen from '../screens/main/DriverBookScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
+import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
 import { useAuth } from '../hooks/useAuth';
 import * as Routes from '../constants/routes';
 
@@ -47,6 +48,8 @@ export default function DriverTabs({ setRole }) {
             return <Ionicons name="wallet-outline" size={size} color={color} />;
           } else if (route.name === 'Bookings') {
             return <Ionicons name="list-outline" size={size} color={color} />;
+          } else if (route.name === Routes.GOODS_SERVICES) {
+            return <Ionicons name="pricetags-outline" size={size} color={color} />;
           } else if (route.name === 'Menu') {
             return <Ionicons name="settings-outline" size={size} color={color} />;
           }
@@ -54,12 +57,13 @@ export default function DriverTabs({ setRole }) {
         tabBarActiveTintColor: '#6B2E2B',
         tabBarInactiveTintColor: '#aaa',
         tabBarShowLabel: false,
-        headerShown: false,
+        headerShown: true,
       })}
     >
-      <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: () => <TARTRACKHeader /> }} />
-      <Tab.Screen name={Routes.EARNINGS} component={EarningsScreen} options={{ header: () => <TARTRACKHeader /> }} />
-      <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: () => <TARTRACKHeader /> }} />
+      <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.EARNINGS} component={EarningsScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

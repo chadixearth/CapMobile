@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { SafeAreaView, View, Text, StyleSheet } from 'react-native';
 import GoogleMap from '../../components/GoogleMap';
 import BackButton from '../../components/BackButton';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 const TERMINALS = [
   { id: '1', name: 'Plaza Independencia', latitude: 10.2926, longitude: 123.9058 },
@@ -31,7 +30,7 @@ const TerminalsScreen = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      
       <View style={styles.mapContainer}>
         <GoogleMap
           region={DEFAULT_REGION}

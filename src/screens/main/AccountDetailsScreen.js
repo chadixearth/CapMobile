@@ -1,18 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert, Platform, Linking, TextInput, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import EditableField from '../../components/EditableField';
 import Button from '../../components/Button';
 import BackButton from '../../components/BackButton';
 import { getCurrentUser, getUserProfile, updateUserProfile, uploadProfilePhoto } from '../../services/authService';
+import { getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost } from '../../services/goodsServices';
 import MobilePhotoUpload from '../../services/MobilePhotoUpload';
+import { uploadGoodsServicesMedia } from '../../services/goodsServices';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function AccountDetailsScreen({ navigation }) {
   // All hooks must be called at the top level, before any conditional returns
   const auth = useAuth();
+  const scrollRef = useRef(null);
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -24,6 +27,11 @@ export default function AccountDetailsScreen({ navigation }) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+  const [bioDescription, setBioDescription] = useState('');
+  const [savingBio, setSavingBio] = useState(false);
+  const [bioMessage, setBioMessage] = useState('');
+  const [bioPhotos, setBioPhotos] = useState([]); // array of { uri }
+  const [existingBioId, setExistingBioId] = useState(null);
 
   // Handle authentication redirect in useEffect to avoid hooks rule violation
   useEffect(() => {
@@ -41,6 +49,7 @@ export default function AccountDetailsScreen({ navigation }) {
     if (!auth.loading && auth.isAuthenticated) {
       const fetchUser = async () => {
         try {
+          let authorIdForBio = null;
           // Get current user from stored session
           const currentUser = await getCurrentUser();
           if (currentUser) {
@@ -52,6 +61,7 @@ export default function AccountDetailsScreen({ navigation }) {
               userData = { ...currentUser, ...profileResult.data };
             }
             
+            authorIdForBio = currentUser.id;
             // Parse name if available - handle both API formats
             const fullName = userData.name || userData.full_name || '';
             const nameParts = fullName.split(' ');
@@ -65,6 +75,7 @@ export default function AccountDetailsScreen({ navigation }) {
             // Fallback to Supabase if no session found (for compatibility)
             const { data } = await supabase.auth.getUser();
             if (data?.user) {
+              authorIdForBio = data.user.id;
               const fullName = data.user.user_metadata?.name || '';
               const nameParts = fullName.split(' ');
               setFirstName(nameParts[0] || '');
@@ -73,6 +84,18 @@ export default function AccountDetailsScreen({ navigation }) {
               setEmail(data.user.email || '');
               setPhone(data.user.user_metadata?.phone || '');
               setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
+            }
+          }
+          // Prefill bio (goods/services profile) if exists
+          if (authorIdForBio) {
+            try {
+              const profileResult = await getGoodsServicesProfileByAuthor(authorIdForBio);
+              if (profileResult.success && profileResult.data) {
+                if (profileResult.data.description) setBioDescription(profileResult.data.description);
+                if (profileResult.data.id) setExistingBioId(profileResult.data.id);
+              }
+            } catch (e) {
+              // Non-blocking
             }
           }
         } catch (error) {
@@ -235,6 +258,102 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
+  const handleSaveBio = async () => {
+    try {
+      setSavingBio(true);
+      setBioMessage('');
+
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        setBioMessage('You must be logged in.');
+        return;
+      }
+      const role = (currentUser.role || '').toLowerCase();
+      if (!['driver', 'owner'].includes(role)) {
+        setBioMessage('Only drivers and owners can update bio.');
+        return;
+      }
+      if (!bioDescription.trim()) {
+        setBioMessage('Please enter a bio description.');
+        return;
+      }
+
+      // If there are selected photos, upload them first
+      let media = [];
+      if (bioPhotos.length > 0) {
+        const uploadRes = await uploadGoodsServicesMedia(currentUser.id, bioPhotos);
+        if (!uploadRes.success) {
+          setBioMessage(uploadRes.error || 'Failed to upload media');
+          return;
+        }
+        media = uploadRes.urls.map((url) => ({ url, type: 'image' }));
+      }
+
+      const result = await upsertGoodsServicesProfile(currentUser.id, bioDescription.trim(), media);
+      if (result.success) {
+        setBioMessage('Bio saved!');
+        if (media.length > 0) setBioPhotos([]);
+        // If backend returned id, store it; otherwise keep previous
+        const returned = result.data?.data || result.data;
+        if (returned && (returned.id || (Array.isArray(returned) && returned[0]?.id))) {
+          const id = returned.id || returned[0]?.id;
+          setExistingBioId(id);
+        }
+      } else {
+        setBioMessage(result.error || 'Failed to save bio');
+      }
+    } catch (e) {
+      setBioMessage(e.message || 'Failed to save bio');
+    } finally {
+      setSavingBio(false);
+    }
+  };
+
+  const handleBioMenu = async () => {
+    try {
+      Alert.alert(
+        'Bio options',
+        '',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: existingBioId ? 'Update' : 'Add',
+            onPress: () => handleSaveBio(),
+          },
+          {
+            text: 'Clear',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const currentUser = await getCurrentUser();
+                if (!currentUser) {
+                  setBioMessage('You must be logged in.');
+                  return;
+                }
+                if (existingBioId) {
+                  const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
+                  if (!del.success) {
+                    setBioMessage(del.error || 'Failed to clear bio');
+                    return;
+                  }
+                }
+                setBioDescription('');
+                setBioPhotos([]);
+                setExistingBioId(null);
+                setBioMessage('Bio cleared!');
+              } catch (err) {
+                setBioMessage(err.message || 'Failed to clear bio');
+              }
+            }
+          }
+        ]
+      );
+    } catch (e) {
+      // fallback
+      setBioMessage('Unable to open menu');
+    }
+  };
+
   // Web: handle file input change
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -370,7 +489,7 @@ export default function AccountDetailsScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
       <BackButton onPress={() => navigation.goBack()} />
       <Text style={styles.title}>Account Details</Text>
       <View style={styles.avatarContainer}>
@@ -404,7 +523,14 @@ export default function AccountDetailsScreen({ navigation }) {
           </TouchableOpacity>
         )}
       </View>
-      <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.form}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        contentInsetAdjustmentBehavior="always"
+      >
         <EditableField value={firstName} onChangeText={setFirstName} placeholder="First Name" />
         <EditableField value={middleName} onChangeText={setMiddleName} placeholder="Middle Name" />
         <EditableField value={lastName} onChangeText={setLastName} placeholder="Last Name" />
@@ -413,8 +539,55 @@ export default function AccountDetailsScreen({ navigation }) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {success ? <Text style={styles.success}>{success}</Text> : null}
         <Button title={loading ? 'Saving...' : 'Save Changes'} onPress={handleSave} />
+
+        {/* Bio for Drivers/Owners */}
+        {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
+          <View style={styles.postContainer}>
+            <Text style={styles.postTitle}>Your Bio (Goods & Services)</Text>
+            {/* Combined composer like Facebook */}
+            <View style={styles.bioComposer}>
+              <TextInput
+                style={styles.bioInput}
+                value={bioDescription}
+                onChangeText={setBioDescription}
+                placeholder="Describe your goods/services..."
+                placeholderTextColor="#888"
+                multiline
+                onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100)}
+              />
+              <View style={styles.bioToolbar}>
+                {/* Add photos button */}
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={async () => {
+                    try {
+                      const uploader = new MobilePhotoUpload();
+                      const images = await uploader.pickMultipleImages(5);
+                      if (images && images.length > 0) {
+                        setBioPhotos((prev) => [...prev, ...images]);
+                        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+                      }
+                    } catch (e) {}
+                  }}
+                >
+                  <Ionicons name="add-circle-outline" size={22} color="#6B2E2B" />
+                </TouchableOpacity>
+                {/* 3-dots menu */}
+                <TouchableOpacity style={styles.iconButton} onPress={handleBioMenu}>
+                  <Ionicons name="ellipsis-horizontal" size={22} color="#6B2E2B" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }} />
+                <Button title={savingBio ? 'Saving...' : (existingBioId ? 'Update' : 'Add')} onPress={handleSaveBio} />
+              </View>
+              {bioPhotos.length > 0 ? (
+                <Text style={{ color: '#555', marginTop: 6 }}>{bioPhotos.length} photo(s) selected</Text>
+              ) : null}
+            </View>
+            {bioMessage ? <Text style={bioMessage.includes('!') ? styles.success : styles.error}>{bioMessage}</Text> : null}
+          </View>
+        )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -430,4 +603,10 @@ const styles = StyleSheet.create({
   form: { paddingHorizontal: 18, paddingBottom: 32 },
   error: { color: 'red', marginBottom: 8, textAlign: 'center' },
   success: { color: 'green', marginBottom: 8, textAlign: 'center' },
+  postContainer: { marginTop: 24 },
+  postTitle: { fontSize: 16, fontWeight: 'bold', color: '#222', marginBottom: 8 },
+  bioComposer: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#bbb', padding: 10 },
+  bioInput: { minHeight: 80, maxHeight: 200, textAlignVertical: 'top', color: '#222', fontSize: 16 },
+  bioToolbar: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  iconButton: { paddingHorizontal: 8, paddingVertical: 6 },
 });

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { getAvailableSpecialEventRequestsForOwners, ownerAcceptSpecialEventRequest } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 
@@ -359,7 +358,6 @@ export default function OwnerBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
       
       <View style={styles.content}>
         <View style={styles.header}>

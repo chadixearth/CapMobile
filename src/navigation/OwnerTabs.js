@@ -6,6 +6,7 @@ import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
 import OwnerBookScreen from '../screens/main/OwnerBookScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
+import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
 import { useAuth } from '../hooks/useAuth';
 import * as Routes from '../constants/routes';
 
@@ -46,23 +47,30 @@ export default function OwnerTabs({ setRole }) {
             return <Ionicons name="star-outline" size={size} color={color} />;
           } else if (route.name === Routes.PROFILE) {
             return <Ionicons name="person-outline" size={size} color={color} />;
+          } else if (route.name === Routes.GOODS_SERVICES) {
+            return <Ionicons name="pricetags-outline" size={size} color={color} />;
           }
         },
         tabBarActiveTintColor: '#6B2E2B',
         tabBarInactiveTintColor: '#aaa',
         tabBarShowLabel: true,
-        headerShown: false,
+        headerShown: true,
       })}
     >
       <Tab.Screen
         name={Routes.HOME}
         component={OwnerHomeScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')} /> }}
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
       <Tab.Screen
         name={Routes.EVENTS}
         component={OwnerBookScreen}
-        options={{ headerShown: false }}
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+      />
+      <Tab.Screen
+        name={Routes.GOODS_SERVICES}
+        component={GoodsServicesScreen}
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
       <Tab.Screen
         name={Routes.PROFILE}

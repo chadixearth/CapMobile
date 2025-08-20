@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Alert, Platform, FlatList, Dimensions } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import GoogleMap from '../../components/GoogleMap';
 import Button from '../../components/Button';
-import Notification from '../../components/Notification';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 
 import { supabase } from '../../services/supabase';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import * as Routes from '../../constants/routes';
 
 // Remove the hardcoded tourPackages array
@@ -81,6 +79,13 @@ export default function TouristHomeScreen({ navigation }) {
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [networkStatus, setNetworkStatus] = useState('Unknown');
   const [dataSource, setDataSource] = useState('Unknown');
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [detailPackage, setDetailPackage] = useState(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const listRef = useRef(null);
+  const SCREEN_WIDTH = Dimensions.get('window').width;
+  const CARD_MARGIN = 16;
+  const CARD_WIDTH = SCREEN_WIDTH - CARD_MARGIN * 2;
 
   // Handle returned terminal from TerminalsScreen
   useFocusEffect(
@@ -213,7 +218,7 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={20} color="#fff" />
@@ -284,7 +289,7 @@ export default function TouristHomeScreen({ navigation }) {
         </View>
       </Modal>
 
-      <ScrollView>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Featured Image */}
         <Image
           source={require('../../../assets/images/tourA.png')}
@@ -304,47 +309,31 @@ export default function TouristHomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         <View style={styles.networkStatusContainer}>
-          <View>
-            <Text style={[styles.networkStatus, { color: networkStatus === 'Connected' ? '#4CAF50' : '#F44336' }]}>
-              Network: {networkStatus}
-            </Text>
-            <Text style={[styles.networkStatus, { color: '#666', fontSize: 10 }]}>
-              Data Source: {dataSource}
-            </Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.testButton}
-            onPress={async () => {
-              console.log('Testing connection...');
-                             try {
-                 const result = await testConnection();
-                 console.log('Connection test result:', result);
-                 if (result.success) {
-                   Alert.alert('Connection Test Success', 
-                     `✅ Found working API endpoint!\n\n` +
-                     `URL: ${result.url}\n` +
-                     `Status: ${result.status}\n\n` +
-                     `Response preview:\n${result.text}`
-                   );
-                 } else {
-                   Alert.alert('Connection Test Failed', 
-                     `Error: ${result.error}\n\n` +
-                     `Tested URLs:\n${result.testedUrls?.slice(0, 3).join('\n')}...\n\n` +
-                     `Please check:\n` +
-                     `1. Your backend server is running\n` +
-                     `2. Your computer's IP is correct: 10.196.222.213\n` +
-                     `3. Your phone and computer are on the same network\n` +
-                     `4. Your API endpoints are configured correctly`
-                   );
-                 }
-              } catch (error) {
-                console.error('Test failed:', error);
-                Alert.alert('Connection Test Failed', error.message);
-              }
-            }}
-          >
-            <Text style={styles.testButtonText}>Test Connection</Text>
-          </TouchableOpacity>
+          <Text style={[styles.networkStatus, { color: networkStatus === 'Connected' ? '#4CAF50' : '#F44336' }]}>
+            Network: {networkStatus}
+          </Text>
+          <Text style={[styles.networkStatus, { color: '#666', fontSize: 10 }]}>
+            Data Source: {dataSource}
+          </Text>
+          {__DEV__ && (
+            <TouchableOpacity 
+              style={styles.testButton}
+              onPress={async () => {
+                try {
+                  const result = await testConnection();
+                  if (result.success) {
+                    Alert.alert('Connection Test Success', `URL: ${result.url}`);
+                  } else {
+                    Alert.alert('Connection Test Failed', result.error || 'Unknown error');
+                  }
+                } catch (error) {
+                  Alert.alert('Connection Test Failed', error.message);
+                }
+              }}
+            >
+              <Text style={styles.testButtonText}>Test</Text>
+            </TouchableOpacity>
+          )}
         </View>
         {loadingPackages ? (
           <Text style={{ textAlign: 'center', marginVertical: 16 }}>Loading packages...</Text>
@@ -356,104 +345,186 @@ export default function TouristHomeScreen({ navigation }) {
             </Text>
           </View>
         ) : (
-          <View style={styles.packagesContainer}>
-            {tourPackages.map((pkg) => (
-              <View key={pkg.id || pkg.package_name} style={styles.packageCard}>
-                {/* Photos */}
+          <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+            {tourPackages.map((pkg, index) => (
+              <TouchableOpacity
+                key={pkg.id || `${pkg.package_name}-${index}`}
+                activeOpacity={0.9}
+                style={[styles.packageCard, { width: '100%', marginHorizontal: 0 }]}
+                onPress={() => { setDetailPackage(pkg); setDetailModalVisible(true); }}
+              >
                 {pkg.photos && pkg.photos.length > 0 ? (
-                  <Image 
-                    source={{ uri: pkg.photos[0] }} 
-                    style={styles.packageImage}
-                    resizeMode="cover"
-                  />
+                  <Image source={{ uri: pkg.photos[0] }} style={[styles.packageImage, { height: 140 }]} resizeMode="cover" />
                 ) : (
-                  <Image 
-                    source={require('../../../assets/images/tourA.png')} 
-                    style={styles.packageImage}
-                    resizeMode="cover"
-                  />
+                  <Image source={require('../../../assets/images/tourA.png')} style={[styles.packageImage, { height: 140 }]} resizeMode="cover" />
                 )}
-                
-                <Text style={styles.packageTitle}>{pkg.package_name}</Text>
-                <Text style={styles.packageDescription}>{pkg.description}</Text>
-                
-                {/* Price */}
-                <Text style={styles.packagePrice}>
-                  ₱{pkg.price?.toFixed(2) || 'Price not available'}
-                </Text>
-                
-                {/* Duration */}
-                {pkg.duration_hours && (
-                  <Text style={styles.packageInfo}>
-                    Duration: {pkg.duration_hours} hours
+                <View style={styles.cardTopRow}>
+                  <Text style={styles.packageTitle} numberOfLines={1}>{pkg.package_name}</Text>
+                  <Text style={styles.packagePrice} numberOfLines={1}>
+                    {typeof pkg.price === 'number' || !isNaN(parseFloat(pkg.price)) ? `₱${Number(pkg.price).toFixed(0)}` : '—'}
                   </Text>
-                )}
-                
-                {/* Location */}
-                {pkg.pickup_location && (
-                  <Text style={styles.packageInfo}>Pickup: {pkg.pickup_location}</Text>
-                )}
-                {pkg.destination && (
-                  <Text style={styles.packageInfo}>Destination: {pkg.destination}</Text>
-                )}
-                
-                {/* Max Passengers */}
-                {pkg.max_pax && (
-                  <Text style={styles.packageInfo}>Max: {pkg.max_pax} passengers</Text>
-                )}
-                
-                {/* Available Days */}
-                {pkg.available_days && pkg.available_days.length > 0 && (
-                  <Text style={styles.packageInfo}>
-                    Available: {pkg.available_days.join(', ')}
-                  </Text>
-                )}
-                
-                {/* Route */}
-                {pkg.route && (
-                  <Text style={styles.packageInfo}>Route: {pkg.route}</Text>
-                )}
-                
-                {/* Expiration */}
-                {pkg.expiration_date && (
-                  <Text style={styles.packageInfo}>Expires: {pkg.expiration_date}</Text>
-                )}
-                
-                {/* Status */}
-                <View style={styles.statusContainer}>
-                  <Text style={[
-                    styles.packageStatus, 
-                    { color: pkg.is_active ? '#4CAF50' : '#F44336' }
-                  ]}>
-                    {pkg.is_active ? 'Available' : 'Unavailable'}
-                  </Text>
-                  {pkg.is_expired && (
-                    <Text style={[styles.packageStatus, { color: '#FF9800' }]}>
-                      Expired
-                    </Text>
-                  )}
                 </View>
-                
-                                 <Button 
-                   title="Book" 
-                   onPress={() => {
-                     navigation.navigate(Routes.REQUEST_BOOKING, {
-                       packageId: pkg.id,
-                       packageData: pkg
-                     });
-                   }} 
-                 />
-              </View>
+                <View style={styles.metaRow}>
+                  {pkg.duration_hours ? (
+                    <View style={styles.metaPill}>
+                      <Ionicons name="time-outline" size={12} color="#6B2E2B" />
+                      <Text style={styles.metaText}>{pkg.duration_hours}h</Text>
+                    </View>
+                  ) : null}
+                  {pkg.max_pax ? (
+                    <View style={styles.metaPill}>
+                      <Ionicons name="people-outline" size={12} color="#6B2E2B" />
+                      <Text style={styles.metaText}>{pkg.max_pax}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.bookChip}
+                  onPress={() => {
+                    navigation.navigate(Routes.REQUEST_BOOKING, {
+                      packageId: pkg.id,
+                      packageData: pkg,
+                    });
+                  }}
+                >
+                  <Ionicons name="cart-outline" size={14} color="#fff" />
+                  <Text style={styles.bookChipText}>Book</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
             ))}
           </View>
         )}
       </ScrollView>
+      {/* Package Detail Modal */}
+      <Modal visible={detailModalVisible} animationType="slide" transparent onRequestClose={() => setDetailModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { maxHeight: '85%' }] }>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Package Details</Text>
+            </View>
+            <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+              {detailPackage && (
+                <>
+                  {/* Image */}
+                  {detailPackage.photos && detailPackage.photos.length > 0 ? (
+                    <Image source={{ uri: detailPackage.photos[0] }} style={styles.detailImage} resizeMode="cover" />
+                  ) : (
+                    <Image source={require('../../../assets/images/tourA.png')} style={styles.detailImage} resizeMode="cover" />
+                  )}
+
+                  {/* Title + Price */}
+                  <View style={styles.detailHeaderRow}>
+                    <Text style={styles.detailTitle} numberOfLines={2}>{detailPackage.package_name}</Text>
+                    <Text style={styles.detailPrice} numberOfLines={1}>
+                      {typeof detailPackage.price === 'number' || !isNaN(parseFloat(detailPackage.price)) ? `₱${Number(detailPackage.price).toFixed(2)}` : '—'}
+                    </Text>
+                  </View>
+
+                  {/* Chips */}
+                  <View style={styles.detailChipsRow}>
+                    {detailPackage.duration_hours ? (
+                      <View style={styles.detailChip}>
+                        <Ionicons name="time-outline" size={14} color="#6B2E2B" />
+                        <Text style={styles.detailChipText}>{detailPackage.duration_hours}h</Text>
+                      </View>
+                    ) : null}
+                    {detailPackage.max_pax ? (
+                      <View style={styles.detailChip}>
+                        <Ionicons name="people-outline" size={14} color="#6B2E2B" />
+                        <Text style={styles.detailChipText}>{detailPackage.max_pax} pax</Text>
+                      </View>
+                    ) : null}
+                    <View style={[styles.detailChip, detailPackage.is_active === false && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' }]}>
+                      <Ionicons name={detailPackage.is_active === false ? 'close-circle-outline' : 'checkmark-circle-outline'} size={14} color={detailPackage.is_active === false ? '#d32f2f' : '#2e7d32'} />
+                      <Text style={[styles.detailChipText, detailPackage.is_active === false ? { color: '#d32f2f' } : { color: '#2e7d32' }]}>
+                        {detailPackage.is_active === false ? 'Unavailable' : 'Available'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Description */}
+                  {detailPackage.description ? (
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={styles.detailSectionTitle}>Description</Text>
+                      <Text style={styles.detailDescription}>{detailPackage.description}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Info rows */}
+                  <View style={{ marginTop: 8 }}>
+                    {detailPackage.pickup_location ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="navigate-outline" size={16} color="#6B2E2B" />
+                        <Text style={styles.detailLabel}>Pickup</Text>
+                        <Text style={styles.detailValue}>{detailPackage.pickup_location}</Text>
+                      </View>
+                    ) : null}
+                    {detailPackage.destination ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="flag-outline" size={16} color="#6B2E2B" />
+                        <Text style={styles.detailLabel}>Destination</Text>
+                        <Text style={styles.detailValue}>{detailPackage.destination}</Text>
+                      </View>
+                    ) : null}
+                    {detailPackage.route ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="map-outline" size={16} color="#6B2E2B" />
+                        <Text style={styles.detailLabel}>Route</Text>
+                        <Text style={styles.detailValue}>{detailPackage.route}</Text>
+                      </View>
+                    ) : null}
+                    {detailPackage.available_days && detailPackage.available_days.length > 0 ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="calendar-outline" size={16} color="#6B2E2B" />
+                        <Text style={styles.detailLabel}>Available</Text>
+                        <Text style={styles.detailValue}>{detailPackage.available_days.join(', ')}</Text>
+                      </View>
+                    ) : null}
+                    {detailPackage.expiration_date ? (
+                      <View style={styles.detailRow}>
+                        <Ionicons name="alert-circle-outline" size={16} color="#6B2E2B" />
+                        <Text style={styles.detailLabel}>Expires</Text>
+                        <Text style={styles.detailValue}>{detailPackage.expiration_date}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+
+            {/* Actions */}
+            {detailPackage && (
+              <View style={styles.detailActionsRow}>
+                <TouchableOpacity style={styles.detailSecondaryBtn} onPress={() => setDetailModalVisible(false)}>
+                  <Text style={styles.detailSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.detailPrimaryBtn}
+                  onPress={() => {
+                    setDetailModalVisible(false);
+                    navigation.navigate(Routes.REQUEST_BOOKING, {
+                      packageId: detailPackage.id,
+                      packageData: detailPackage,
+                    });
+                  }}
+                >
+                  <Ionicons name="cart-outline" size={16} color="#fff" />
+                  <Text style={styles.detailPrimaryText}>Book</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+  scrollContent: {
+    paddingBottom: 24,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -478,7 +549,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: '#fff', marginLeft: 8 },
   featuredImage: {
     width: '92%',
-    height: 120,
+    height: 140,
     borderRadius: 12,
     alignSelf: 'center',
     marginVertical: 8,
@@ -546,64 +617,148 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-evenly',
-    marginBottom: 80,
+    marginBottom: 24,
+    paddingBottom: 24,
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  filtersRow: {
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  filterChip: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    marginHorizontal: 4,
+  },
+  filterChipActive: {
+    backgroundColor: '#F5E9E2',
+    borderColor: '#E0CFC2',
+  },
+  filterChipText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  filterChipTextActive: {
+    color: '#6B2E2B',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ddd',
+  },
+  dotActive: {
+    backgroundColor: '#6B2E2B',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   packageCard: {
     width: '44%',
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#eee',
     marginBottom: 16,
     alignItems: 'center',
-    padding: 8,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   packageImage: {
     width: '100%',
-    height: 70,
+    height: 90,
     borderRadius: 8,
     marginBottom: 8,
   },
+  cardTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   packageTitle: {
     fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 4,
+    fontWeight: '700',
+    marginBottom: 2,
     textAlign: 'center',
     color: '#333',
   },
   packageDescription: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 6,
-    lineHeight: 16,
+    display: 'none',
   },
   packagePrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#6B2E2B',
-    marginBottom: 4,
-    textAlign: 'center',
+    marginBottom: 2,
+    textAlign: 'right',
   },
   packageInfo: {
-    fontSize: 11,
-    color: '#555',
-    textAlign: 'center',
-    marginBottom: 2,
+    display: 'none',
   },
   packageStatus: {
+    display: 'none',
+  },
+  metaRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+  },
+  metaText: {
+    color: '#6B2E2B',
     fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 8,
+    fontWeight: '700',
   },
-  bookButton: {
+  bookChip: {
+    marginTop: 'auto',
+    alignSelf: 'flex-end',
     backgroundColor: '#6B2E2B',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  bookButtonText: { color: '#fff', fontWeight: 'bold' },
+  bookChipText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   maximContainer: {
     backgroundColor: '#F5E9E2',
     borderRadius: 16,
@@ -659,6 +814,116 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 8,
     position: 'relative',
+  },
+  detailContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  detailImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  detailHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 6,
+  },
+  detailTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#333',
+    marginRight: 8,
+  },
+  detailPrice: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#6B2E2B',
+  },
+  detailChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  detailChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    borderRadius: 999,
+  },
+  detailChipText: {
+    color: '#6B2E2B',
+    fontWeight: '700',
+  },
+  detailSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 6,
+  },
+  detailDescription: {
+    color: '#555',
+    lineHeight: 20,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  detailLabel: {
+    width: 90,
+    color: '#444',
+    fontWeight: '700',
+  },
+  detailValue: {
+    flex: 1,
+    color: '#333',
+  },
+  detailActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  detailSecondaryBtn: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  detailSecondaryText: {
+    color: '#444',
+    fontWeight: '700',
+  },
+  detailPrimaryBtn: {
+    flex: 1,
+    backgroundColor: '#6B2E2B',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  detailPrimaryText: {
+    color: '#fff',
+    fontWeight: '800',
   },
   modalTitle: {
     fontSize: 18,
