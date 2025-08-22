@@ -1,39 +1,78 @@
 // API Configuration
-const API_BASE_URL = 'http://192.168.1.8:8000/api/booking/'; 
+const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/'; 
+import { getAccessToken } from '../authService';
 
 export async function createBooking(bookingData) {
-  try {
+  // Defensive: enforce server-expected types and field names
+  const sanitizeTime = (timeStr) => {
+    if (typeof timeStr !== 'string') return '09:00:00';
+    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) return '09:00:00';
+    let h = Math.max(0, Math.min(23, parseInt(match[1], 10) || 0));
+    let m = Math.max(0, Math.min(59, parseInt(match[2], 10) || 0));
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+  };
+
+  const payload = {
+    package_id: bookingData.package_id,
+    customer_id: bookingData.customer_id,
+    booking_date: typeof bookingData.booking_date === 'string' ? bookingData.booking_date : (bookingData.booking_date?.toString?.() || ''),
+    pickup_time: sanitizeTime(bookingData.pickup_time),
+    number_of_pax: Number(bookingData.number_of_pax) || 1,
+    total_amount: Number(bookingData.total_amount) || 0,
+    special_requests: bookingData.special_requests || '',
+    contact_number: String(bookingData.contact_number || ''),
+    pickup_address: bookingData.pickup_address || '',
+  };
+  const attempt = async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(`${API_BASE_URL}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(bookingData),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);  
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    try {
+      const token = await getAccessToken();
+      const response = await fetch(`${API_BASE_URL}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await response.text();
+        throw new Error(`Expected JSON but received: ${contentType || 'unknown'}`);
+      }
+
+      return await response.json();
+    } catch (e) {
+      clearTimeout(timeoutId);
+      throw e;
     }
-    
-    const contentType = response.headers.get('content-type');
-    
-    if (!contentType || !contentType.includes('application/json')) {
-      const responseText = await response.text();
-      throw new Error(`Expected JSON but received: ${contentType || 'unknown'}`);
+  };
+
+  // Retry up to 2 times on transient errors
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      return await attempt();
+    } catch (err) {
+      const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
+      const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');
+      if (i < 1 && (isAbort || isNet)) {
+        await new Promise(res => setTimeout(res, 800));
+        continue;
+      }
+      console.error('Error creating booking:', err);
+      throw err;
     }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error creating booking:', error);
-    throw error;
   }
 }
 
@@ -51,7 +90,11 @@ export async function getBookings(filters = {}) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const token = await getAccessToken();
     const response = await fetch(url, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -75,7 +118,11 @@ export async function getBooking(bookingId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const token = await getAccessToken();
     const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -99,10 +146,12 @@ export async function updateBookingStatus(bookingId, status) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const token = await getAccessToken();
     const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ status }),
       signal: controller.signal,
@@ -128,8 +177,12 @@ export async function cancelBooking(bookingId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const token = await getAccessToken();
     const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
       method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -153,7 +206,11 @@ export async function getBookingByReference(reference) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const token = await getAccessToken();
     const response = await fetch(`${API_BASE_URL}reference/${reference}/`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -173,10 +230,46 @@ export async function getBookingByReference(reference) {
 }
 
 export async function getCustomerBookings(customerId, filters = {}) {
-  try {
+  const attempt = async (timeoutMs = 25000) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+
+      const url = `${API_BASE_URL}customer/${customerId}/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      console.log('Fetching customer bookings from:', url);
+
+      const token = await getAccessToken().catch(() => null);
+      const response = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+      }
+
+      return await response.json();
+    } finally {
+      // Ensure timer is cleared on any path
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const attemptNoTimeout = async () => {
     // Build query parameters
     const queryParams = new URLSearchParams();
     Object.keys(filters).forEach(key => {
@@ -184,29 +277,51 @@ export async function getCustomerBookings(customerId, filters = {}) {
         queryParams.append(key, filters[key]);
       }
     });
-    
+
     const url = `${API_BASE_URL}customer/${customerId}/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
-    console.log('Fetching customer bookings from:', url);
-    
+    console.log('Fetching customer bookings (no-timeout) from:', url);
+    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
-      signal: controller.signal,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
     });
-    
-    clearTimeout(timeoutId);
-    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('API Error Response:', errorText);
+      console.error('API Error Response (no-timeout):', errorText);
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
-    
-    const data = await response.json();
-    console.log('Customer bookings response:', data);
-    return data;
-  } catch (error) {
-    console.error('Error fetching customer bookings:', error);
-    throw error;
+    return await response.json();
+  };
+
+  // Retry strategy on Abort/Network errors, with backoff and longer timeout
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const timeout = i === 0 ? 25000 : i === 1 ? 35000 : 45000;
+      const data = await attempt(timeout);
+      console.log('Customer bookings response:', data);
+      return data;
+    } catch (error) {
+      const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+      const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND|timeout/i.test(error?.message || '');
+      if (isAbort) {
+        try {
+          // Try once immediately without a timeout controller
+          const data = await attemptNoTimeout();
+          console.log('Customer bookings response (no-timeout):', data);
+          return data;
+        } catch (e) {
+          // fall through to retry/backoff below
+        }
+      }
+      if (i < 2 && (isAbort || isNet)) {
+        await new Promise((res) => setTimeout(res, 800 + i * 600));
+        continue;
+      }
+      console.error('Error fetching customer bookings:', error);
+      throw error;
+    }
   }
 }
 

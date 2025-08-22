@@ -21,6 +21,7 @@ import Button from '../../components/Button';
 import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
 import { supabase } from '../../services/supabase';
+import { getCurrentUser } from '../../services/authService';
 
 const RequestBookingScreen = ({ route, navigation }) => {
   const { packageId, packageData } = route.params || {};
@@ -47,6 +48,19 @@ const RequestBookingScreen = ({ route, navigation }) => {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [bookingReference, setBookingReference] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Ensure pickup_time is in HH:MM:SS and valid
+  const sanitizeTime = (timeStr) => {
+    if (typeof timeStr !== 'string') return '09:00:00';
+    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) return '09:00:00';
+    let hours = parseInt(match[1], 10);
+    let minutes = parseInt(match[2], 10);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return '09:00:00';
+    hours = Math.max(0, Math.min(23, hours));
+    minutes = Math.max(0, Math.min(59, minutes));
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+  };
 
   useEffect(() => {
     if (!packageData) {
@@ -116,6 +130,14 @@ const RequestBookingScreen = ({ route, navigation }) => {
       return false;
     }
 
+    // Validate pickup_time format HH:MM or HH:MM:SS
+    const timeOk = typeof formData.pickup_time === 'string' && /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
+    if (!timeOk) {
+      setErrorMessage('Pickup time must be in HH:MM format');
+      setShowErrorModal(true);
+      return false;
+    }
+
     const selectedPackageForValidation = packages.find(p => p.id === formData.package_id) || selectedPackage;
     if (selectedPackageForValidation && selectedPackageForValidation.max_pax && formData.number_of_pax > selectedPackageForValidation.max_pax) {
       setErrorMessage(`Maximum passengers allowed: ${selectedPackageForValidation.max_pax}`);
@@ -164,38 +186,60 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
     setLoading(true);
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-             if (userError || !user) {
-         setErrorMessage('Please log in to create a booking');
-         setShowErrorModal(true);
-         return;
-       }
+      // Get current user (prefer app auth, fallback to Supabase)
+      let userId = null;
+      const currentUser = await getCurrentUser();
+      if (currentUser && currentUser.id) {
+        userId = currentUser.id;
+      } else {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!userError && user && user.id) {
+          userId = user.id;
+        }
+      }
 
-      // Format the booking data
+      if (!userId) {
+        setErrorMessage('Please log in to create a booking');
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Build a strict payload with validated types
       const bookingData = {
-        ...formData,
+        package_id: formData.package_id,
+        customer_id: userId,
         booking_date: formData.booking_date.toISOString().split('T')[0],
-        customer_id: user.id,
+        pickup_time: sanitizeTime(formData.pickup_time),
+        number_of_pax: Number(formData.number_of_pax) || 1,
+        total_amount: Number(formData.total_amount) || 0,
+        special_requests: formData.special_requests || '',
+        contact_number: String(formData.contact_number || ''),
+        pickup_address: formData.pickup_address || '',
+        // contact_email is intentionally omitted to avoid backend mis-parsing into time
       };
 
       const response = await createBooking(bookingData);
       
-                    if (response.success) {
+      if (response.success) {
          setBookingReference(response.data?.booking_reference || 'N/A');
          setShowSuccessModal(true);
-       } else {
+      } else {
          setErrorMessage(response.error || 'Failed to create booking');
          setShowErrorModal(true);
-       }
-     } catch (error) {
-       console.error('Error creating booking:', error);
-       setErrorMessage(error.message || 'Failed to create booking');
-       setShowErrorModal(true);
-     } finally {
-       setLoading(false);
-     }
+      }
+    } catch (error) {
+      console.error('Error creating booking:', error);
+      // Provide a clearer message on timeouts/aborts
+      const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+      setErrorMessage(
+        isAbort
+          ? 'Request timed out. Please check your connection and try again.'
+          : (error.message || 'Failed to create booking')
+      );
+      setShowErrorModal(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatDate = (date) => {

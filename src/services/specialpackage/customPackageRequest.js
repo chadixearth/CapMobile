@@ -1,34 +1,52 @@
 // API Configuration
-const API_BASE_URL = 'http://192.168.1.8:8000/api';
+const API_BASE_URL = 'http://10.196.222.213:8000/api';
 
 /**
  * Helper function to make API requests with proper error handling
  */
 async function apiRequest(endpoint, options = {}) {
-  try {
+  const attemptRequest = async (timeoutMs) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    const data = await response.json();
-    
-    return {
-      success: response.ok,
-      data,
-      status: response.status,
-    };
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      // Safely parse JSON
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = { error: 'Invalid JSON response' };
+      }
+      return { response, data };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  };
+
+  try {
+    const { response, data } = await attemptRequest(30000);
+    return { success: response.ok, data, status: response.status };
   } catch (error) {
     if (error.name === 'AbortError') {
-      return { success: false, error: 'Request timeout. Please try again.' };
+      // One retry with longer timeout
+      try {
+        const { response, data } = await attemptRequest(45000);
+        return { success: response.ok, data, status: response.status };
+      } catch (retryError) {
+        if (retryError.name === 'AbortError') {
+          return { success: false, error: 'Request timeout. Please try again.' };
+        }
+        return { success: false, error: retryError.message || 'Network error occurred' };
+      }
     }
     return { success: false, error: error.message || 'Network error occurred' };
   }
@@ -346,11 +364,15 @@ export async function updateCustomRequestStatus(requestId, requestType, updateDa
 
 /**
  * Get custom tour requests available for drivers to accept
+ * @param {string} [driverId] - Optional driver ID to let backend filter out requests accepted by others
  * @returns {Promise<{ success: boolean, data?: array, error?: string }>}
  */
-export async function getAvailableCustomTourRequestsForDrivers() {
+export async function getAvailableCustomTourRequestsForDrivers(driverId) {
   try {
-    const result = await apiRequest('/custom-tour-requests/available-for-drivers/', {
+    const endpoint = driverId
+      ? `/custom-tour-requests/available-for-drivers/?driver_id=${encodeURIComponent(driverId)}`
+      : '/custom-tour-requests/available-for-drivers/';
+    const result = await apiRequest(endpoint, {
       method: 'GET',
     });
 
@@ -409,6 +431,70 @@ export async function driverAcceptCustomTourRequest(requestId, driverData) {
       success: false,
       error: error.message || 'Network error occurred',
     };
+  }
+}
+
+/**
+ * Get custom tour requests assigned to a specific driver
+ * @param {string} driverId - Driver's user ID
+ * @param {Object} filters - Optional filters (e.g., status)
+ * @returns {Promise<{ success: boolean, data?: array, error?: string }>}
+ */
+export async function getDriverCustomTours(driverId, filters = {}) {
+  try {
+    const queryParams = new URLSearchParams();
+    queryParams.append('driver_id', driverId);
+    Object.keys(filters).forEach((key) => {
+      const value = filters[key];
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, value);
+      }
+    });
+
+    const result = await apiRequest(`/custom-tour-requests/?${queryParams.toString()}`, {
+      method: 'GET',
+    });
+
+    if (result.success && result.data && (Array.isArray(result.data) || result.data.success)) {
+      const list = Array.isArray(result.data)
+        ? result.data
+        : (result.data.data || []);
+      return {
+        success: true,
+        data: list.map((req) => ({ ...req, request_type: 'custom_tour' })),
+      };
+    }
+
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to fetch driver custom tours',
+    };
+  } catch (error) {
+    console.error('Error fetching driver custom tours:', error);
+    return { success: false, error: error.message || 'Network error occurred' };
+  }
+}
+
+/**
+ * Update custom tour request status (driver flow)
+ * @param {string} requestId
+ * @param {string} status - e.g., 'in_progress' | 'completed'
+ */
+export async function updateCustomTourStatus(requestId, status) {
+  try {
+    const result = await apiRequest(`/custom-tour-requests/${requestId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+
+    if (result.success && (result.data?.success || result.status === 200)) {
+      const data = Array.isArray(result.data) ? result.data[0] : (result.data?.data || result.data);
+      return { success: true, data };
+    }
+    return { success: false, error: result.data?.error || 'Failed to update custom tour status' };
+  } catch (error) {
+    console.error('Error updating custom tour status:', error);
+    return { success: false, error: error.message || 'Network error occurred' };
   }
 }
 

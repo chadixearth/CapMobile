@@ -1,6 +1,9 @@
 // services/tourPackageService.js
 // Use your computer's IP address instead of localhost for mobile devices
-const API_BASE_URL = 'http://192.168.1.8:8000/api/tourpackage/'; // Your Django server on port 8000
+// Try multiple likely endpoints to be resilient to server route differences
+// Single, authoritative base URL (matches Django router: router.register('tourpackage', ...))
+const API_BASE_URL = 'http://10.196.222.213:8000/api/tourpackage/';
+import { getAccessToken } from '../authService';
 
 // Helper function to create a timeout promise
 const createTimeout = (ms) => {
@@ -9,7 +12,7 @@ const createTimeout = (ms) => {
   });
 };
 
-// Helper function to format coordinates and photos
+// Helper function to format coordinates, photos, and reviews
 const formatCoordinates = (packages) => {
   return packages.map(pkg => {
     // Convert null coordinates to string format for display
@@ -58,6 +61,38 @@ const formatCoordinates = (packages) => {
     } else {
       formattedPackage.photos = [];
     }
+
+    // Ensure reviews structure exists
+    // Support various backend shapes: reviews (array), ratings (array), review_count, average_rating
+    const reviewsArray = Array.isArray(formattedPackage.reviews)
+      ? formattedPackage.reviews
+      : (Array.isArray(formattedPackage.ratings) ? formattedPackage.ratings : []);
+
+    // Normalize each review to have at least a numeric rating if present
+    const normalizedReviews = reviewsArray.map(r => {
+      if (typeof r === 'number') return { rating: r };
+      if (r && typeof r === 'object') return r;
+      return { rating: 0 };
+    });
+
+    // Compute average rating if not provided
+    let averageRating = Number(formattedPackage.average_rating);
+    if (Number.isNaN(averageRating) || averageRating === 0) {
+      if (normalizedReviews.length > 0) {
+        const total = normalizedReviews.reduce((sum, rv) => sum + (Number(rv.rating) || 0), 0);
+        averageRating = normalizedReviews.length ? total / normalizedReviews.length : 0;
+      } else if (typeof formattedPackage.rating === 'number') {
+        averageRating = formattedPackage.rating;
+      } else {
+        averageRating = 0;
+      }
+    }
+
+    const reviewsCount = Number(formattedPackage.reviews_count ?? formattedPackage.review_count);
+
+    formattedPackage.reviews = normalizedReviews;
+    formattedPackage.reviews_count = Number.isNaN(reviewsCount) ? normalizedReviews.length : reviewsCount;
+    formattedPackage.average_rating = averageRating;
     
     return formattedPackage;
   });
@@ -66,15 +101,9 @@ const formatCoordinates = (packages) => {
 // Test function to check if server is reachable
 export const testConnection = async () => {
   const testUrls = [
-    // Test Django REST Framework endpoints
-    'http://192.168.1.8:8000/api/tourpackage/',
-    'http://192.168.1.8:8000/api/tourpackages/',
-    'http://192.168.1.8:8000/api/packages/',
-    'http://192.168.1.8:8000/tourpackage/',
-    'http://192.168.1.8:8000/tourpackages/',
-    'http://192.168.1.8:8000/packages/',
-    'http://192.168.1.8:8000/api/',
-    'http://192.168.1.8:8000/',
+    API_BASE_URL,
+    'http://10.196.222.213:8000/api/',
+    'http://10.196.222.213:8000/',
   ];
 
   for (const url of testUrls) {
@@ -138,29 +167,25 @@ export const tourPackageService = {
   // Get all tour packages
   async getAllPackages() {
     try {
+      const token = await getAccessToken();
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
-      const response = await fetch(`${API_BASE_URL}`, {
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(API_BASE_URL, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         signal: controller.signal,
       });
-      
       clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status} at ${API_BASE_URL}`);
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Response is not JSON');
+        throw new Error(`Response is not JSON at ${API_BASE_URL}`);
       }
-      
       const data = await response.json();
       
       let packages;
@@ -178,8 +203,20 @@ export const tourPackageService = {
         throw new Error('Unexpected response format from server');
       }
       
-      // Format coordinates to handle null values and photos
-      const formattedPackages = formatCoordinates(packages);
+      // Format coordinates and ensure reviews exist
+      let formattedPackages = formatCoordinates(packages);
+
+      // If backend didn't include reviews, try to fetch them per package and merge
+      try {
+        const needsReviews = formattedPackages.some(p => !Array.isArray(p.reviews) || p.reviews.length === 0);
+        if (needsReviews) {
+          formattedPackages = await mergeReviewsIntoPackages(formattedPackages);
+        }
+      } catch (mergeError) {
+        // Non-fatal: proceed without merged reviews
+        console.warn('Could not merge reviews; proceeding without:', mergeError?.message || mergeError);
+      }
+
       return formattedPackages;
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -190,29 +227,25 @@ export const tourPackageService = {
   // Get a specific tour package by ID
   async getPackageById(packageId) {
     try {
+      const token = await getAccessToken();
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await fetch(`${API_BASE_URL}${packageId}/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         signal: controller.signal,
       });
-      
       clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status} at ${API_BASE_URL}${packageId}/`);
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Response is not JSON');
+        throw new Error(`Response is not JSON at ${API_BASE_URL}${packageId}/`);
       }
-      
       const data = await response.json();
       
       let packageData;
@@ -226,8 +259,26 @@ export const tourPackageService = {
         throw new Error('Unexpected response format from server');
       }
       
-      // Format coordinates for single package
-      const formattedPackage = formatCoordinates([packageData])[0];
+      // Format coordinates and ensure reviews for single package
+      let formattedPackage = formatCoordinates([packageData])[0];
+
+      // If backend didn't include reviews, fetch them and merge
+      try {
+        if (!Array.isArray(formattedPackage.reviews) || formattedPackage.reviews.length === 0) {
+          const reviews = await fetchPackageReviews(formattedPackage.id);
+          const { normalizedReviews, averageRating } = normalizeReviews(reviews, formattedPackage);
+          formattedPackage = {
+            ...formattedPackage,
+            reviews: normalizedReviews,
+            reviews_count: normalizedReviews.length,
+            average_rating: averageRating,
+          };
+        }
+      } catch (mergeError) {
+        // Non-fatal
+        console.warn('Could not fetch reviews for package', formattedPackage?.id, mergeError?.message || mergeError);
+      }
+
       return formattedPackage;
     } catch (error) {
       console.error('Error fetching package:', error);
@@ -235,3 +286,136 @@ export const tourPackageService = {
     }
   },
 };
+
+// ------------------------
+// Reviews integration utils
+// ------------------------
+
+// Derive API prefix (e.g., http://host:8000/api) from tourpackage base URL
+const API_PREFIX = (() => {
+  try {
+    // Remove trailing slash for stability
+    const trimmed = API_BASE_URL.replace(/\/$/, '');
+    // Split off the trailing /tourpackage
+    const idx = trimmed.lastIndexOf('/tourpackage');
+    if (idx > 0) return trimmed.substring(0, idx);
+  } catch {}
+  // Fallback: assume '/api' lives one level up
+  return API_BASE_URL.replace(/\/$/, '').replace(/\/tourpackage$/, '');
+})();
+
+function buildReviewUrlCandidates(packageId) {
+  // Try several common REST patterns
+  return [
+    // Nested under tourpackage
+    `${API_BASE_URL}${packageId}/reviews/`,
+    `${API_BASE_URL}${packageId}/ratings/`,
+    // Separate reviews module
+    `${API_PREFIX}/reviews/?package_id=${encodeURIComponent(packageId)}`,
+    `${API_PREFIX}/reviews/${packageId}/`,
+    `${API_PREFIX}/review/${packageId}/`,
+    // Alternate pluralization
+    `${API_PREFIX}/rating/?package_id=${encodeURIComponent(packageId)}`,
+  ];
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+function extractReviewsFromResponseData(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (data.results && Array.isArray(data.results)) return data.results;
+  if (data.data && Array.isArray(data.data)) return data.data;
+  if (data.data && data.data.results && Array.isArray(data.data.results)) return data.data.results;
+  return [];
+}
+
+async function fetchPackageReviews(packageId) {
+  const token = await getAccessToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const candidates = buildReviewUrlCandidates(packageId);
+
+  for (const url of candidates) {
+    try {
+      const resp = await fetchWithTimeout(url, { method: 'GET', headers }, 8000);
+      if (!resp.ok) continue;
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) continue;
+      const json = await resp.json();
+      const reviews = extractReviewsFromResponseData(json);
+      if (Array.isArray(reviews)) return reviews;
+    } catch (_) {
+      // Try next candidate
+    }
+  }
+  return [];
+}
+
+function normalizeReviews(reviews, basePackage = {}) {
+  const normalizedReviews = (Array.isArray(reviews) ? reviews : []).map(r => {
+    if (typeof r === 'number') return { rating: r };
+    if (r && typeof r === 'object') return r;
+    return { rating: 0 };
+  });
+
+  let averageRating = Number(basePackage.average_rating);
+  if (Number.isNaN(averageRating) || averageRating === 0) {
+    if (normalizedReviews.length > 0) {
+      const total = normalizedReviews.reduce((sum, rv) => sum + (Number(rv.rating) || 0), 0);
+      averageRating = normalizedReviews.length ? total / normalizedReviews.length : 0;
+    } else if (typeof basePackage.rating === 'number') {
+      averageRating = basePackage.rating;
+    } else {
+      averageRating = 0;
+    }
+  }
+
+  return { normalizedReviews, averageRating };
+}
+
+async function mergeReviewsIntoPackages(packages) {
+  // Limit concurrency to avoid flooding the API
+  const CONCURRENCY = 5;
+  const resultPackages = [...packages];
+  let index = 0;
+
+  async function worker() {
+    while (index < resultPackages.length) {
+      const currentIndex = index++;
+      const pkg = resultPackages[currentIndex];
+      if (Array.isArray(pkg.reviews) && pkg.reviews.length > 0) continue;
+      try {
+        const reviews = await fetchPackageReviews(pkg.id);
+        const { normalizedReviews, averageRating } = normalizeReviews(reviews, pkg);
+        resultPackages[currentIndex] = {
+          ...pkg,
+          reviews: normalizedReviews,
+          reviews_count: normalizedReviews.length,
+          average_rating: averageRating,
+        };
+      } catch (_) {
+        // Leave package as-is on failure
+      }
+    }
+  }
+
+  const workers = Array.from({ length: CONCURRENCY }, () => worker());
+  await Promise.all(workers);
+  return resultPackages;
+}

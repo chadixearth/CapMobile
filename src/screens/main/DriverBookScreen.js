@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
-import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings } from '../../services/tourpackage/acceptBooking';
-import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest } from '../../services/specialpackage/customPackageRequest';
+import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking, driverStartBooking } from '../../services/tourpackage/acceptBooking';
+import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest, getDriverCustomTours, updateCustomTourStatus } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 
 export default function DriverBookScreen({ navigation }) {
@@ -15,8 +15,9 @@ export default function DriverBookScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [acceptingBooking, setAcceptingBooking] = useState(false);
-  const [activeTab, setActiveTab] = useState('available'); // 'available' or 'history'
+  const [activeTab, setActiveTab] = useState('available'); // 'available' | 'ongoing' | 'history'
 
   useEffect(() => {
     fetchUserAndBookings();
@@ -54,8 +55,9 @@ export default function DriverBookScreen({ navigation }) {
       try {
         await Promise.all([
           fetchAvailableBookings(userId),
-          fetchAvailableCustomTours(),
-          fetchDriverBookings(userId)
+          fetchAvailableCustomTours(userId),
+          fetchDriverBookings(userId),
+          fetchDriverCustomTours(userId),
         ]);
       } catch (error) {
         console.error('Error in Promise.all:', error);
@@ -98,14 +100,31 @@ export default function DriverBookScreen({ navigation }) {
     }
   };
 
-  const fetchAvailableCustomTours = async () => {
+  const fetchAvailableCustomTours = async (driverId) => {
     try {
       console.log('Fetching available custom tour requests for drivers...');
-      const customToursData = await getAvailableCustomTourRequestsForDrivers();
+      const customToursData = await getAvailableCustomTourRequestsForDrivers(driverId);
       console.log('Available custom tours response:', customToursData);
       
       if (customToursData && customToursData.success && Array.isArray(customToursData.data)) {
-        setAvailableCustomTours(customToursData.data);
+        // Only show tours that are unassigned and waiting for a driver
+        const filtered = (customToursData.data || []).filter((tour) => {
+          const status = (tour.status || '').toLowerCase();
+          const assignedDriverId =
+            tour.assigned_driver_id ||
+            tour.driver_id ||
+            tour.accepted_by ||
+            tour.assignee_id ||
+            tour.accepted_driver_id ||
+            tour.assigned_to_driver_id ||
+            tour.assigned_to ||
+            tour.accepted_by_driver_id ||
+            tour.accepted_driver ||
+            tour.taken_by ||
+            tour.claimed_by;
+          return status === 'waiting_for_driver' && !assignedDriverId;
+        });
+        setAvailableCustomTours(filtered);
       } else {
         console.log('Unexpected custom tours data format:', customToursData);
         setAvailableCustomTours([]);
@@ -113,6 +132,38 @@ export default function DriverBookScreen({ navigation }) {
     } catch (error) {
       console.error('Error fetching available custom tours:', error);
       setAvailableCustomTours([]);
+    }
+  };
+
+  const fetchDriverCustomTours = async (driverId) => {
+    try {
+      const res = await getDriverCustomTours(driverId);
+      if (res.success) {
+        // Merge these into driverBookings with a normalized shape
+        // Expect fields: id, status, pickup_location as pickup_address fallback, number_of_pax, preferred_date -> booking_date, approved_price -> total_amount
+        const mapped = (res.data || []).map((tour) => ({
+          id: tour.id,
+          status: tour.status,
+          package_name: tour.destination || 'Custom Tour',
+          booking_date: tour.preferred_date || tour.created_at,
+          pickup_time: tour.preferred_time || '09:00:00',
+          number_of_pax: tour.number_of_pax,
+          pickup_address: tour.pickup_location || tour.event_address || 'N/A',
+          contact_number: tour.contact_number,
+          total_amount: tour.approved_price || tour.estimated_price || null,
+          request_type: 'custom_tour',
+          booking_reference: tour.booking_reference || tour.reference || tour.ref || `CT-${String(tour.id).slice(0, 8)}`,
+        }));
+
+        // Keep existing normal bookings; store custom tours alongside
+        setDriverBookings((prev) => {
+          // Remove any previous custom tours to avoid duplicates
+          const nonCustom = prev.filter((b) => b.request_type !== 'custom_tour');
+          return [...nonCustom, ...mapped];
+        });
+      }
+    } catch (e) {
+      console.error('Error fetching driver custom tours:', e);
     }
   };
 
@@ -174,6 +225,44 @@ export default function DriverBookScreen({ navigation }) {
     setShowAcceptModal(true);
   };
 
+  const handleCompleteBooking = async (booking) => {
+    setSelectedBooking(booking);
+    setShowCompleteModal(true);
+  };
+
+  const handleStartTrip = async (booking) => {
+    if (!booking || !user) return;
+    try {
+      setAcceptingBooking(true);
+      let result;
+      if (booking.request_type === 'custom_tour') {
+        // For custom tours, backend accepts direct status update
+        result = await updateCustomTourStatus(booking.id, 'in_progress');
+        result = { success: !!(result && result.success), ...result };
+      } else {
+        // For regular bookings, hit start endpoint so server transitions state
+        result = await driverStartBooking(booking.id, user.id);
+      }
+      if (result && (result.success !== false)) {
+        Alert.alert('Success', 'Trip started. Status set to In Progress.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              fetchUserAndBookings();
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Error', result?.error || 'Failed to start trip');
+      }
+    } catch (error) {
+      console.error('Error starting trip:', error);
+      Alert.alert('Error', `Failed to start trip: ${error.message}`);
+    } finally {
+      setAcceptingBooking(false);
+    }
+  };
+
   const confirmAcceptBooking = async () => {
     if (!selectedBooking || !user) return;
 
@@ -189,6 +278,7 @@ export default function DriverBookScreen({ navigation }) {
       // Check if this is a custom tour request or regular booking
       if (selectedBooking.request_type === 'custom_tour') {
         result = await driverAcceptCustomTourRequest(selectedBooking.id, driverData);
+        // After accept, refresh available custom tours list to hide it from others
       } else {
         result = await driverAcceptBooking(selectedBooking.id, driverData);
       }
@@ -200,12 +290,26 @@ export default function DriverBookScreen({ navigation }) {
           ? 'Custom tour request accepted successfully!' 
           : 'Booking accepted successfully!';
         
+        // For custom tours, ensure backend status changes to driver_assigned so others don't see it
+        if (selectedBooking.request_type === 'custom_tour') {
+          try {
+            await updateCustomTourStatus(selectedBooking.id, 'driver_assigned');
+          } catch (e) {
+            console.warn('Failed to set custom tour to driver_assigned:', e?.message || e);
+          }
+        }
+
         Alert.alert('Success', message, [
           {
             text: 'OK',
             onPress: () => {
               setShowAcceptModal(false);
               setSelectedBooking(null);
+              // Optimistically remove from available custom tours list
+              if (selectedBooking.request_type === 'custom_tour') {
+                setAvailableCustomTours((prev) => prev.filter((t) => t.id !== selectedBooking.id));
+                fetchDriverCustomTours(user.id);
+              }
               fetchUserAndBookings(); // Refresh all lists
             },
           },
@@ -216,6 +320,46 @@ export default function DriverBookScreen({ navigation }) {
     } catch (error) {
       console.error('Error accepting booking:', error);
       Alert.alert('Error', `Failed to accept booking: ${error.message}`);
+    } finally {
+      setAcceptingBooking(false);
+    }
+  };
+
+  const confirmCompleteBooking = async () => {
+    if (!selectedBooking || !user) return;
+    // Require 'in_progress' for normal bookings since backend enforces it
+    const statusLower = (selectedBooking.status || '').toLowerCase();
+    const isCustom = selectedBooking.request_type === 'custom_tour';
+    if (!isCustom && statusLower !== 'in_progress') {
+      Alert.alert('Action needed', 'Please start the trip before completing.');
+      return;
+    }
+    try {
+      setAcceptingBooking(true);
+      let result;
+      if (selectedBooking.request_type === 'custom_tour') {
+        result = await updateCustomTourStatus(selectedBooking.id, 'completed');
+        result = { success: !!(result && result.success), ...result };
+      } else {
+        result = await driverCompleteBooking(selectedBooking.id, user.id);
+      }
+      if (result.success) {
+        Alert.alert('Success', 'Booking marked as completed.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowCompleteModal(false);
+              setSelectedBooking(null);
+              fetchUserAndBookings();
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to complete booking');
+      }
+    } catch (error) {
+      console.error('Error completing booking:', error);
+      Alert.alert('Error', `Failed to complete booking: ${error.message}`);
     } finally {
       setAcceptingBooking(false);
     }
@@ -352,6 +496,24 @@ export default function DriverBookScreen({ navigation }) {
           <Text style={styles.acceptButtonText}>Accept Booking</Text>
         </TouchableOpacity>
       )}
+      {activeTab === 'ongoing' && (booking.status === 'in_progress') && (
+        <TouchableOpacity 
+          style={[styles.acceptButton, { backgroundColor: '#2196F3' }]}
+          onPress={() => handleCompleteBooking(booking)}
+        >
+          <Ionicons name="checkmark-done" size={20} color="#fff" />
+          <Text style={styles.acceptButtonText}>Mark as Completed</Text>
+        </TouchableOpacity>
+      )}
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned') && (
+        <TouchableOpacity 
+          style={[styles.acceptButton, { backgroundColor: '#2196F3' }]}
+          onPress={() => handleStartTrip(booking)}
+        >
+          <Ionicons name="play" size={20} color="#fff" />
+          <Text style={styles.acceptButtonText}>Start Trip</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -450,16 +612,28 @@ export default function DriverBookScreen({ navigation }) {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons 
-        name={activeTab === 'available' ? "car-outline" : "time-outline"} 
+        name={
+          activeTab === 'available'
+            ? 'car-outline'
+            : activeTab === 'ongoing'
+            ? 'time-outline'
+            : 'checkmark-done-circle'
+        } 
         size={64} 
         color="#ccc" 
       />
       <Text style={styles.emptyStateTitle}>
-        {activeTab === 'available' ? 'No Available Bookings or Custom Tours' : 'No Booking History'}
+        {activeTab === 'available'
+          ? 'No Available Bookings or Custom Tours'
+          : activeTab === 'ongoing'
+          ? 'No Ongoing Bookings'
+          : 'No Booking History'}
       </Text>
       <Text style={styles.emptyStateSubtitle}>
         {activeTab === 'available' 
           ? 'There are currently no bookings or custom tours waiting for drivers. Check back later!'
+          : activeTab === 'ongoing'
+          ? 'You have no ongoing bookings. Accepted bookings appear here until you complete them.'
           : 'You haven\'t accepted any bookings yet. Start by accepting available bookings!'
         }
       </Text>
@@ -489,11 +663,25 @@ export default function DriverBookScreen({ navigation }) {
       </TouchableOpacity>
       
       <TouchableOpacity 
+        style={[styles.tabButton, activeTab === 'ongoing' && styles.activeTabButton]}
+        onPress={() => setActiveTab('ongoing')}
+      >
+        <Ionicons 
+          name="time-outline" 
+          size={20} 
+          color={activeTab === 'ongoing' ? '#6B2E2B' : '#666'} 
+        />
+        <Text style={[styles.tabButtonText, activeTab === 'ongoing' && styles.activeTabButtonText]}>
+          Ongoing
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
         style={[styles.tabButton, activeTab === 'history' && styles.activeTabButton]}
         onPress={() => setActiveTab('history')}
       >
         <Ionicons 
-          name="time-outline" 
+          name="checkmark-done-circle" 
           size={20} 
           color={activeTab === 'history' ? '#6B2E2B' : '#666'} 
         />
@@ -504,7 +692,22 @@ export default function DriverBookScreen({ navigation }) {
     </View>
   );
 
-  const currentBookings = activeTab === 'available' ? availableBookings : driverBookings;
+  const ongoingBookings = driverBookings.filter((booking) => {
+    const status = (booking.status || '').toLowerCase();
+    return status === 'driver_assigned' || status === 'in_progress';
+  });
+  const historyBookings = driverBookings.filter((booking) => {
+    const status = (booking.status || '').toLowerCase();
+    return status === 'completed';
+  });
+
+  const currentBookings =
+    activeTab === 'available'
+      ? availableBookings
+      : activeTab === 'ongoing'
+      ? ongoingBookings
+      : historyBookings;
+
   const currentCustomTours = activeTab === 'available' ? availableCustomTours : [];
 
   // Debug logging
@@ -519,10 +722,14 @@ export default function DriverBookScreen({ navigation }) {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {activeTab === 'available' ? 'Available Bookings & Custom Tours' : 'Booking History'}
+            {activeTab === 'available'
+              ? 'Available Bookings & Custom Tours'
+              : activeTab === 'ongoing'
+              ? 'Ongoing Bookings'
+              : 'Booking History'}
           </Text>
           <Text style={styles.subtitle}>
-            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : 'accepted'} bookings
+            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'completed'} bookings
           </Text>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
@@ -547,7 +754,7 @@ export default function DriverBookScreen({ navigation }) {
         {loading ? (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>
-              Loading {activeTab === 'available' ? 'available' : 'accepted'} bookings...
+              Loading {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'history'} bookings...
             </Text>
           </View>
         ) : (
@@ -639,6 +846,54 @@ export default function DriverBookScreen({ navigation }) {
                   <Text style={styles.confirmButtonText}>Accepting...</Text>
                 ) : (
                   <Text style={styles.confirmButtonText}>Accept</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Complete Booking Modal */}
+      <Modal
+        visible={showCompleteModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowCompleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Complete Booking</Text>
+            <Text style={styles.modalText}>Are you sure you want to mark this booking as completed?</Text>
+            {selectedBooking && (
+              <View style={styles.modalBookingInfo}>
+                <Text style={styles.modalBookingText}>
+                  <Text style={styles.modalLabel}>Package:</Text> {selectedBooking.package_name}
+                </Text>
+                <Text style={styles.modalBookingText}>
+                  <Text style={styles.modalLabel}>Date:</Text> {formatDate(selectedBooking.booking_date)}
+                </Text>
+                <Text style={styles.modalBookingText}>
+                  <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                </Text>
+              </View>
+            )}
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowCompleteModal(false)}
+                disabled={acceptingBooking}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.confirmButton, acceptingBooking && styles.disabledButton]}
+                onPress={confirmCompleteBooking}
+                disabled={acceptingBooking}
+              >
+                {acceptingBooking ? (
+                  <Text style={styles.confirmButtonText}>Completing...</Text>
+                ) : (
+                  <Text style={styles.confirmButtonText}>Complete</Text>
                 )}
               </TouchableOpacity>
             </View>

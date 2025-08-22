@@ -1,5 +1,6 @@
 // API Configuration
-const API_BASE_URL = 'http://192.168.1.8:8000/api/booking/';
+import { getAccessToken } from '../authService';
+const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/';
 
 /**
  * Get all bookings available for drivers to accept
@@ -10,7 +11,7 @@ const API_BASE_URL = 'http://192.168.1.8:8000/api/booking/';
 export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     // Build query parameters
     const queryParams = new URLSearchParams();
@@ -27,7 +28,11 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
     
     console.log('Fetching available bookings for drivers from:', url);
     
+    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -43,6 +48,11 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
     console.log('Available bookings response:', data);
     return data;
   } catch (error) {
+    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+    if (isAbort) {
+      console.warn('Available bookings request aborted/timeout. Returning empty list.');
+      return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
+    }
     console.error('Error fetching available bookings for drivers:', error);
     throw error;
   }
@@ -59,16 +69,18 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
 export async function driverAcceptBooking(bookingId, driverData) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const url = `${API_BASE_URL}driver-accept/${bookingId}/`;
     
     console.log('Accepting booking:', bookingId, 'for driver:', driverData);
     
+    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(driverData),
       signal: controller.signal,
@@ -100,7 +112,7 @@ export async function driverAcceptBooking(bookingId, driverData) {
 export async function getDriverBookings(driverId, filters = {}) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     // Build query parameters
     const queryParams = new URLSearchParams();
@@ -118,7 +130,11 @@ export async function getDriverBookings(driverId, filters = {}) {
     console.log('Driver ID:', driverId);
     console.log('API Base URL:', API_BASE_URL);
     
+    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       signal: controller.signal,
     });
     
@@ -134,6 +150,11 @@ export async function getDriverBookings(driverId, filters = {}) {
     console.log('Driver bookings response:', data);
     return data;
   } catch (error) {
+    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+    if (isAbort) {
+      console.warn('Driver bookings request aborted/timeout. Returning empty list.');
+      return { success: true, data: [] };
+    }
     console.error('Error fetching driver bookings:', error);
     throw error;
   }
@@ -148,16 +169,18 @@ export async function getDriverBookings(driverId, filters = {}) {
 export async function updateBookingStatus(bookingId, status) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const url = `${API_BASE_URL}${bookingId}/`;
     
     console.log('Updating booking status:', bookingId, 'to:', status);
     
+    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ status }),
       signal: controller.signal,
@@ -176,6 +199,98 @@ export async function updateBookingStatus(bookingId, status) {
     return data;
   } catch (error) {
     console.error('Error updating booking status:', error);
+    throw error;
+  }
+}
+
+/**
+ * Driver completes an assigned booking
+ * @param {string} bookingId - The booking ID
+ * @param {string} driverId - The driver's ID (must match assigned driver)
+ * @returns {Promise<Object>} Completion result
+ */
+export async function driverCompleteBooking(bookingId, driverId) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const url = `${API_BASE_URL}complete/${bookingId}/`;
+
+    const token = await getAccessToken().catch(() => null);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ driver_id: driverId }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Error Response:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    console.log('Driver complete booking response:', data);
+    return data;
+  } catch (error) {
+    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+    if (isAbort) {
+      console.warn('Complete booking request aborted/timeout.');
+      return { success: false, error: 'Request timeout. Please try again.' };
+    }
+    console.error('Error completing booking:', error);
+    throw error;
+  }
+}
+
+/**
+ * Driver starts an assigned booking (transitions to in_progress)
+ * @param {string} bookingId - The booking ID
+ * @param {string} driverId - The driver's ID (must match assigned driver)
+ * @returns {Promise<Object>} Start result
+ */
+export async function driverStartBooking(bookingId, driverId) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const url = `${API_BASE_URL}start/${bookingId}/`;
+
+    const token = await getAccessToken().catch(() => null);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ driver_id: driverId }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Error Response:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    console.log('Driver start booking response:', data);
+    return data;
+  } catch (error) {
+    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+    if (isAbort) {
+      console.warn('Start booking request aborted/timeout.');
+      return { success: false, error: 'Request timeout. Please try again.' };
+    }
+    console.error('Error starting booking:', error);
     throw error;
   }
 }

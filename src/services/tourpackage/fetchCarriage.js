@@ -1,7 +1,7 @@
 // services/carriageService.js
 // Use your computer's IP address instead of localhost for mobile devices
 // Updated to match the IP used in authService
-let API_BASE_URL = 'http://192.168.1.8:8000/api/tartanilla-carriages/';
+let API_BASE_URL = 'http://10.196.222.213:8000/api/tartanilla-carriages/';
 
 // Function to set API base URL dynamically
 export const setApiBaseUrl = (newUrl) => {
@@ -57,12 +57,12 @@ const unwrapObject = (data) => {
 
 export const testCarriageConnection = async () => {
   const testUrls = [
-    'http://192.168.1.8:8000/api/tartanilla-carriages/',
-    'http://192.168.1.8:8000/api/carriages/',
-    'http://192.168.1.8:8000/tartanilla-carriages/',
-    'http://192.168.1.8:8000/carriages/',
-    'http://192.168.1.8:8000/api/',
-    'http://192.168.1.8:8000/',
+    'http://10.196.222.213:8000/api/tartanilla-carriages/',
+    'http://10.196.222.213:8000/api/carriages/',
+    'http://10.196.222.213:8000/tartanilla-carriages/',
+    'http://10.196.222.213:8000/carriages/',
+    'http://10.196.222.213:8000/api/',
+    'http://10.196.222.213:8000/',
   ];
 
   for (const url of testUrls) {

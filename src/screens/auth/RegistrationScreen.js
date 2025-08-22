@@ -25,6 +25,11 @@ const RegistrationScreen = ({ navigation, route }) => {
   const [businessName, setBusinessName] = useState('');
   const [businessPermit, setBusinessPermit] = useState('');
 
+  // Driver-owner combined role capture
+  const [ownsTartanilla, setOwnsTartanilla] = useState(false);
+  const [ownedCount, setOwnedCount] = useState('0');
+  const [drivesOwnTartanilla, setDrivesOwnTartanilla] = useState(false);
+
   const handleRegister = async () => {
     setError('');
     setSuccess('');
@@ -74,7 +79,9 @@ const RegistrationScreen = ({ navigation, route }) => {
           first_name: firstName,
           last_name: lastName,
           phone: phone,
-          license_number: licenseNumber
+          license_number: licenseNumber,
+          owns_tartanilla: !!ownsTartanilla,
+          owned_count: ownsTartanilla ? Math.max(0, parseInt(ownedCount, 10) || 0) : 0,
         };
       } else if (role === 'owner') {
         additionalData = {
@@ -82,7 +89,8 @@ const RegistrationScreen = ({ navigation, route }) => {
           last_name: lastName,
           phone: phone,
           business_name: businessName,
-          business_permit: businessPermit
+          business_permit: businessPermit,
+          drives_own_tartanilla: !!drivesOwnTartanilla,
         };
       }
       
@@ -239,18 +247,50 @@ const RegistrationScreen = ({ navigation, route }) => {
           
           {/* Driver specific fields */}
           {role === 'driver' && (
-            <TextInput
-              style={styles.input}
-              placeholder="License Number"
-              value={licenseNumber}
-              onChangeText={setLicenseNumber}
-              placeholderTextColor="#aaa"
-              autoCorrect={false}
-              spellCheck={false}
-              returnKeyType="done"
-              blurOnSubmit={true}
-              editable={true}
-            />
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="License Number"
+                value={licenseNumber}
+                onChangeText={setLicenseNumber}
+                placeholderTextColor="#aaa"
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                editable={true}
+              />
+              <Text style={styles.questionLabel}>Do you also own a tartanilla?</Text>
+              <View style={styles.toggleRow}>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, ownsTartanilla && styles.toggleBtnSelected]}
+                  onPress={() => setOwnsTartanilla(true)}
+                >
+                  <Text style={[styles.toggleText, ownsTartanilla && styles.toggleTextSelected]}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, !ownsTartanilla && styles.toggleBtnSelected]}
+                  onPress={() => setOwnsTartanilla(false)}
+                >
+                  <Text style={[styles.toggleText, !ownsTartanilla && styles.toggleTextSelected]}>No</Text>
+                </TouchableOpacity>
+              </View>
+              {ownsTartanilla && (
+                <TextInput
+                  style={styles.input}
+                  placeholder="How many tartanillas do you own?"
+                  value={ownedCount}
+                  onChangeText={setOwnedCount}
+                  keyboardType="number-pad"
+                  placeholderTextColor="#aaa"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  editable={true}
+                />
+              )}
+            </>
           )}
           
           {/* Owner specific fields */}
@@ -276,10 +316,25 @@ const RegistrationScreen = ({ navigation, route }) => {
                 placeholderTextColor="#aaa"
                 autoCorrect={false}
                 spellCheck={false}
-                returnKeyType="done"
-                blurOnSubmit={true}
+                returnKeyType="next"
+                blurOnSubmit={false}
                 editable={true}
               />
+              <Text style={styles.questionLabel}>Do you also drive your tartanilla?</Text>
+              <View style={styles.toggleRow}>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, drivesOwnTartanilla && styles.toggleBtnSelected]}
+                  onPress={() => setDrivesOwnTartanilla(true)}
+                >
+                  <Text style={[styles.toggleText, drivesOwnTartanilla && styles.toggleTextSelected]}>Yes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, !drivesOwnTartanilla && styles.toggleBtnSelected]}
+                  onPress={() => setDrivesOwnTartanilla(false)}
+                >
+                  <Text style={[styles.toggleText, !drivesOwnTartanilla && styles.toggleTextSelected]}>No</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -387,6 +442,38 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
     width: '100%',
+  },
+  questionLabel: {
+    width: '100%',
+    marginBottom: 8,
+    color: '#444',
+    fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+    width: '100%',
+  },
+  toggleBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: '#faf8f6',
+  },
+  toggleBtnSelected: {
+    borderColor: MAROON,
+    backgroundColor: '#f2e7e5',
+  },
+  toggleText: {
+    color: '#666',
+    fontWeight: '600',
+  },
+  toggleTextSelected: {
+    color: MAROON,
   },
 });
 

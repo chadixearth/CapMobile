@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // For physical device: Use your computer's IP address (e.g., 192.168.1.8)
 // For Android emulator: Use 10.0.2.2 (maps to host machine's localhost)
 // For iOS simulator: Use localhost or 127.0.0.1
-const API_BASE_URL = 'http://192.168.1.8:8000/api';
+const API_BASE_URL = 'http://10.196.222.213:8000/api';
 
 // Session keys for AsyncStorage
 const SESSION_KEYS = {
@@ -325,6 +325,20 @@ export async function validateSession() {
 export async function getCurrentUser() {
   const session = await getStoredSession();
   return session.user;
+}
+
+/**
+ * Get current access token from stored session
+ * @returns {Promise<string|null>}
+ */
+export async function getAccessToken() {
+  try {
+    const session = await getStoredSession();
+    return session.accessToken || null;
+  } catch (error) {
+    console.error('Error getting access token:', error);
+    return null;
+  }
 }
 
 /**

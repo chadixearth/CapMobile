@@ -395,19 +395,60 @@ export default function TouristHomeScreen({ navigation }) {
                       <Text style={styles.metaText}>{pkg.max_pax}</Text>
                     </View>
                   ) : null}
+                  {(typeof pkg.average_rating === 'number' || (pkg.reviews && pkg.reviews.length)) ? (
+                    <View style={styles.metaPill}>
+                      <Ionicons name="star" size={12} color="#E3B341" />
+                      <Text style={styles.metaText}>
+                        {`${(Number(pkg.average_rating) || 0).toFixed(1)} (${pkg.reviews_count ?? (pkg.reviews ? pkg.reviews.length : 0)})`}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-                <TouchableOpacity
-                  style={styles.bookChip}
-                  onPress={() => {
-                    navigation.navigate(Routes.REQUEST_BOOKING, {
-                      packageId: pkg.id,
-                      packageData: pkg,
-                    });
-                  }}
-                >
-                  <Ionicons name="cart-outline" size={14} color="#fff" />
-                  <Text style={styles.bookChipText}>Book</Text>
-                </TouchableOpacity>
+                {!!pkg.description && (
+                  <Text style={styles.packageDescription} numberOfLines={2}>
+                    {pkg.description}
+                  </Text>
+                )}
+                {(pkg.pickup_location || pkg.destination) && (
+                  <View style={{ marginTop: 8, gap: 6 }}>
+                    {pkg.pickup_location ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="navigate-outline" size={14} color="#6B2E2B" />
+                        <Text style={styles.infoText} numberOfLines={1}>{pkg.pickup_location}</Text>
+                      </View>
+                    ) : null}
+                    {pkg.destination ? (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="flag-outline" size={14} color="#6B2E2B" />
+                        <Text style={styles.infoText} numberOfLines={1}>{pkg.destination}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                  <View style={[styles.statusBadge, pkg.is_active === false && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' }]}>
+                    <Ionicons 
+                      name={pkg.is_active === false ? 'close-circle-outline' : 'checkmark-circle-outline'} 
+                      size={14} 
+                      color={pkg.is_active === false ? '#d32f2f' : '#2e7d32'} 
+                    />
+                    <Text style={[styles.statusText, { color: pkg.is_active === false ? '#d32f2f' : '#2e7d32' }]}>
+                      {pkg.is_active === false ? 'Unavailable' : 'Available'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.bookChip}
+                    onPress={() => {
+                      navigation.navigate(Routes.REQUEST_BOOKING, {
+                        packageId: pkg.id,
+                        packageData: pkg,
+                      });
+                    }}
+                  >
+                    <Ionicons name="cart-outline" size={14} color="#fff" />
+                    <Text style={styles.bookChipText}>Book</Text>
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -452,6 +493,14 @@ export default function TouristHomeScreen({ navigation }) {
                         <Text style={styles.detailChipText}>{detailPackage.max_pax} pax</Text>
                       </View>
                     ) : null}
+                    {(typeof detailPackage.average_rating === 'number' || (detailPackage.reviews && detailPackage.reviews.length)) ? (
+                      <View style={styles.detailChip}>
+                        <Ionicons name="star" size={14} color="#E3B341" />
+                        <Text style={styles.detailChipText}>
+                          {`${(Number(detailPackage.average_rating) || 0).toFixed(1)} (${detailPackage.reviews_count ?? (detailPackage.reviews ? detailPackage.reviews.length : 0)})`}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.detailChip, detailPackage.is_active === false && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' }]}>
                       <Ionicons name={detailPackage.is_active === false ? 'close-circle-outline' : 'checkmark-circle-outline'} size={14} color={detailPackage.is_active === false ? '#d32f2f' : '#2e7d32'} />
                       <Text style={[styles.detailChipText, detailPackage.is_active === false ? { color: '#d32f2f' } : { color: '#2e7d32' }]}>
@@ -467,6 +516,33 @@ export default function TouristHomeScreen({ navigation }) {
                       <Text style={styles.detailDescription}>{detailPackage.description}</Text>
                     </View>
                   ) : null}
+
+                  {/* Reviews */}
+                  {(detailPackage.reviews && detailPackage.reviews.length > 0) && (
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={styles.detailSectionTitle}>Reviews</Text>
+                      {detailPackage.reviews.slice(0, 3).map((rv, idx) => (
+                        <View key={idx} style={styles.reviewItem}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                            <Ionicons name="person-circle-outline" size={16} color="#6B2E2B" />
+                            <Text style={styles.reviewAuthor}>{rv.author || rv.user_name || 'Anonymous'}</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                            <Ionicons name="star" size={12} color="#E3B341" />
+                            <Text style={styles.reviewRating}>{typeof rv.rating === 'number' ? rv.rating.toFixed(1) : '0.0'}</Text>
+                          </View>
+                          {!!rv.comment && (
+                            <Text style={styles.reviewText} numberOfLines={3}>{rv.comment}</Text>
+                          )}
+                        </View>
+                      ))}
+                      {detailPackage.reviews.length > 3 && (
+                        <Text style={{ color: '#666', fontSize: 12 }}>
+                          +{detailPackage.reviews.length - 3} more reviews
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   {/* Info rows */}
                   <View style={{ marginTop: 8 }}>
@@ -691,7 +767,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#eee',
     marginBottom: 16,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 10,
     shadowColor: '#000',
     shadowOpacity: 0.05,
@@ -716,11 +792,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 2,
-    textAlign: 'center',
+    textAlign: 'left',
     color: '#333',
   },
   packageDescription: {
-    display: 'none',
+    marginTop: 6,
+    color: '#555',
+    fontSize: 12,
+    lineHeight: 16,
   },
   packagePrice: {
     fontSize: 14,
@@ -729,11 +808,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     textAlign: 'right',
   },
-  packageInfo: {
-    display: 'none',
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  packageStatus: {
-    display: 'none',
+  infoText: {
+    flex: 1,
+    color: '#444',
+    fontSize: 12,
   },
   metaRow: {
     width: '100%',
@@ -776,6 +859,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#E7F6EC',
+    borderColor: '#C8E6C9',
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   maximContainer: {
     backgroundColor: '#F5E9E2',
@@ -881,6 +979,31 @@ const styles = StyleSheet.create({
   detailChipText: {
     color: '#6B2E2B',
     fontWeight: '700',
+  },
+  reviewItem: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  reviewAuthor: {
+    marginLeft: 6,
+    color: '#333',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  reviewRating: {
+    marginLeft: 6,
+    color: '#333',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  reviewText: {
+    color: '#555',
+    fontSize: 12,
+    lineHeight: 16,
   },
   detailSectionTitle: {
     fontSize: 14,
