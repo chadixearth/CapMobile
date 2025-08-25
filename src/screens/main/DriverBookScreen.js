@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
-import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking, driverStartBooking, updateBookingStatus } from '../../services/tourpackage/acceptBooking';
+import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking } from '../../services/tourpackage/acceptBooking';
 import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest, getDriverCustomTours, updateCustomTourStatus } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 import * as Routes from '../../constants/routes';
@@ -241,9 +241,8 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(booking.id, 'in_progress');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // For regular bookings, set status to in_progress via update endpoint
-        result = await updateBookingStatus(booking.id, 'in_progress');
-        result = { success: true, ...result };
+        // No explicit start endpoint implemented on backend; skip for regular bookings
+        result = { success: true };
       }
       if (result && (result.success !== false)) {
         Alert.alert('Success', 'Trip started. Status set to In Progress.', [
@@ -332,21 +331,14 @@ export default function DriverBookScreen({ navigation }) {
     const isCustom = selectedBooking.request_type === 'custom_tour';
     const statusLower = (selectedBooking.status || '').toLowerCase();
     try {
-      // Guard: require in_progress before completing standard bookings
-      if (!isCustom && statusLower !== 'in_progress') {
-        Alert.alert('Action required', 'Please start the trip before completing.');
-        setShowCompleteModal(false);
-        return;
-      }
       setAcceptingBooking(true);
       let result;
       if (isCustom) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // Use general update endpoint to mark completed
-        result = await updateBookingStatus(selectedBooking.id, 'completed');
-        result = { success: true, ...result };
+        // Use dedicated complete endpoint so backend records earnings
+        result = await driverCompleteBooking(selectedBooking.id, user.id);
       }
       if (result.success) {
         Alert.alert('Success', 'Booking marked as completed.', [
@@ -514,10 +506,10 @@ export default function DriverBookScreen({ navigation }) {
       {activeTab === 'ongoing' && (booking.status === 'driver_assigned') && (
         <TouchableOpacity 
           style={[styles.acceptButton, { backgroundColor: '#2196F3' }]}
-          onPress={() => handleStartTrip(booking)}
+          onPress={() => handleCompleteBooking(booking)}
         >
-          <Ionicons name="play" size={20} color="#fff" />
-          <Text style={styles.acceptButtonText}>Start Trip</Text>
+          <Ionicons name="checkmark-done" size={20} color="#fff" />
+          <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
     </View>
