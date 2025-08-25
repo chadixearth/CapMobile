@@ -1,5 +1,16 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/'; 
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from '../networkConfig';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`; 
 import { getAccessToken } from '../authService';
 
 export async function createBooking(bookingData) {
@@ -13,18 +24,35 @@ export async function createBooking(bookingData) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
   };
 
+  // Normalize booking_date to YYYY-MM-DD and set initial status explicitly
+  const normalizeDate = (dateInput) => {
+    if (!dateInput) return '';
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      return dateInput;
+    }
+    try {
+      const d = new Date(dateInput);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch {
+      return '';
+    }
+  };
+
   const payload = {
     package_id: bookingData.package_id,
     customer_id: bookingData.customer_id,
-    booking_date: typeof bookingData.booking_date === 'string' ? bookingData.booking_date : (bookingData.booking_date?.toString?.() || ''),
+    booking_date: normalizeDate(bookingData.booking_date),
     pickup_time: sanitizeTime(bookingData.pickup_time),
     number_of_pax: Number(bookingData.number_of_pax) || 1,
     total_amount: Number(bookingData.total_amount) || 0,
     special_requests: bookingData.special_requests || '',
     contact_number: String(bookingData.contact_number || ''),
     pickup_address: bookingData.pickup_address || '',
+    // Ensure new bookings start in a valid state for driver discovery
+    status: 'waiting_for_driver',
   };
-  const attempt = async () => {
+  const attempt = async (bodyPayload) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000);
     try {
@@ -36,7 +64,7 @@ export async function createBooking(bookingData) {
           'Accept': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(bodyPayload),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -60,12 +88,20 @@ export async function createBooking(bookingData) {
   };
 
   // Retry up to 2 times on transient errors
+  let currentPayload = { ...payload };
   for (let i = 0; i < 2; i += 1) {
     try {
-      return await attempt();
+      return await attempt(currentPayload);
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
       const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');
+      const isStatusCheck = /23514|status_check|bookings_status_check/i.test(err?.message || '');
+      if (isStatusCheck && currentPayload.status === 'waiting_for_driver') {
+        // Fallback to a conservative initial status if backend disallows waiting_for_driver at creation
+        currentPayload = { ...currentPayload, status: 'pending' };
+        console.warn('Backend rejected initial status; retrying with status=pending');
+        continue;
+      }
       if (i < 1 && (isAbort || isNet)) {
         await new Promise(res => setTimeout(res, 800));
         continue;

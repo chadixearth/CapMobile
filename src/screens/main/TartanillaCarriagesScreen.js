@@ -40,7 +40,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
-  const [currentApiUrl, setCurrentApiUrl] = useState('http://10.196.222.213:8000/api/tartanilla-carriages/');
+  const [currentApiUrl, setCurrentApiUrl] = useState('');
 
   // All callback functions need to be defined before the conditional return
   const fetchUserAndCarriages = useCallback(async () => {

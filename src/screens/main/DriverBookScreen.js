@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
-import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking, driverStartBooking } from '../../services/tourpackage/acceptBooking';
+import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking, driverStartBooking, updateBookingStatus } from '../../services/tourpackage/acceptBooking';
 import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest, getDriverCustomTours, updateCustomTourStatus } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
+import * as Routes from '../../constants/routes';
 
 export default function DriverBookScreen({ navigation }) {
   const [availableBookings, setAvailableBookings] = useState([]);
@@ -240,8 +241,9 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(booking.id, 'in_progress');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // For regular bookings, hit start endpoint so server transitions state
-        result = await driverStartBooking(booking.id, user.id);
+        // For regular bookings, set status to in_progress via update endpoint
+        result = await updateBookingStatus(booking.id, 'in_progress');
+        result = { success: true, ...result };
       }
       if (result && (result.success !== false)) {
         Alert.alert('Success', 'Trip started. Status set to In Progress.', [
@@ -327,30 +329,34 @@ export default function DriverBookScreen({ navigation }) {
 
   const confirmCompleteBooking = async () => {
     if (!selectedBooking || !user) return;
-    // Require 'in_progress' for normal bookings since backend enforces it
-    const statusLower = (selectedBooking.status || '').toLowerCase();
     const isCustom = selectedBooking.request_type === 'custom_tour';
-    if (!isCustom && statusLower !== 'in_progress') {
-      Alert.alert('Action needed', 'Please start the trip before completing.');
-      return;
-    }
+    const statusLower = (selectedBooking.status || '').toLowerCase();
     try {
+      // Guard: require in_progress before completing standard bookings
+      if (!isCustom && statusLower !== 'in_progress') {
+        Alert.alert('Action required', 'Please start the trip before completing.');
+        setShowCompleteModal(false);
+        return;
+      }
       setAcceptingBooking(true);
       let result;
-      if (selectedBooking.request_type === 'custom_tour') {
+      if (isCustom) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
       } else {
-        result = await driverCompleteBooking(selectedBooking.id, user.id);
+        // Use general update endpoint to mark completed
+        result = await updateBookingStatus(selectedBooking.id, 'completed');
+        result = { success: true, ...result };
       }
       if (result.success) {
         Alert.alert('Success', 'Booking marked as completed.', [
           {
-            text: 'OK',
+            text: 'View Earnings',
             onPress: () => {
               setShowCompleteModal(false);
               setSelectedBooking(null);
               fetchUserAndBookings();
+              navigation.navigate(Routes.DRIVER_EARNINGS);
             },
           },
         ]);
@@ -502,7 +508,7 @@ export default function DriverBookScreen({ navigation }) {
           onPress={() => handleCompleteBooking(booking)}
         >
           <Ionicons name="checkmark-done" size={20} color="#fff" />
-          <Text style={styles.acceptButtonText}>Mark as Completed</Text>
+          <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
       {activeTab === 'ongoing' && (booking.status === 'driver_assigned') && (

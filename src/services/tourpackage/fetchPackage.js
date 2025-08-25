@@ -2,7 +2,18 @@
 // Use your computer's IP address instead of localhost for mobile devices
 // Try multiple likely endpoints to be resilient to server route differences
 // Single, authoritative base URL (matches Django router: router.register('tourpackage', ...))
-const API_BASE_URL = 'http://10.196.222.213:8000/api/tourpackage/';
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from '../networkConfig';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+const API_BASE_URL = `${apiBaseUrl()}/tourpackage/`;
 import { getAccessToken } from '../authService';
 
 // Helper function to create a timeout promise
@@ -100,11 +111,8 @@ const formatCoordinates = (packages) => {
 
 // Test function to check if server is reachable
 export const testConnection = async () => {
-  const testUrls = [
-    API_BASE_URL,
-    'http://10.196.222.213:8000/api/',
-    'http://10.196.222.213:8000/',
-  ];
+  const base = apiBaseUrl();
+  const testUrls = [API_BASE_URL, `${base}/`, base.replace(/\/api$/, '/')];
 
   for (const url of testUrls) {
     try {

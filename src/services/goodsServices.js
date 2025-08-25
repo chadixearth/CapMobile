@@ -1,7 +1,19 @@
 // Goods & Services Posts API service
 // Provides list/create/update/delete helpers for the goods_services_post endpoints
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from './networkConfig';
 
-const API_BASE_URL = 'http://10.196.222.213:8000/api';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+const API_BASE_URL = apiBaseUrl();
 
 async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 15000 } = {}) {
   const controller = new AbortController();

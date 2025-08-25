@@ -1,12 +1,17 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Platform, Linking } from 'react-native';
+import { Alert, Platform, Linking, NativeModules } from 'react-native';
+import { apiBaseUrl } from './networkConfig';
 
 /**
  * MobilePhotoUpload - A unified service for handling photo uploads across different user types
  */
 export default class MobilePhotoUpload {
-  constructor(baseUrl = 'http://10.196.222.213:8000/api') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl) {
+    if (baseUrl) {
+      this.baseUrl = baseUrl;
+    } else {
+      this.baseUrl = apiBaseUrl();
+    }
   }
 
   /**

@@ -1,5 +1,16 @@
 // API Configuration
-const API_BASE_URL = 'http://10.196.222.213:8000/api';
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from '../networkConfig';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+const API_BASE_URL = apiBaseUrl();
 
 /**
  * Helper function to make API requests with proper error handling

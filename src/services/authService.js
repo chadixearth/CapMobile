@@ -1,10 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from './networkConfig';
 
 // API Configuration
-// For physical device: Use your computer's IP address (e.g., 192.168.1.8)
-// For Android emulator: Use 10.0.2.2 (maps to host machine's localhost)
-// For iOS simulator: Use localhost or 127.0.0.1
-const API_BASE_URL = 'http://10.196.222.213:8000/api';
+// For physical device: We auto-detect the Metro bundler host and use that IP.
+// Fallbacks:
+// - Android emulator: 10.0.2.2 (maps to host machine's localhost)
+// - iOS simulator: localhost
+// If you need a custom API host, set API_BASE_URL_OVERRIDE below.
+const API_BASE_URL_OVERRIDE = null; // e.g., 'http://192.168.1.8:8000/api'
+
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+const RESOLVED_HOST =
+  API_BASE_URL_OVERRIDE?.replace(/^https?:\/\//, '')?.replace(/:\d+.*$/, '') ||
+  getDevServerHost() ||
+  (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
+
+const API_BASE_URL = API_BASE_URL_OVERRIDE || apiBaseUrl();
 
 // Session keys for AsyncStorage
 const SESSION_KEYS = {
@@ -21,7 +42,7 @@ async function apiRequest(endpoint, options = {}) {
     console.log(`Making API request to: ${API_BASE_URL}${endpoint}`);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,

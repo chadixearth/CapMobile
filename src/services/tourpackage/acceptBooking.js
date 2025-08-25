@@ -1,6 +1,17 @@
 // API Configuration
 import { getAccessToken } from '../authService';
-const API_BASE_URL = 'http://10.196.222.213:8000/api/booking/';
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from '../networkConfig';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`;
 
 /**
  * Get all bookings available for drivers to accept
@@ -214,6 +225,7 @@ export async function driverCompleteBooking(bookingId, driverId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+    // Backend exposes: /api/tour-booking/complete/{booking_id}/
     const url = `${API_BASE_URL}complete/${bookingId}/`;
 
     const token = await getAccessToken().catch(() => null);
@@ -260,6 +272,7 @@ export async function driverStartBooking(bookingId, driverId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+    // Note: backend currently does NOT implement a start endpoint. This will 404 if called.
     const url = `${API_BASE_URL}start/${bookingId}/`;
 
     const token = await getAccessToken().catch(() => null);

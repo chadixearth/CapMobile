@@ -11,6 +11,7 @@ import NotificationScreen from '../screens/main/NotificationScreen';
 import RequestBookingScreen from '../screens/main/requestBookingScreen';
 import CustomPackageRequestScreen from '../screens/main/CustomPackageRequestScreen';
 import CustomRequestHistoryScreen from '../screens/main/CustomRequestHistoryScreen';
+import DriverEarningsScreen from '../screens/main/DriverEarningsScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
@@ -43,7 +44,8 @@ export default function RootNavigator() {
       <Stack.Screen name={Routes.REQUEST_BOOKING} component={RequestBookingScreen} />
       <Stack.Screen name={Routes.CUSTOM_PACKAGE_REQUEST} component={CustomPackageRequestScreen} />
       <Stack.Screen name={Routes.CUSTOM_REQUEST_HISTORY} component={CustomRequestHistoryScreen} />
+      <Stack.Screen name={Routes.DRIVER_EARNINGS} component={DriverEarningsScreen} />
       <Stack.Screen name="Chat" component={ChatNavigator} />
     </Stack.Navigator>
   );
-} 
+}

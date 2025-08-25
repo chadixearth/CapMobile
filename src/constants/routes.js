@@ -11,6 +11,7 @@ export const TARTANILLA_CARRIAGES = 'TartanillaCarriages';
 export const CUSTOM_PACKAGE_REQUEST = 'CustomPackageRequest';
 export const CUSTOM_REQUEST_HISTORY = 'CustomRequestHistory';
 export const GOODS_SERVICES = 'GoodsServices';
+export const DRIVER_EARNINGS = 'DriverEarnings';
 
 // Tab names
 export const HOME = 'Home';
@@ -20,4 +21,4 @@ export const PROFILE = 'Profile';
 export const EARNINGS = 'Earnings';
 export const BOOKINGS = 'Bookings';
 export const EVENTS = 'Events';
-export const MENU = 'Menu'; 
+export const MENU = 'Menu';

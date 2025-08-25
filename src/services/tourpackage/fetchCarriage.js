@@ -1,7 +1,18 @@
 // services/carriageService.js
 // Use your computer's IP address instead of localhost for mobile devices
-// Updated to match the IP used in authService
-let API_BASE_URL = 'http://10.196.222.213:8000/api/tartanilla-carriages/';
+// Updated to resolve host dynamically like other services
+import { Platform, NativeModules } from 'react-native';
+import { apiBaseUrl } from '../networkConfig';
+function getDevServerHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
+    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+let API_BASE_URL = `${apiBaseUrl()}/tartanilla-carriages/`;
 
 // Function to set API base URL dynamically
 export const setApiBaseUrl = (newUrl) => {
@@ -56,13 +67,12 @@ const unwrapObject = (data) => {
 };
 
 export const testCarriageConnection = async () => {
+  const base = apiBaseUrl();
   const testUrls = [
-    'http://10.196.222.213:8000/api/tartanilla-carriages/',
-    'http://10.196.222.213:8000/api/carriages/',
-    'http://10.196.222.213:8000/tartanilla-carriages/',
-    'http://10.196.222.213:8000/carriages/',
-    'http://10.196.222.213:8000/api/',
-    'http://10.196.222.213:8000/',
+    `${base}/tartanilla-carriages/`,
+    `${base}/carriages/`,
+    base + '/',
+    base.replace(/\/api$/, '/')
   ];
 
   for (const url of testUrls) {
