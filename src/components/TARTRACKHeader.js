@@ -1,39 +1,73 @@
+// src/components/TARTRACKHeader.js
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 const TARTRACKHeader = ({
-  title = 'TARTRACK',
   showBack = false,
   onBackPress,
   onNotificationPress,
-  rightComponent,
-}) => (
-  <SafeAreaView edges={["top"]} style={styles.safeArea}>
-    <View style={styles.header}>
-      {showBack ? (
-        <TouchableOpacity style={styles.iconBtn} onPress={onBackPress}>
-          <Ionicons name="arrow-back" size={26} color="#6B2E2B" />
-        </TouchableOpacity>
-      ) : onNotificationPress ? (
-        <TouchableOpacity style={styles.iconBtn} onPress={onNotificationPress}>
-          <Ionicons name="notifications-outline" size={26} color="#6B2E2B" />
-        </TouchableOpacity>
-      ) : (
-        <View style={{ width: 32 }} />
-      )}
+  onMessagePress,
+  containerStyle,
+  logoSource,
+}) => {
+  const defaultLogo = require('../../assets/TarTrack Logo_sakto.png');
 
-      <Text style={styles.title}>{title}</Text>
+  return (
+    <SafeAreaView edges={['top']} style={[styles.safeArea, containerStyle]}>
+      <View style={styles.header}>
+        {/* Left: Back button OR logo */}
+        <View style={styles.leftCluster}>
+          {showBack ? (
+            <TouchableOpacity
+              style={styles.leftBtn}
+              onPress={onBackPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <Ionicons name="arrow-back" size={26} color="#6B2E2B" />
+            </TouchableOpacity>
+          ) : (
+            <Image
+              source={logoSource || defaultLogo}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          )}
+        </View>
 
-      {rightComponent ? (
-        <View style={styles.rightSlot}>{rightComponent}</View>
-      ) : (
-        <View style={{ width: 32 }} />
-      )}
-    </View>
-  </SafeAreaView>
-);
+        {/* Right: Message + Notification */}
+        <View style={styles.rightCluster}>
+          <TouchableOpacity
+            onPress={onMessagePress}
+            style={styles.iconBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Open messages"
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={24}
+              color="#6B2E2B"
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onNotificationPress}
+            style={styles.iconBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Open notifications"
+          >
+            <Ionicons name="notifications-outline" size={24} color="#6B2E2B" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+};
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -41,32 +75,37 @@ const styles = StyleSheet.create({
   },
   header: {
     height: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
   },
-  iconBtn: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 2,
+
+  /* Left */
+  leftCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  leftBtn: {
     padding: 4,
   },
-  rightSlot: {
-    position: 'absolute',
-    right: 16,
-    zIndex: 2,
+  logo: {
+    width: 160,
+    height: 37,
   },
-  title: {
-    flex: 1,
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#7B3F00',
-    letterSpacing: 2,
-    textAlign: 'center',
+
+  /* Right */
+  rightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconBtn: {
+    marginLeft: 12,
+    padding: 4,
   },
 });
 
-export default TARTRACKHeader; 
+export default TARTRACKHeader;

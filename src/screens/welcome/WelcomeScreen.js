@@ -4,7 +4,6 @@ import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
 
 const WelcomeScreen = ({ navigation }) => {
-  // Placeholder handlers for navigation
   const handleViewMap = () => {
     navigation.navigate(Routes.MAP_VIEW);
   };
@@ -22,10 +21,17 @@ const WelcomeScreen = ({ navigation }) => {
     <View style={styles.container}>
       <View style={styles.logoContainer}>
         <Text style={styles.welcomeText}>Welcome</Text>
-        {/* Replace with your logo image if available */}
-        <Text style={styles.logoText}>TARTRACK</Text>
+
+        {/* Replace text logo with image logo */}
+        <Image
+          source={require('../../../assets/TarTrack Logo_sakto.png')} 
+          style={styles.logo}
+          resizeMode="contain"
+        />
+
         <Text style={styles.subtitle}>Cebu Tartanilla Online{"\n"}Booking</Text>
       </View>
+
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={handleViewMap}>
           <Text style={styles.buttonText}>View Map</Text>
@@ -40,10 +46,11 @@ const WelcomeScreen = ({ navigation }) => {
           <Text style={styles.buttonText}>Get Started as Owner</Text>
         </TouchableOpacity>
       </View>
+
       <View style={styles.linksContainer}>
         <Text style={styles.linkText}>
           Have an account?{' '}
-          <Text style={styles.link} onPress={handleLogin}>login</Text>
+          <Text style={styles.link} onPress={handleLogin}>Login</Text>
         </Text>
       </View>
     </View>
@@ -64,22 +71,23 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 28,
     fontStyle: 'italic',
-    marginBottom: 10,
-    letterSpacing: 2,
+    marginBottom: 0,
+    letterSpacing: 4,
   },
-  logoText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#7B3F3F',
-    letterSpacing: 2,
-    marginBottom: 5,
+  logo: {
+    width: 250,   // adjust as needed
+    height: 80,   // adjust as needed
+    marginBottom: 0,
+    marginLeft: 8,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#333',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginTop: 5,
+    marginTop: 0,
+    letterSpacing:4,
+    
   },
   buttonContainer: {
     width: '100%',
@@ -111,6 +119,7 @@ const styles = StyleSheet.create({
   link: {
     color: '#7B3F3F',
     textDecorationLine: 'underline',
+    fontWeight: '600',
   },
 });
 

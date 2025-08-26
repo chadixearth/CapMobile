@@ -1,100 +1,146 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { loginUser } from '../../services/authService';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Image,
+} from 'react-native';
+import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
+import { loginUser } from '../../services/authService';
+import { Ionicons } from '@expo/vector-icons'; // eye / eye-off icon
 
 const MAROON = '#6B2E2B';
+const TEXT_GRAY = '#3A3A3A';
+const LINE_GRAY = '#A9A9A9';
+const BG = '#F5F5F5';
 
 export default function LoginScreen({ navigation, setRole, setIsAuthenticated }) {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('');       // "Username" in UI
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleLogin = async () => {
     setError('');
     setLoading(true);
-    
     try {
-      // Only allow mobile roles (no admin)
       const allowedRoles = ['tourist', 'driver', 'owner'];
       const result = await loginUser(email, password, allowedRoles);
-      
       setLoading(false);
-      
       if (result.success) {
-        // Get role from user data
         const userRole = result.user?.role || 'tourist';
-        setRole(userRole);
-        if (setIsAuthenticated) {
-          setIsAuthenticated(true);
-        }
-        // Reset navigation stack to prevent going back to login
-        navigation.reset({
-          index: 0,
-          routes: [{ name: Routes.MAIN }],
-        });
+        setRole?.(userRole);
+        setIsAuthenticated?.(true);
+        navigation.reset({ index: 0, routes: [{ name: Routes.MAIN }] });
       } else {
         setError(result.error || 'Login failed.');
       }
-    } catch (error) {
+    } catch (e) {
       setLoading(false);
       setError('Network error. Please try again.');
-      console.error('Login error:', error);
+      console.error('Login error:', e);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.root} 
+    <KeyboardAvoidingView
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
-          <Text style={styles.title}>Login</Text>
+        {/* Top bar with back button */}
+        <View style={styles.topBar}>
+          <BackButton onPress={() => navigation.goBack()} />
+        </View>
+
+        {/* Logo */}
+        <Image
+          source={require('../../../assets/TarTrack Logo_sakto.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+
+        {/* Form */}
+        <View style={styles.form}>
+          {/* Username (underline via input itself) */}
           <TextInput
-            style={styles.input}
-            placeholder="Email"
+            style={styles.underlineInput}
+            placeholder="Username"
+            placeholderTextColor="#9B9B9B"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
-            keyboardType="email-address"
-            placeholderTextColor="#aaa"
             autoCorrect={false}
             spellCheck={false}
+            keyboardType="default"
             returnKeyType="next"
-            blurOnSubmit={false}
-            editable={true}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholderTextColor="#aaa"
-            autoCorrect={false}
-            spellCheck={false}
-            returnKeyType="done"
-            blurOnSubmit={true}
-            editable={true}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          {/* Password with eye icon; underline only on container */}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput} // no border here
+              placeholder="Password"
+              placeholderTextColor="#9B9B9B"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCorrect={false}
+              spellCheck={false}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeIcon}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off' : 'eye'}
+                size={22}
+                color={TEXT_GRAY}
+              />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
-            style={[styles.button, loading && { opacity: 0.7 }]}
-            onPress={handleLogin}
-            disabled={loading}
+            style={styles.forgotWrap}
+            onPress={() => navigation.navigate(Routes.FORGOT_PASSWORD || 'ForgotPassword')}
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
+            <Text style={styles.forgotText}>Forgot Password ?</Text>
           </TouchableOpacity>
-          <Text style={styles.link} onPress={() => navigation.navigate('Registration', { role: 'tourist' })}>
-            Don't have an account? <Text style={styles.linkBold}>Register</Text>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.loginBtn, loading && { opacity: 0.7 }]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.loginText}>{loading ? 'Logging in...' : 'Login'}</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.registerText}>
+            Don’t have an account?{' '}
+            <Text
+              style={styles.registerLink}
+              onPress={() => navigation.navigate(Routes.REGISTRATION, { role: 'tourist' })}
+            >
+              Create Account
+            </Text>
           </Text>
         </View>
       </ScrollView>
@@ -105,74 +151,105 @@ export default function LoginScreen({ navigation, setRole, setIsAuthenticated })
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: MAROON,
+    backgroundColor: BG,
   },
-  scrollContainer: {
+  scroll: {
     flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+  topBar: {
+    height: 40,
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
+    marginTop: 13,
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 28,
-    width: '88%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+  logo: {
+    alignSelf: 'center',
+    width: 270,
+    height: 80,
+    marginTop: 190,
+    marginBottom: 150,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 32,
-    color: MAROON,
-    letterSpacing: 1,
-  },
-  input: {
+  form: {
     width: '100%',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 18,
+    alignSelf: 'center',
+  },
+
+  // Username input (draws its own underline)
+  underlineInput: {
+    width: '100%',
+    paddingVertical: 12,
     fontSize: 16,
-    color: '#222',
-    backgroundColor: '#faf8f6',
-    minHeight: 48,
+    color: TEXT_GRAY,
+    borderBottomWidth: StyleSheet.hairlineWidth * 2,
+    borderBottomColor: LINE_GRAY,
+    marginBottom: 20,
   },
-  button: {
-    backgroundColor: MAROON,
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+
+  // Password field wrapper draws the underline ONCE
+  passwordContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    width: '100%',
+    borderBottomWidth: StyleSheet.hairlineWidth * 2,
+    borderBottomColor: LINE_GRAY,
+    marginBottom: 20,
   },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 17,
-    letterSpacing: 1,
+  // Text input without any border (no double line)
+  passwordInput: {
+    flex: 1,
+    fontSize: 16,
+    color: TEXT_GRAY,
+    paddingVertical: 12,
   },
-  link: {
+  eyeIcon: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+
+  forgotWrap: {
+    alignSelf: 'flex-end',
+    marginTop: -6,
+    marginBottom: 18,
+  },
+  forgotText: {
+    fontSize: 13,
     color: MAROON,
-    marginTop: 22,
     textDecorationLine: 'underline',
-    fontSize: 15,
+    fontWeight: '600',
   },
-  linkBold: {
-    fontWeight: 'bold',
-    color: MAROON,
-  },
+
   error: {
-    color: 'red',
+    color: '#D92D20',
     marginBottom: 8,
     textAlign: 'center',
+  },
+
+  loginBtn: {
+    backgroundColor: MAROON,
+    borderRadius: 28,
+    paddingVertical: 14,
+    alignItems: 'center',
     width: '100%',
+    alignSelf: 'center',
+    marginTop: 6,
+  },
+  loginText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+
+  registerText: {
+    textAlign: 'center',
+    color: TEXT_GRAY,
+    fontSize: 14,
+    marginTop: 14,
+  },
+  registerLink: {
+    color: MAROON,
+    textDecorationLine: 'underline',
+    fontWeight: '600',
   },
 });
