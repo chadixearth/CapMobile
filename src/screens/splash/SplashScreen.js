@@ -1,43 +1,42 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Image, StatusBar } from 'react-native';
 import { checkAuthStatus } from '../../services/authService';
+
+// Reuse the same logo you use elsewhere
+const LOGO = require('../../../assets/TarTrack Logo_sakto.png');
 
 export default function SplashScreen({ navigation, setRole }) {
   useEffect(() => {
-    const checkAuthentication = async () => {
+    (async () => {
       try {
-        // Check if user is already logged in
         const authStatus = await checkAuthStatus();
-        
-        if (authStatus.isLoggedIn && authStatus.user) {
-          // User is logged in, get their role and navigate to main screen
+
+        if (authStatus?.isLoggedIn && authStatus?.user) {
           const userRole = authStatus.user.role || 'tourist';
-          if (setRole) {
-            setRole(userRole);
-          }
+          setRole?.(userRole);
           navigation.replace('Main');
         } else {
-          // User is not logged in, show welcome screen
-          setTimeout(() => {
-            navigation.replace('Welcome');
-          }, 1000);
+          setTimeout(() => navigation.replace('Welcome'), 1000);
         }
-      } catch (error) {
-        console.error('Authentication check failed:', error);
-        // On error, default to welcome screen
-        setTimeout(() => {
-          navigation.replace('Welcome');
-        }, 1000);
+      } catch (e) {
+        console.error('Authentication check failed:', e);
+        setTimeout(() => navigation.replace('Welcome'), 1000);
       }
-    };
-
-    checkAuthentication();
+    })();
   }, [navigation, setRole]);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to MobileApp!</Text>
-      <ActivityIndicator size="large" style={{ marginTop: 20 }} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <View style={styles.centerBlock}>
+        <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.tagline}>
+          Cebu Tartanilla Online{'\n'}Booking
+        </Text>
+      </View>
+
+      {/* Optional tiny spinner near the bottom */}
+      <ActivityIndicator size="small" style={styles.spinner} />
     </View>
   );
 }
@@ -45,13 +44,29 @@ export default function SplashScreen({ navigation, setRole }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2a2a2a',
+  centerBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-}); 
+  logo: {
+    width: 260,      // tweak to match your asset proportions
+    height: 80,      // keep enough height so the wheels are visible
+    marginBottom: 0,
+  },
+  tagline: {
+    textAlign: 'center',
+    color: '#1A1A1A',
+    fontSize: 14,
+    letterSpacing: 4,
+    fontStyle: 'italic',
+  },
+  spinner: {
+    position: 'absolute',
+    bottom: 36,
+  },
+});

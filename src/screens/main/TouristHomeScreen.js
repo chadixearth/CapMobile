@@ -19,7 +19,6 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import GoogleMap from '../../components/GoogleMap';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
-import Button from '../../components/Button';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
@@ -41,26 +40,18 @@ export default function TouristHomeScreen({ navigation }) {
   }, [navigation]);
 
   const [search, setSearch] = useState('');
-
-  // selections
-  const [pickup, setPickup] = useState(null);       // { name?, latitude, longitude }
+  const [pickup, setPickup] = useState(null);
   const [destination, setDestination] = useState(null);
-
-  // packages / status
   const [tourPackages, setTourPackages] = useState([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [networkStatus, setNetworkStatus] = useState('Unknown');
   const [dataSource, setDataSource] = useState('Unknown');
 
-  // bottom sheet (ride request)
   const SHEET_H = 520;
   const [sheetVisible, setSheetVisible] = useState(false);
-  const sheetY = useRef(new Animated.Value(SHEET_H)).current; // start off-screen at bottom
-  const [activePicker, setActivePicker] = useState('pickup'); // 'pickup' | 'destination'
-
-  // destination list modal (optional quick-pick)
+  const sheetY = useRef(new Animated.Value(SHEET_H)).current;
+  const [activePicker, setActivePicker] = useState('pickup');
   const [destModalVisible, setDestModalVisible] = useState(false);
-
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
@@ -95,7 +86,6 @@ export default function TouristHomeScreen({ navigation }) {
   useFocusEffect(React.useCallback(() => () => {}, []));
 
   const openRideSheet = async () => {
-    // Ask location permission once (optional, helps if your map shows user location)
     if (Platform.OS !== 'web') {
       try {
         await Location.requestForegroundPermissionsAsync();
@@ -223,37 +213,42 @@ export default function TouristHomeScreen({ navigation }) {
                   <Image source={require('../../../assets/images/tourA.png')} style={styles.packageImage} resizeMode="cover" />
                 )}
 
+                {/* Title */}
                 <Text style={styles.packageTitle} numberOfLines={2}>
                   {pkg.package_name}
                 </Text>
 
+                {/* Inline meta: duration, pax, rating */}
                 <View style={styles.metaRow}>
                   {pkg.duration_hours ? (
-                    <View style={styles.metaPill}>
-                      <Ionicons name="time-outline" size={11} />
-                      <Text style={styles.metaText} numberOfLines={1}>
+                    <View style={styles.metaInline}>
+                      <Ionicons name="time-outline" size={12} />
+                      <Text style={styles.metaInlineText} numberOfLines={1}>
                         {pkg.duration_hours}h
                       </Text>
                     </View>
                   ) : null}
+
                   {pkg.max_pax ? (
-                    <View style={styles.metaPill}>
-                      <Ionicons name="people-outline" size={11} />
-                      <Text style={styles.metaText} numberOfLines={1}>
+                    <View style={styles.metaInline}>
+                      <Ionicons name="people-outline" size={12} />
+                      <Text style={styles.metaInlineText} numberOfLines={1}>
                         {pkg.max_pax}
                       </Text>
                     </View>
                   ) : null}
+
                   {(typeof pkg.average_rating === 'number' || (pkg.reviews && pkg.reviews.length)) ? (
-                    <View style={styles.metaPill}>
-                      <Ionicons name="star" size={11} />
-                      <Text style={styles.metaText} numberOfLines={1}>
-                        {(Number(pkg.average_rating) || 0).toFixed(1)} ({pkg.reviews_count ?? (pkg.reviews ? pkg.reviews.length : 0)})
+                    <View style={styles.metaInline}>
+                      <Ionicons name="star" size={12} />
+                      <Text style={styles.metaInlineText} numberOfLines={1}>
+                        {(Number(pkg.average_rating) || 0).toFixed(1)}
                       </Text>
                     </View>
                   ) : null}
                 </View>
 
+                {/* Bottom row: Availability + Book */}
                 <View style={styles.cardBottomRow}>
                   <View
                     style={[
@@ -263,11 +258,14 @@ export default function TouristHomeScreen({ navigation }) {
                   >
                     <Ionicons
                       name={pkg.is_active === false ? 'close-circle-outline' : 'checkmark-circle-outline'}
-                      size={13}
+                      size={12}
                       color={pkg.is_active === false ? '#d32f2f' : '#2e7d32'}
                     />
                     <Text
-                      style={[styles.statusText, { color: pkg.is_active === false ? '#d32f2f' : '#2e7d32' }]}
+                      style={[
+                        styles.statusText,
+                        { color: pkg.is_active === false ? '#d32f2f' : '#2e7d32' },
+                      ]}
                       numberOfLines={1}
                     >
                       {pkg.is_active === false ? 'Unavailable' : 'Available'}
@@ -280,6 +278,7 @@ export default function TouristHomeScreen({ navigation }) {
                       navigation.navigate(Routes.REQUEST_BOOKING, { packageId: pkg.id, packageData: pkg })
                     }
                   >
+                    <Ionicons name="book-outline" size={12} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.bookBtnText} numberOfLines={1}>Book</Text>
                   </TouchableOpacity>
                 </View>
@@ -293,147 +292,6 @@ export default function TouristHomeScreen({ navigation }) {
       <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
         <Ionicons name="add" size={26} color="#fff" />
       </TouchableOpacity>
-
-      {/* Ride request BOTTOM sheet (with embedded map) */}
-      <Modal visible={sheetVisible} transparent animationType="fade" onRequestClose={() => setSheetVisible(false)}>
-        <View style={styles.bottomOverlay}>
-          <Animated.View style={[styles.bottomSheet, { transform: [{ translateY: sheetY }] }]}>
-            {/* drag handle */}
-            <View style={styles.grabberWrap}>
-              <View style={styles.grabber} />
-            </View>
-
-            <View style={styles.sheetHeaderRow}>
-              <Text style={styles.sheetTitle}>Create a Ride Request</Text>
-              <TouchableOpacity onPress={() => setSheetVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={22} color="#6B2E2B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Toggle which point we're setting */}
-            <View style={styles.toggleWrap}>
-              <TouchableOpacity
-                style={[styles.toggleBtn, activePicker === 'pickup' && styles.toggleBtnActive]}
-                onPress={() => setActivePicker('pickup')}
-              >
-                <MaterialIcons name="my-location" size={16} color={activePicker === 'pickup' ? '#fff' : '#6B2E2B'} />
-                <Text style={[styles.toggleText, activePicker === 'pickup' && styles.toggleTextActive]}>Pick-up</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.toggleBtn, activePicker === 'destination' && styles.toggleBtnActive]}
-                onPress={() => setActivePicker('destination')}
-              >
-                <MaterialIcons name="location-on" size={16} color={activePicker === 'destination' ? '#fff' : '#6B2E2B'} />
-                <Text style={[styles.toggleText, activePicker === 'destination' && styles.toggleTextActive]}>Destination</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.swapBtn}
-                onPress={() => {
-                  const a = pickup;
-                  setPickup(destination);
-                  setDestination(a);
-                }}
-              >
-                <Ionicons name="swap-vertical" size={18} color="#6B2E2B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Map inside the sheet */}
-            <View style={styles.mapWrap}>
-              <GoogleMap
-                region={CEBU_CITY_REGION}
-                style={{ flex: 1 }}
-                onPress={handleMapPress}
-                markers={[
-                  ...(pickup ? [{
-                    latitude: pickup.latitude, longitude: pickup.longitude,
-                    title: 'Pick-up', id: 'pickup', pinColor: '#2e7d32',
-                  }] : []),
-                  ...(destination ? [{
-                    latitude: destination.latitude, longitude: destination.longitude,
-                    title: 'Destination', id: 'dest', pinColor: '#c62828',
-                  }] : []),
-                ]}
-              />
-            </View>
-
-            {/* Selected values */}
-            <View style={styles.sheetRowMini}>
-              <MaterialIcons name="my-location" size={18} color="#6B2E2B" />
-              <Text style={styles.rowLabel}>Pick-up</Text>
-              <Text style={styles.rowValue} numberOfLines={1}>{renderLocShort(pickup)}</Text>
-              <TouchableOpacity onPress={() => setPickup(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={18} color="#9c6a64" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.sheetRowMini}>
-              <MaterialIcons name="location-on" size={18} color="#6B2E2B" />
-              <Text style={styles.rowLabel}>Destination</Text>
-              <Text style={styles.rowValue} numberOfLines={1}>{renderLocShort(destination)}</Text>
-              <TouchableOpacity onPress={() => setDestination(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={18} color="#9c6a64" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Optional quick-pick list for destinations */}
-            <TouchableOpacity style={styles.linkRow} onPress={() => setDestModalVisible(true)}>
-              <Ionicons name="list-circle-outline" size={18} color="#6B2E2B" />
-              <Text style={styles.linkText}>Choose from terminals list</Text>
-            </TouchableOpacity>
-
-            {/* Actions */}
-            <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => setSheetVisible(false)}>
-                <Text style={styles.secondaryText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.primaryBtn, (!pickup || !destination) && { opacity: 0.6 }]}
-                disabled={!pickup || !destination || requesting}
-                onPress={handleRequestRide}
-              >
-                <Ionicons name="checkmark" size={14} color="#fff" />
-                <Text style={styles.primaryText}>{requesting ? 'Requesting...' : 'Request'}</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
-
-      {/* Destination list (still available if they prefer tapping a list) */}
-      <Modal visible={destModalVisible} transparent animationType="fade" onRequestClose={() => setDestModalVisible(false)}>
-        <View style={styles.bottomOverlay}>
-          <View style={styles.listSheet}>
-            <View style={styles.sheetHeaderRow}>
-              <Text style={styles.sheetTitle}>Select Destination</Text>
-              <TouchableOpacity onPress={() => setDestModalVisible(false)}>
-                <Ionicons name="close" size={22} color="#6B2E2B" />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={TERMINALS}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.terminalRow}
-                  onPress={() => {
-                    setDestination(item);
-                    setActivePicker('pickup');
-                    setDestModalVisible(false);
-                  }}
-                >
-                  <Ionicons name="location-outline" size={16} color="#6B2E2B" style={{ marginRight: 10 }} />
-                  <Text style={styles.terminalText} numberOfLines={1}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => (
-                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: '#eee', marginHorizontal: 16 }} />
-              )}
-              contentContainerStyle={{ paddingBottom: 10 }}
-            />
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -500,35 +358,63 @@ const styles = StyleSheet.create({
   },
   packageImage: { width: '100%', height: 100, borderRadius: 12, marginBottom: 8 },
   packageTitle: { color: '#333', fontSize: 13, fontWeight: '700', lineHeight: 16, minHeight: 32 },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 8 },
-  metaPill: {
+
+  /* Inline meta */
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 12,
-    backgroundColor: '#F5E9E2',
-    borderWidth: 1,
-    borderColor: '#E0CFC2',
+    justifyContent: 'flex-start',
+    gap: 10,
+    marginTop: 2,
+    marginBottom: 8,
   },
-  metaText: { color: '#6B2E2B', fontSize: 10, fontWeight: '700' },
-  cardBottomRow: { marginTop: 'auto', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metaInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: '33%',
+  },
+  metaInlineText: {
+    marginLeft: 4,
+    color: '#6B2E2B',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  /* Bottom row */
+  cardBottomRow: {
+    marginTop: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     paddingVertical: 5,
     backgroundColor: '#E7F6EC',
     borderColor: '#C8E6C9',
     borderWidth: 1,
     borderRadius: 999,
     maxWidth: '65%',
+    marginRight: 2,
   },
   statusText: { fontSize: 10, fontWeight: '700' },
-  bookBtn: { backgroundColor: '#6B2E2B', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, minWidth: 56, alignItems: 'center' },
-  bookBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
+  /* Book button w/ icon */
+  bookBtn: {
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookBtnText: { color: '#fff', fontWeight: '800', fontSize: 11 },
 
   /* FAB */
   fab: {
@@ -547,70 +433,4 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
   },
-
-  /* Bottom overlay & sheet */
-  bottomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'flex-end' },
-  bottomSheet: {
-    backgroundColor: '#fff',
-    paddingTop: 8,
-    paddingBottom: 14,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '85%',
-  },
-  grabberWrap: { alignItems: 'center', paddingVertical: 4 },
-  grabber: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#ddd' },
-
-  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 6 },
-  sheetTitle: { fontSize: 16, fontWeight: '800', color: '#6B2E2B' },
-
-  toggleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  toggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E0CFC2',
-    backgroundColor: '#F5E9E2',
-  },
-  toggleBtnActive: { backgroundColor: '#6B2E2B', borderColor: '#6B2E2B' },
-  toggleText: { color: '#6B2E2B', fontWeight: '700', fontSize: 12 },
-  toggleTextActive: { color: '#fff' },
-  swapBtn: { marginLeft: 'auto', padding: 6, borderRadius: 999, backgroundColor: '#F5E9E2', borderWidth: 1, borderColor: '#E0CFC2' },
-
-  mapWrap: { height: 240, borderRadius: 12, overflow: 'hidden', marginHorizontal: 16, marginBottom: 10 },
-
-  sheetRowMini: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 6,
-  },
-  rowLabel: { color: '#6B2E2B', fontWeight: '700', width: 90, fontSize: 12 },
-  rowValue: { flex: 1, color: '#333', fontSize: 13 },
-
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingTop: 4, paddingBottom: 8 },
-  linkText: { color: '#6B2E2B', fontWeight: '700', fontSize: 12, textDecorationLine: 'underline' },
-
-  actionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 16, paddingTop: 8 },
-  secondaryBtn: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
-  secondaryText: { color: '#444', fontWeight: '700' },
-  primaryBtn: { flex: 1, backgroundColor: '#6B2E2B', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, flexDirection: 'row', gap: 8 },
-  primaryText: { color: '#fff', fontWeight: '800' },
-
-  /* Destination list */
-  listSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-    paddingTop: 8,
-    paddingBottom: 10,
-  },
-  terminalRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 18 },
-  terminalText: { color: '#222', fontSize: 14 },
 });

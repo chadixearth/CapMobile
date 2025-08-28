@@ -1,28 +1,56 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState, useLayoutEffect } from 'react';
+import {
+  Alert,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
-import { getDriverEarningsStats, getEarningsPercentageChange, formatCurrency, formatPercentage } from '../../services/earningsService';
+import {
+  getDriverEarningsStats,
+  getEarningsPercentageChange,
+  formatCurrency,
+  formatPercentage,
+} from '../../services/earningsService';
 import * as Routes from '../../constants/routes';
+
+const MAROON = '#6B2E2B';
+const MAROON_LIGHT = '#F5E9E2';
+const TEXT = '#222';
+const MUTED = '#777';
+const CARD_BG = '#FFFFFF';
+const SURFACE = '#F7F7F7';
 
 // Default fallback notifications
 const defaultNotifications = [
   {
     id: 'welcome_1',
-    icon: <MaterialCommunityIcons name="calendar-account" size={24} color="#6B2E2B" />,
+    icon: <MaterialCommunityIcons name="calendar-account" size={22} color={MAROON} />,
     message: 'Welcome to Tartanilla Driver!',
     time: 'Now',
   },
   {
     id: 'tip_1',
-    icon: <Ionicons name="checkmark-circle" size={24} color="#6B2E2B" />,
+    icon: <Ionicons name="checkmark-circle" size={22} color={MAROON} />,
     message: 'Complete bookings to start earning',
     time: 'Info',
   },
 ];
 
 export default function DriverHomeScreen({ navigation }) {
+  useLayoutEffect(() => {
+    // Hide any stack/native header to avoid the "two headers" issue
+    navigation.setOptions?.({ headerShown: true });
+  }, [navigation]);
+
   const [user, setUser] = useState(null);
   const [earningsData, setEarningsData] = useState(null);
   const [percentageChange, setPercentageChange] = useState(null);
@@ -108,7 +136,6 @@ export default function DriverHomeScreen({ navigation }) {
 
   const fetchRecentNotifications = async (driverId) => {
     try {
-      // Primary attempt: use completed_at if the column exists
       let query = supabase
         .from('bookings')
         .select('id,total_amount,package_name,completed_at,updated_at')
@@ -119,7 +146,6 @@ export default function DriverHomeScreen({ navigation }) {
 
       let { data, error } = await query;
 
-      // Fallback if schema doesn't have completed_at (PGRST204)
       if (error && /completed_at/.test(error.message || '')) {
         const fallback = await supabase
           .from('bookings')
@@ -134,24 +160,24 @@ export default function DriverHomeScreen({ navigation }) {
 
       if (!error && data && data.length > 0) {
         const earningsNotifications = data.map((booking) => {
-          const driverEarning = (booking.total_amount || 0) * 0.8; // 80% to driver
+          const driverEarning = (booking.total_amount || 0) * 0.8;
           const timeAgo = getTimeAgo(booking.completed_at);
           return {
             id: `earning_${booking.id}`,
-            icon: <MaterialCommunityIcons name="cash" size={24} color="#2ecc71" />,
-            message: `+ You've earned ${formatCurrency(driverEarning)} from ${booking.package_name || 'tour package'}`,
+            icon: <MaterialCommunityIcons name="cash" size={22} color="#2ecc71" />,
+            message: `+ ${formatCurrency(driverEarning)} from ${booking.package_name || 'tour package'}`,
             time: timeAgo,
           };
         });
 
-        const welcomeNotification = {
+        const summary = {
           id: 'welcome_summary',
-          icon: <Ionicons name="checkmark-circle" size={24} color="#6B2E2B" />,
-          message: `Total completed bookings: ${data.length}`,
+          icon: <Ionicons name="checkmark-circle" size={22} color={MAROON} />,
+          message: `Completed bookings: ${data.length}`,
           time: 'Summary',
         };
 
-        setNotifications([...earningsNotifications, welcomeNotification]);
+        setNotifications([...earningsNotifications, summary]);
       } else {
         setNotifications(defaultNotifications);
       }
@@ -190,222 +216,271 @@ export default function DriverHomeScreen({ navigation }) {
     }
   };
 
-  const renderIncomeCard = () => {
-    const totalEarnings = earningsData?.total_driver_earnings || 0;
-    const changeData = percentageChange || { percentage_change: 0, is_increase: true };
-    const todayEarnings = earningsData?.earnings_today || 0;
-
-    return (
-      <View style={styles.incomeCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <Text style={styles.incomeLabel}>Monthly Income</Text>
-          <View style={styles.incomeStat}>
-            <Ionicons
-              name={changeData.is_increase ? 'trending-up-outline' : 'trending-down-outline'}
-              size={14}
-              color={changeData.is_increase ? '#2ecc71' : '#e74c3c'}
-            />
-            <Text style={[styles.incomeStatText, { color: changeData.is_increase ? '#2ecc71' : '#e74c3c' }]}>
-              {changeData.is_increase ? '+' : '-'}{formatPercentage(changeData.percentage_change)}
-            </Text>
-          </View>
-          <Text style={styles.incomeHigher}>{changeData.is_increase ? 'Higher' : 'Lower'}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.incomeAmount}>{formatCurrency(totalEarnings)}</Text>
-            {todayEarnings > 0 && <Text style={styles.todayEarnings}>Today: {formatCurrency(todayEarnings)}</Text>}
-          </View>
-          <TouchableOpacity style={styles.incomeArrow} onPress={navigateToEarningsDetail}>
-            <Ionicons name="arrow-forward-circle" size={28} color="#bbb" />
-          </TouchableOpacity>
-        </View>
-
-        {earningsData && (
-          <View style={styles.earningsInfo}>
-            <Text style={styles.earningsInfoText}>
-              You earn {earningsData.driver_percentage || 80}% from each completed booking
-            </Text>
-            <Text style={styles.earningsInfoSubtext}>
-              {earningsData.count || 0} completed bookings • Avg: {formatCurrency(earningsData.avg_earning_per_booking || 0)}
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+  const totalEarnings = earningsData?.total_driver_earnings || 0;
+  const todayEarnings = earningsData?.earnings_today || 0;
+  const changeData = percentageChange || { percentage_change: 0, is_increase: true };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 32 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.logo}>TARTRACK</Text>
-          {user && (
-            <Text style={styles.welcomeText}>
-              Welcome, {user.name || user.user_metadata?.name || user.email || 'Driver'}!
-            </Text>
-          )}
-        </View>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity onPress={() => navigation.navigate('Notification')}>
-            <Ionicons name="notifications-outline" size={22} color="#222" style={styles.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Chat')}>
-            <Ionicons name="chatbubble-ellipses-outline" size={24} color="#222" style={styles.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => (user ? navigation.navigate('Profile') : Alert.alert('Login Required', 'Please log in to access profile.'))}
-          >
-            <Ionicons name="person-circle-outline" size={26} color="#222" style={styles.icon} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Income Card */}
-      {loading ? (
-        <View style={[styles.incomeCard, styles.loadingCard]}>
-          <Text style={styles.loadingText}>Loading earnings...</Text>
-        </View>
-      ) : (
-        renderIncomeCard()
-      )}
-
-      {/* Latest Notifications */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Latest Activity</Text>
-        <Text style={styles.lastRefreshText}>Updated: {lastRefresh.toLocaleTimeString()}</Text>
-      </View>
-      {notifications.map((notif) => (
-        <View key={notif.id} style={styles.notifCard}>
-          <View style={styles.notifIcon}>{notif.icon}</View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.notifMsg}>{notif.message}</Text>
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Greeting strip */}
+        <View style={styles.greetCard}>
+          <View>
+            <Text style={styles.greetHi}>Hi, {user?.name || user?.user_metadata?.name || 'Driver'} 👋</Text>
+            <Text style={styles.greetSub}>Have a safe and productive day on the road.</Text>
           </View>
-          <Text style={styles.notifTime}>{notif.time}</Text>
-        </View>
-      ))}
-
-      {/* Data Analytics */}
-      <Text style={styles.sectionTitle}>Data Analytics</Text>
-      <View style={styles.analyticsCard}>
-        <Text style={styles.analyticsLabel}>Activity</Text>
-        <View style={styles.barChartPlaceholder}>
           <Image
-            source={{ uri: 'https://dummyimage.com/300x80/ededed/aaa&text=Bar+Chart' }}
-            style={{ width: '100%', height: 80, borderRadius: 8 }}
+            source={{ uri: 'https://dummyimage.com/80x60/f5e9e2/6b2e2b&text=🐴' }}
+            style={{ width: 80, height: 60, borderRadius: 10 }}
           />
         </View>
-        <Text style={styles.analyticsMonth}>Month</Text>
-      </View>
-    </ScrollView>
+
+        {/* Earnings Card */}
+        <View style={styles.incomeCard}>
+          <View style={styles.incomeTopRow}>
+            <Text style={styles.incomeTitle}>Monthly Income</Text>
+            <View
+              style={[
+                styles.trendChip,
+                { backgroundColor: changeData.is_increase ? '#EAF7EE' : '#FDEEEE' },
+              ]}
+            >
+              <Ionicons
+                name={changeData.is_increase ? 'trending-up-outline' : 'trending-down-outline'}
+                size={14}
+                color={changeData.is_increase ? '#2E7D32' : '#C62828'}
+              />
+              <Text
+                style={[
+                  styles.trendText,
+                  { color: changeData.is_increase ? '#2E7D32' : '#C62828' },
+                ]}
+              >
+                {changeData.is_increase ? '+' : '-'}
+                {formatPercentage(changeData.percentage_change)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.incomeMainRow}>
+            <View style={{ flex: 1 }}>
+              {loading ? (
+                <ActivityIndicator />
+              ) : (
+                <>
+                  <Text style={styles.incomeAmount}>{formatCurrency(totalEarnings)}</Text>
+                  <Text style={styles.incomeSub}>
+                    {todayEarnings > 0 ? `Today: ${formatCurrency(todayEarnings)}` : 'No earnings yet today'}
+                  </Text>
+                </>
+              )}
+            </View>
+            <TouchableOpacity style={styles.detailBtn} onPress={navigateToEarningsDetail}>
+              <Ionicons name="arrow-forward" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {earningsData && (
+            <View style={styles.splitRow}>
+              <View style={styles.splitCol}>
+                <Text style={styles.splitLabel}>Your share</Text>
+                <Text style={styles.splitValue}>{(earningsData.driver_percentage || 80)}%</Text>
+              </View>
+              <View style={styles.vDivider} />
+              <View style={styles.splitCol}>
+                <Text style={styles.splitLabel}>Completed</Text>
+                <Text style={styles.splitValue}>{earningsData.count || 0}</Text>
+              </View>
+              <View style={styles.vDivider} />
+              <View style={styles.splitCol}>
+                <Text style={styles.splitLabel}>Avg / booking</Text>
+                <Text style={styles.splitValue}>
+                  {formatCurrency(earningsData.avg_earning_per_booking || 0)}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Latest Activity */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Latest Activity</Text>
+          <Text style={styles.sectionMeta}>Updated {lastRefresh.toLocaleTimeString()}</Text>
+        </View>
+        <View style={styles.cardList}>
+          {notifications.map((notif) => (
+            <View key={notif.id} style={styles.listItem}>
+              <View style={styles.listIcon}>{notif.icon}</View>
+              <Text style={styles.listText} numberOfLines={2}>{notif.message}</Text>
+              <Text style={styles.listTime}>{notif.time}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Simple Analytics placeholder */}
+        <View style={styles.analyticsCard}>
+          <Text style={styles.analyticsTitle}>Weekly Activity</Text>
+          <View style={styles.chartBox}>
+            <Image
+              source={{ uri: 'https://dummyimage.com/320x90/ededed/aaaaaa&text=Activity+Chart' }}
+              style={{ width: '100%', height: 90, borderRadius: 10 }}
+            />
+          </View>
+          <Text style={styles.analyticsFoot}>This week</Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topSafe: { backgroundColor: MAROON },
   container: { flex: 1, backgroundColor: '#fff' },
+
+  /* Header */
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: MAROON,
     paddingHorizontal: 16,
-    paddingTop: 40,
-    paddingBottom: 8,
-  },
-  logo: { fontSize: 24, fontWeight: 'bold', color: '#7B3F00', letterSpacing: 1 },
-  welcomeText: { fontSize: 12, color: '#666', marginTop: 2 },
-  headerIcons: { flexDirection: 'row', alignItems: 'center' },
-  icon: { marginLeft: 16 },
-
-  incomeCard: {
-    backgroundColor: '#f7f7f7',
-    borderRadius: 18,
-    marginHorizontal: 16,
-    marginBottom: 18,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  incomeLabel: { fontWeight: 'bold', color: '#2ecc71', marginRight: 8 },
-  incomeStat: {
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#eafaf1',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    marginRight: 8,
-    marginLeft: 2,
-  },
-  incomeStatText: { color: '#2ecc71', fontSize: 12, fontWeight: 'bold', marginLeft: 2 },
-  incomeHigher: { fontSize: 12, color: '#666', fontWeight: '500' },
-  incomeAmount: { fontSize: 28, fontWeight: 'bold', color: '#222' },
-  todayEarnings: { fontSize: 14, color: '#2ecc71', fontWeight: '500', marginTop: 2 },
-  incomeArrow: { marginLeft: 8 },
-  earningsInfo: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  earningsInfoText: { fontSize: 12, color: '#666', fontWeight: '500' },
-  earningsInfoSubtext: { fontSize: 11, color: '#999', marginTop: 2 },
-  loadingCard: { justifyContent: 'center', alignItems: 'center', height: 120 },
-  loadingText: { color: '#666', fontSize: 16 },
-
-  sectionHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginHorizontal: 18,
-    marginTop: 10,
-    marginBottom: 6,
   },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#222' },
-  lastRefreshText: { fontSize: 10, color: '#999' },
+  brand: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
 
-  notifCard: {
+  /* Greeting */
+  greetCard: {
+    backgroundColor: MAROON_LIGHT,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    justifyContent: 'space-between',
   },
-  notifIcon: { marginRight: 12 },
-  notifMsg: { color: '#222', fontSize: 14, fontWeight: '500' },
-  notifTime: { color: '#aaa', fontSize: 12, marginLeft: 8 },
+  greetHi: { color: TEXT, fontSize: 16, fontWeight: '800' },
+  greetSub: { color: MUTED, fontSize: 12, marginTop: 4 },
 
-  analyticsCard: {
-    backgroundColor: '#f7f7f7',
-    borderRadius: 18,
+  /* Income Card */
+  incomeCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
     marginHorizontal: 16,
-    marginTop: 8,
+    marginTop: 14,
     padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
   },
-  analyticsLabel: { fontWeight: 'bold', color: '#222', marginBottom: 8, alignSelf: 'flex-start' },
-  barChartPlaceholder: {
-    width: '100%',
-    height: 80,
-    backgroundColor: '#ededed',
-    borderRadius: 8,
-    marginBottom: 8,
+  incomeTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  incomeTitle: { color: TEXT, fontWeight: '800', fontSize: 14 },
+  trendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 6,
+  },
+  trendText: { fontWeight: '800', fontSize: 12 },
+  incomeMainRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  incomeAmount: { fontSize: 28, fontWeight: '900', color: TEXT, letterSpacing: 0.2 },
+  incomeSub: { color: MUTED, marginTop: 2, fontSize: 12 },
+  detailBtn: {
+    backgroundColor: MAROON,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    marginLeft: 12,
   },
-  analyticsMonth: { color: '#888', fontSize: 12, alignSelf: 'flex-end', marginTop: 2 },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: SURFACE,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 12,
+  },
+  vDivider: { width: 1, height: 24, backgroundColor: '#EAEAEA' },
+  splitCol: { flex: 1, alignItems: 'center' },
+  splitLabel: { color: MUTED, fontSize: 11, marginBottom: 2 },
+  splitValue: { color: TEXT, fontSize: 13, fontWeight: '800' },
+
+  /* Section */
+  sectionHeader: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: TEXT },
+  sectionMeta: { fontSize: 11, color: MUTED },
+
+  /* List card */
+  cardList: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+  },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  listIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: MAROON_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  listText: { flex: 1, color: TEXT, fontSize: 13, fontWeight: '600' },
+  listTime: { color: MUTED, fontSize: 11, marginLeft: 8 },
+
+  /* Analytics */
+  analyticsCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+  },
+  analyticsTitle: { color: TEXT, fontSize: 14, fontWeight: '800', marginBottom: 10 },
+  chartBox: {
+    width: '100%',
+    height: 90,
+    backgroundColor: '#ededed',
+    borderRadius: 10,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  analyticsFoot: { color: MUTED, fontSize: 12, marginTop: 8, alignSelf: 'flex-end' },
 });
