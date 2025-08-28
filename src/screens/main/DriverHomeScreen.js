@@ -230,7 +230,7 @@ export default function DriverHomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Greeting strip */}
-        <View style={styles.greetCard}>
+        {/* <View style={styles.greetCard}>
           <View>
             <Text style={styles.greetHi}>Hi, {user?.name || user?.user_metadata?.name || 'Driver'} 👋</Text>
             <Text style={styles.greetSub}>Have a safe and productive day on the road.</Text>
@@ -239,7 +239,7 @@ export default function DriverHomeScreen({ navigation }) {
             source={{ uri: 'https://dummyimage.com/80x60/f5e9e2/6b2e2b&text=🐴' }}
             style={{ width: 80, height: 60, borderRadius: 10 }}
           />
-        </View>
+        </View> */}
 
         {/* Earnings Card */}
         <View style={styles.incomeCard}>
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     backgroundColor: CARD_BG,
     borderRadius: 16,
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 20,
     padding: 16,
     elevation: 2,
     shadowColor: '#000',

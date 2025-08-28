@@ -26,7 +26,7 @@ const RADIUS = 16;
 const { height: SCREEN_H } = Dimensions.get('window');
 
 // Local image for tartanillas
-const tartanillaImage = require('../../../assets/TarTrack Logo_sakto.png');
+const tartanillaImage = require('../../../assets/tartanilla.jpg');
 
 // ---- Helpers ----
 const formatCurrency = (n = 0) =>

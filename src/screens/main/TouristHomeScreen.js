@@ -14,6 +14,7 @@ import {
   FlatList,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -47,12 +48,13 @@ export default function TouristHomeScreen({ navigation }) {
   const [networkStatus, setNetworkStatus] = useState('Unknown');
   const [dataSource, setDataSource] = useState('Unknown');
 
-  const SHEET_H = 520;
+  // ---------- Sheet state ----------
+  const SHEET_H = 540;
   const [sheetVisible, setSheetVisible] = useState(false);
   const sheetY = useRef(new Animated.Value(SHEET_H)).current;
-  const [activePicker, setActivePicker] = useState('pickup');
-  const [destModalVisible, setDestModalVisible] = useState(false);
+  const [activePicker, setActivePicker] = useState('pickup'); // 'pickup' | 'destination'
   const [requesting, setRequesting] = useState(false);
+  const [mapRegion, setMapRegion] = useState(CEBU_CITY_REGION);
 
   useEffect(() => {
     Animated.timing(sheetY, {
@@ -62,6 +64,18 @@ export default function TouristHomeScreen({ navigation }) {
       useNativeDriver: true,
     }).start();
   }, [sheetVisible, sheetY]);
+
+  // Recenter to the most relevant point when sheet is shown / fields change
+  useEffect(() => {
+    if (!sheetVisible) return;
+    if (activePicker === 'pickup' && pickup) {
+      setMapRegion((r) => ({ ...r, latitude: pickup.latitude, longitude: pickup.longitude }));
+    } else if (activePicker === 'destination' && destination) {
+      setMapRegion((r) => ({ ...r, latitude: destination.latitude, longitude: destination.longitude }));
+    } else {
+      setMapRegion(CEBU_CITY_REGION);
+    }
+  }, [sheetVisible, activePicker, pickup, destination]);
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -101,7 +115,8 @@ export default function TouristHomeScreen({ navigation }) {
   };
 
   const handleMapPress = (e) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
+    const { latitude, longitude } = e?.nativeEvent?.coordinate || {};
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
     if (activePicker === 'pickup') {
       setPickup({ name: 'Dropped Pin', latitude, longitude });
     } else {
@@ -109,8 +124,40 @@ export default function TouristHomeScreen({ navigation }) {
     }
   };
 
+  const useCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Location permission is required to use current location.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const point = { name: 'Current Location', latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      if (activePicker === 'pickup') setPickup(point);
+      else setDestination(point);
+      setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
+    } catch (err) {
+      Alert.alert('Location error', err.message || 'Failed to get current location.');
+    }
+  };
+
+  const chooseTerminal = (t) => {
+    const point = { name: t.name, latitude: t.latitude, longitude: t.longitude };
+    if (activePicker === 'pickup') setPickup(point);
+    else setDestination(point);
+    setMapRegion((r) => ({ ...r, latitude: t.latitude, longitude: t.longitude }));
+  };
+
+  const swapPoints = () => {
+    setPickup(destination);
+    setDestination(pickup);
+  };
+
   const handleRequestRide = async () => {
-    if (!pickup || !destination) return;
+    if (!pickup || !destination) {
+      Alert.alert('Pick points', 'Please select both pickup and destination.');
+      return;
+    }
     setRequesting(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -177,7 +224,8 @@ export default function TouristHomeScreen({ navigation }) {
             {
               marginHorizontal: 16,
               marginBottom: 8,
-              color: networkStatus === 'Connected' ? '#4CAF50' : networkStatus === 'Failed' ? '#F44336' : '#666',
+              color:
+                networkStatus === 'Connected' ? '#4CAF50' : networkStatus === 'Failed' ? '#F44336' : '#666',
             },
           ]}
         >
@@ -210,7 +258,11 @@ export default function TouristHomeScreen({ navigation }) {
                 {pkg.photos && pkg.photos.length > 0 ? (
                   <Image source={{ uri: pkg.photos[0] }} style={styles.packageImage} resizeMode="cover" />
                 ) : (
-                  <Image source={require('../../../assets/images/tourA.png')} style={styles.packageImage} resizeMode="cover" />
+                  <Image
+                    source={require('../../../assets/images/tourA.png')}
+                    style={styles.packageImage}
+                    resizeMode="cover"
+                  />
                 )}
 
                 {/* Title */}
@@ -279,7 +331,9 @@ export default function TouristHomeScreen({ navigation }) {
                     }
                   >
                     <Ionicons name="book-outline" size={12} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={styles.bookBtnText} numberOfLines={1}>Book</Text>
+                    <Text style={styles.bookBtnText} numberOfLines={1}>
+                      Book
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -292,6 +346,160 @@ export default function TouristHomeScreen({ navigation }) {
       <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
         <Ionicons name="add" size={26} color="#fff" />
       </TouchableOpacity>
+
+      {/* ========= Bottom Sheet Modal ========= */}
+      <Modal visible={sheetVisible} transparent animationType="none" onRequestClose={() => setSheetVisible(false)}>
+        {/* Backdrop */}
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSheetVisible(false)} />
+
+        {/* Sheet */}
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              transform: [{ translateY: sheetY }],
+            },
+          ]}
+        >
+          {/* Grabber + title + close */}
+          <View style={styles.sheetHeader}>
+            <View style={styles.grabber} />
+            <View style={styles.sheetTitleRow}>
+              <Text style={styles.sheetTitle}>Request a Ride</Text>
+              <TouchableOpacity onPress={() => setSheetVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color="#222" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Picker toggles */}
+          <View style={styles.toggleRow}>
+            {['pickup', 'destination'].map((k) => {
+              const active = activePicker === k;
+              return (
+                <TouchableOpacity
+                  key={k}
+                  style={[styles.toggleBtn, active && styles.toggleBtnActive]}
+                  onPress={() => setActivePicker(k)}
+                >
+                  <Ionicons
+                    name={k === 'pickup' ? 'locate-outline' : 'flag-outline'}
+                    size={14}
+                    color={active ? '#6B2E2B' : '#666'}
+                  />
+                  <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
+                    {k === 'pickup' ? 'Set Pickup' : 'Set Destination'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity style={styles.swapBtn} onPress={swapPoints}>
+              <Ionicons name="swap-vertical" size={16} color="#6B2E2B" />
+              <Text style={styles.swapText}>Swap</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Location rows */}
+          <View style={styles.rowField}>
+            <Ionicons name="locate" size={16} color="#2e7d32" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Pickup</Text>
+              <Text style={styles.fieldValue} numberOfLines={1}>
+                {renderLocShort(pickup)}
+              </Text>
+            </View>
+            {pickup && (
+              <TouchableOpacity onPress={() => setPickup(null)}>
+                <Ionicons name="close-circle" size={18} color="#999" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.rowField}>
+            <Ionicons name="flag" size={16} color="#C62828" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Destination</Text>
+              <Text style={styles.fieldValue} numberOfLines={1}>
+                {renderLocShort(destination)}
+              </Text>
+            </View>
+            {destination && (
+              <TouchableOpacity onPress={() => setDestination(null)}>
+                <Ionicons name="close-circle" size={18} color="#999" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Quick actions */}
+          <View style={styles.quickRow}>
+            <TouchableOpacity style={styles.quickBtn} onPress={useCurrentLocation}>
+              <Ionicons name="navigate-circle-outline" size={16} color="#6B2E2B" />
+              <Text style={styles.quickText}>Use my location</Text>
+            </TouchableOpacity>
+            <Text style={styles.quickHint}>
+              Tap the map to set {activePicker === 'pickup' ? 'pickup' : 'destination'}.
+            </Text>
+          </View>
+
+          {/* Map */}
+          <View style={styles.mapWrap}>
+            <GoogleMap
+              style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
+              region={mapRegion}
+              onPress={handleMapPress}
+              showsUserLocation
+            />
+            {/* Simple markers overlay (if your GoogleMap doesn’t accept children markers) */}
+            {pickup && (
+              <View pointerEvents="none" style={[styles.pin, { left: 12, top: 12 }]}>
+                <Ionicons name="location-sharp" size={18} color="#2e7d32" />
+                <Text style={styles.pinText}>Pickup</Text>
+              </View>
+            )}
+            {destination && (
+              <View pointerEvents="none" style={[styles.pin, { right: 12, bottom: 12 }]}>
+                <Ionicons name="flag" size={18} color="#C62828" />
+                <Text style={styles.pinText}>Destination</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Terminals quick list */}
+          <FlatList
+            data={TERMINALS}
+            keyExtractor={(t) => t.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 4, paddingTop: 8, paddingBottom: 2 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.terminalPill} onPress={() => chooseTerminal(item)}>
+                <Ionicons name="location-outline" size={14} color="#6B2E2B" />
+                <Text style={styles.terminalText} numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+
+          {/* Submit */}
+          <TouchableOpacity
+            style={[styles.requestBtn, (!pickup || !destination || requesting) && { opacity: 0.6 }]}
+            onPress={handleRequestRide}
+            disabled={!pickup || !destination || requesting}
+            activeOpacity={0.9}
+          >
+            {requesting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="send" size={16} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.requestBtnText}>Request Ride</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      </Modal>
     </View>
   );
 }
@@ -433,4 +641,157 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
   },
+
+  /* --------- Bottom Sheet Styles --------- */
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 540,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 12,
+    elevation: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -6 },
+  },
+  sheetHeader: { alignItems: 'center', marginBottom: 6 },
+  grabber: {
+    width: 38,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#E0E0E0',
+    marginBottom: 6,
+  },
+  sheetTitleRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sheetTitle: { fontSize: 16, fontWeight: '800', color: '#222' },
+
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E6E6E6',
+    marginRight: 8,
+    backgroundColor: '#FAFAFA',
+  },
+  toggleBtnActive: { borderColor: '#6B2E2B', backgroundColor: '#FFF' },
+  toggleText: { marginLeft: 6, fontSize: 12, color: '#666', fontWeight: '700' },
+  toggleTextActive: { color: '#6B2E2B' },
+
+  swapBtn: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F7EFEF',
+    borderColor: '#EADCDC',
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  swapText: { marginLeft: 6, color: '#6B2E2B', fontWeight: '700', fontSize: 12 },
+
+  rowField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  fieldLabel: { fontSize: 11, color: '#888', marginBottom: 2 },
+  fieldValue: { fontSize: 13, color: '#222', fontWeight: '700' },
+
+  quickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  quickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F5E9E2',
+    borderRadius: 999,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#EBD7CF',
+  },
+  quickText: { marginLeft: 6, color: '#6B2E2B', fontWeight: '800', fontSize: 12 },
+  quickHint: { color: '#777', fontSize: 12 },
+
+  mapWrap: {
+    height: 210,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EEE',
+    backgroundColor: '#EEE',
+  },
+  pin: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#EEE',
+  },
+  pinText: { marginLeft: 6, fontSize: 11, fontWeight: '700', color: '#333' },
+
+  terminalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#EADCDC',
+    backgroundColor: '#F7EFEF',
+    marginRight: 8,
+  },
+  terminalText: { marginLeft: 6, color: '#6B2E2B', fontWeight: '700', fontSize: 12 },
+
+  requestBtn: {
+    marginTop: 10,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#6B2E2B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  requestBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+
+  /* Misc states for empty packages */
+  noPackagesContainer: { padding: 16, alignItems: 'center' },
+  noPackagesText: { fontSize: 16, fontWeight: '800', color: '#333', marginBottom: 6 },
+  noPackagesSubtext: { fontSize: 12, color: '#777', textAlign: 'center' },
 });

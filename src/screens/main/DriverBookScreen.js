@@ -1,9 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  Modal,
+  Animated,
+  Easing,
+  Pressable,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
-import { getAvailableBookingsForDrivers, driverAcceptBooking, getDriverBookings, driverCompleteBooking } from '../../services/tourpackage/acceptBooking';
-import { getAvailableCustomTourRequestsForDrivers, driverAcceptCustomTourRequest, getDriverCustomTours, updateCustomTourStatus } from '../../services/specialpackage/customPackageRequest';
+import {
+  getAvailableBookingsForDrivers,
+  driverAcceptBooking,
+  getDriverBookings,
+  driverCompleteBooking,
+} from '../../services/tourpackage/acceptBooking';
+import {
+  getAvailableCustomTourRequestsForDrivers,
+  driverAcceptCustomTourRequest,
+  getDriverCustomTours,
+  updateCustomTourStatus,
+} from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 import * as Routes from '../../constants/routes';
 
@@ -20,39 +42,55 @@ export default function DriverBookScreen({ navigation }) {
   const [acceptingBooking, setAcceptingBooking] = useState(false);
   const [activeTab, setActiveTab] = useState('available'); // 'available' | 'ongoing' | 'history'
 
+  // Animations for bottom-sheet modals
+  const acceptAnim = useRef(new Animated.Value(0)).current;
+  const completeAnim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     fetchUserAndBookings();
   }, []);
 
+  useEffect(() => {
+    Animated.timing(acceptAnim, {
+      toValue: showAcceptModal ? 1 : 0,
+      duration: 220,
+      easing: showAcceptModal ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [showAcceptModal, acceptAnim]);
+
+  useEffect(() => {
+    Animated.timing(completeAnim, {
+      toValue: showCompleteModal ? 1 : 0,
+      duration: 220,
+      easing: showCompleteModal ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [showCompleteModal, completeAnim]);
+
   const fetchUserAndBookings = async () => {
     try {
       setLoading(true);
-      
-      // Check new auth system first
       let currentUser = await getCurrentUser();
       let userId = null;
-      
+
       if (currentUser) {
-        // User is logged in via new auth system
-        console.log('Current driver user (new auth):', currentUser);
         setUser(currentUser);
         userId = currentUser.id;
       } else {
-        // Fallback to Supabase for existing users
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
         if (userError || !user) {
           Alert.alert('Error', 'Please log in to view bookings');
           setLoading(false);
           return;
         }
-
-        console.log('Current driver user (Supabase):', user);
         setUser(user);
         userId = user.id;
       }
 
-      // Fetch available bookings, custom tour requests, and driver's accepted bookings
       try {
         await Promise.all([
           fetchAvailableBookings(userId),
@@ -62,7 +100,6 @@ export default function DriverBookScreen({ navigation }) {
         ]);
       } catch (error) {
         console.error('Error in Promise.all:', error);
-        // Continue even if one fails
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
@@ -74,26 +111,19 @@ export default function DriverBookScreen({ navigation }) {
 
   const fetchAvailableBookings = async (driverId) => {
     try {
-      console.log('Fetching available bookings for drivers...');
       const bookingsData = await getAvailableBookingsForDrivers(driverId);
-      console.log('Available bookings response:', bookingsData);
-      
-      // Handle different response formats
       let processedBookings = [];
-      if (bookingsData && bookingsData.success && bookingsData.data && Array.isArray(bookingsData.data.bookings)) {
+      if (bookingsData?.success && Array.isArray(bookingsData?.data?.bookings)) {
         processedBookings = bookingsData.data.bookings;
       } else if (Array.isArray(bookingsData)) {
         processedBookings = bookingsData;
-      } else if (bookingsData && Array.isArray(bookingsData.results)) {
+      } else if (Array.isArray(bookingsData?.results)) {
         processedBookings = bookingsData.results;
-      } else if (bookingsData && Array.isArray(bookingsData.data)) {
+      } else if (Array.isArray(bookingsData?.data)) {
         processedBookings = bookingsData.data;
       } else {
-        console.log('Unexpected bookings data format:', bookingsData);
         processedBookings = [];
       }
-      
-      console.log('Processed available bookings:', processedBookings);
       setAvailableBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
@@ -103,12 +133,8 @@ export default function DriverBookScreen({ navigation }) {
 
   const fetchAvailableCustomTours = async (driverId) => {
     try {
-      console.log('Fetching available custom tour requests for drivers...');
       const customToursData = await getAvailableCustomTourRequestsForDrivers(driverId);
-      console.log('Available custom tours response:', customToursData);
-      
-      if (customToursData && customToursData.success && Array.isArray(customToursData.data)) {
-        // Only show tours that are unassigned and waiting for a driver
+      if (customToursData?.success && Array.isArray(customToursData?.data)) {
         const filtered = (customToursData.data || []).filter((tour) => {
           const status = (tour.status || '').toLowerCase();
           const assignedDriverId =
@@ -123,11 +149,10 @@ export default function DriverBookScreen({ navigation }) {
             tour.accepted_driver ||
             tour.taken_by ||
             tour.claimed_by;
-          return status === 'waiting_for_driver' && !assignedDriverId;
+        return status === 'waiting_for_driver' && !assignedDriverId;
         });
         setAvailableCustomTours(filtered);
       } else {
-        console.log('Unexpected custom tours data format:', customToursData);
         setAvailableCustomTours([]);
       }
     } catch (error) {
@@ -140,8 +165,6 @@ export default function DriverBookScreen({ navigation }) {
     try {
       const res = await getDriverCustomTours(driverId);
       if (res.success) {
-        // Merge these into driverBookings with a normalized shape
-        // Expect fields: id, status, pickup_location as pickup_address fallback, number_of_pax, preferred_date -> booking_date, approved_price -> total_amount
         const mapped = (res.data || []).map((tour) => ({
           id: tour.id,
           status: tour.status,
@@ -156,9 +179,7 @@ export default function DriverBookScreen({ navigation }) {
           booking_reference: tour.booking_reference || tour.reference || tour.ref || `CT-${String(tour.id).slice(0, 8)}`,
         }));
 
-        // Keep existing normal bookings; store custom tours alongside
         setDriverBookings((prev) => {
-          // Remove any previous custom tours to avoid duplicates
           const nonCustom = prev.filter((b) => b.request_type !== 'custom_tour');
           return [...nonCustom, ...mapped];
         });
@@ -170,40 +191,22 @@ export default function DriverBookScreen({ navigation }) {
 
   const fetchDriverBookings = async (driverId) => {
     try {
-      console.log('Fetching driver bookings for driver ID:', driverId);
       const bookingsData = await getDriverBookings(driverId);
-      console.log('Driver bookings response:', bookingsData);
-      
-      // Handle different response formats
       let processedBookings = [];
-      if (bookingsData && bookingsData.success && bookingsData.data && Array.isArray(bookingsData.data.bookings)) {
+      if (bookingsData?.success && Array.isArray(bookingsData?.data?.bookings)) {
         processedBookings = bookingsData.data.bookings;
-        console.log('Using bookingsData.data.bookings format');
-      } else if (bookingsData && bookingsData.success && bookingsData.data && Array.isArray(bookingsData.data)) {
+      } else if (bookingsData?.success && Array.isArray(bookingsData?.data)) {
         processedBookings = bookingsData.data;
-        console.log('Using bookingsData.data format');
       } else if (Array.isArray(bookingsData)) {
         processedBookings = bookingsData;
-        console.log('Using direct array format');
-      } else if (bookingsData && Array.isArray(bookingsData.results)) {
+      } else if (Array.isArray(bookingsData?.results)) {
         processedBookings = bookingsData.results;
-        console.log('Using bookingsData.results format');
       } else {
-        console.log('Unexpected driver bookings data format:', bookingsData);
-        console.log('Response type:', typeof bookingsData);
-        console.log('Response keys:', bookingsData ? Object.keys(bookingsData) : 'null');
         processedBookings = [];
       }
-      
-      console.log('Processed driver bookings count:', processedBookings.length);
-      console.log('First booking sample:', processedBookings[0]);
       setDriverBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack
-      });
       setDriverBookings([]);
     }
   };
@@ -216,7 +219,6 @@ export default function DriverBookScreen({ navigation }) {
 
   const refreshHistory = async () => {
     if (user) {
-      console.log('Manually refreshing history for user:', user.id);
       await fetchDriverBookings(user.id);
     }
   };
@@ -237,21 +239,14 @@ export default function DriverBookScreen({ navigation }) {
       setAcceptingBooking(true);
       let result;
       if (booking.request_type === 'custom_tour') {
-        // For custom tours, backend accepts direct status update
         result = await updateCustomTourStatus(booking.id, 'in_progress');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // No explicit start endpoint implemented on backend; skip for regular bookings
         result = { success: true };
       }
-      if (result && (result.success !== false)) {
+      if (result && result.success !== false) {
         Alert.alert('Success', 'Trip started. Status set to In Progress.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              fetchUserAndBookings();
-            },
-          },
+          { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
         ]);
       } else {
         Alert.alert('Error', result?.error || 'Failed to start trip');
@@ -269,35 +264,27 @@ export default function DriverBookScreen({ navigation }) {
 
     try {
       setAcceptingBooking(true);
-      
+
       let result;
       const driverData = {
         driver_id: user.id,
         driver_name: user.name || user.user_metadata?.name || user.email || 'Driver',
       };
 
-      // Check if this is a custom tour request or regular booking
       if (selectedBooking.request_type === 'custom_tour') {
         result = await driverAcceptCustomTourRequest(selectedBooking.id, driverData);
-        // After accept, refresh available custom tours list to hide it from others
       } else {
         result = await driverAcceptBooking(selectedBooking.id, driverData);
       }
 
-      console.log('Accept booking/request response:', result);
-
       if (result.success) {
-        const message = selectedBooking.request_type === 'custom_tour' 
-          ? 'Custom tour request accepted successfully!' 
-          : 'Booking accepted successfully!';
-        
-        // For custom tours, ensure backend status changes to driver_assigned so others don't see it
+        const message =
+          selectedBooking.request_type === 'custom_tour'
+            ? 'Custom tour request accepted successfully!'
+            : 'Booking accepted successfully!';
+
         if (selectedBooking.request_type === 'custom_tour') {
-          try {
-            await updateCustomTourStatus(selectedBooking.id, 'driver_assigned');
-          } catch (e) {
-            console.warn('Failed to set custom tour to driver_assigned:', e?.message || e);
-          }
+          try { await updateCustomTourStatus(selectedBooking.id, 'driver_assigned'); } catch {}
         }
 
         Alert.alert('Success', message, [
@@ -306,12 +293,11 @@ export default function DriverBookScreen({ navigation }) {
             onPress: () => {
               setShowAcceptModal(false);
               setSelectedBooking(null);
-              // Optimistically remove from available custom tours list
               if (selectedBooking.request_type === 'custom_tour') {
                 setAvailableCustomTours((prev) => prev.filter((t) => t.id !== selectedBooking.id));
                 fetchDriverCustomTours(user.id);
               }
-              fetchUserAndBookings(); // Refresh all lists
+              fetchUserAndBookings();
             },
           },
         ]);
@@ -329,7 +315,6 @@ export default function DriverBookScreen({ navigation }) {
   const confirmCompleteBooking = async () => {
     if (!selectedBooking || !user) return;
     const isCustom = selectedBooking.request_type === 'custom_tour';
-    const statusLower = (selectedBooking.status || '').toLowerCase();
     try {
       setAcceptingBooking(true);
       let result;
@@ -337,7 +322,6 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // Use dedicated complete endpoint so backend records earnings
         result = await driverCompleteBooking(selectedBooking.id, user.id);
       }
       if (result.success) {
@@ -364,30 +348,30 @@ export default function DriverBookScreen({ navigation }) {
   };
 
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
+    switch ((status || '').toLowerCase()) {
       case 'waiting_for_driver':
-        return '#FF9800';
+        return '#B26A00';
       case 'driver_assigned':
-        return '#4CAF50';
+        return '#2E7D32';
       case 'in_progress':
-        return '#2196F3';
+        return '#1565C0';
       case 'completed':
-        return '#4CAF50';
+        return '#2E7D32';
       case 'cancelled':
-        return '#F44336';
+        return '#C62828';
       case 'pending':
-        return '#9C27B0';
+        return '#7B1FA2';
       case 'approved':
-        return '#4CAF50';
+        return '#2E7D32';
       case 'rejected':
-        return '#F44336';
+        return '#C62828';
       default:
-        return '#757575';
+        return '#555';
     }
   };
 
   const getStatusIcon = (status) => {
-    switch (status?.toLowerCase()) {
+    switch ((status || '').toLowerCase()) {
       case 'waiting_for_driver':
         return 'time';
       case 'driver_assigned':
@@ -406,11 +390,7 @@ export default function DriverBookScreen({ navigation }) {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
   const formatTime = (timeString) => {
@@ -427,19 +407,11 @@ export default function DriverBookScreen({ navigation }) {
     <View key={booking.id} style={styles.bookingCard}>
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
-          <Text style={styles.bookingReference}>
-            Ref: {booking.booking_reference || 'N/A'}
-          </Text>
-          <Text style={styles.bookingDate}>
-            {formatDate(booking.booking_date)}
-          </Text>
+          <Text style={styles.bookingReference}>Ref: {booking.booking_reference || 'N/A'}</Text>
+          <Text style={styles.bookingDate}>{formatDate(booking.booking_date)}</Text>
         </View>
-        <View style={styles.statusContainer}>
-          <Ionicons 
-            name={getStatusIcon(booking.status)} 
-            size={20} 
-            color={getStatusColor(booking.status)} 
-          />
+        <View style={[styles.statusContainer, { borderColor: getStatusColor(booking.status) }]}>
+          <Ionicons name={getStatusIcon(booking.status)} size={16} color={getStatusColor(booking.status)} />
           <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
             {booking.status?.replace('_', ' ') || 'Unknown'}
           </Text>
@@ -451,32 +423,32 @@ export default function DriverBookScreen({ navigation }) {
           <Text style={styles.detailLabel}>Package:</Text>
           <Text style={styles.detailValue}>{booking.package_name || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Pickup Time:</Text>
           <Text style={styles.detailValue}>{formatTime(booking.pickup_time)}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Passengers:</Text>
           <Text style={styles.detailValue}>{booking.number_of_pax || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Pickup Address:</Text>
           <Text style={styles.detailValue}>{booking.pickup_address || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Contact:</Text>
           <Text style={styles.detailValue}>{booking.contact_number || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Total Amount:</Text>
           <Text style={styles.detailValue}>{formatCurrency(booking.total_amount)}</Text>
         </View>
-        
+
         {booking.special_requests && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Special Requests:</Text>
@@ -486,29 +458,20 @@ export default function DriverBookScreen({ navigation }) {
       </View>
 
       {booking.status === 'waiting_for_driver' && activeTab === 'available' && (
-        <TouchableOpacity 
-          style={styles.acceptButton}
-          onPress={() => handleAcceptBooking(booking)}
-        >
-          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+        <TouchableOpacity style={styles.acceptButton} onPress={() => handleAcceptBooking(booking)}>
+          <Ionicons name="checkmark-circle" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Accept Booking</Text>
         </TouchableOpacity>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'in_progress') && (
-        <TouchableOpacity 
-          style={[styles.acceptButton, { backgroundColor: '#2196F3' }]}
-          onPress={() => handleCompleteBooking(booking)}
-        >
-          <Ionicons name="checkmark-done" size={20} color="#fff" />
+      {activeTab === 'ongoing' && booking.status === 'in_progress' && (
+        <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
+          <Ionicons name="checkmark-done" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'driver_assigned') && (
-        <TouchableOpacity 
-          style={[styles.acceptButton, { backgroundColor: '#2196F3' }]}
-          onPress={() => handleCompleteBooking(booking)}
-        >
-          <Ionicons name="checkmark-done" size={20} color="#fff" />
+      {activeTab === 'ongoing' && booking.status === 'driver_assigned' && (
+        <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
+          <Ionicons name="checkmark-done" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
@@ -519,19 +482,13 @@ export default function DriverBookScreen({ navigation }) {
     <View key={tour.id} style={[styles.bookingCard, styles.customTourCard]}>
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
-          <Text style={styles.bookingReference}>
-            Custom Tour #{tour.id.substring(0, 8)}
-          </Text>
+          <Text style={styles.bookingReference}>Custom Tour #{tour.id.substring(0, 8)}</Text>
           <View style={styles.customTourBadge}>
             <Text style={styles.customTourBadgeText}>CUSTOM</Text>
           </View>
         </View>
-        <View style={styles.statusContainer}>
-          <Ionicons 
-            name={getStatusIcon(tour.status)} 
-            size={20} 
-            color={getStatusColor(tour.status)} 
-          />
+        <View style={[styles.statusContainer, { borderColor: getStatusColor(tour.status) }]}>
+          <Ionicons name={getStatusIcon(tour.status)} size={16} color={getStatusColor(tour.status)} />
           <Text style={[styles.statusText, { color: getStatusColor(tour.status) }]}>
             {tour.status?.replace('_', ' ') || 'Unknown'}
           </Text>
@@ -543,50 +500,50 @@ export default function DriverBookScreen({ navigation }) {
           <Text style={styles.detailLabel}>Destination:</Text>
           <Text style={styles.detailValue}>{tour.destination || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Customer:</Text>
           <Text style={styles.detailValue}>{tour.customer_name || 'N/A'}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Passengers:</Text>
           <Text style={styles.detailValue}>{tour.number_of_pax || 'N/A'}</Text>
         </View>
-        
+
         {tour.pickup_location && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Pickup Location:</Text>
             <Text style={styles.detailValue}>{tour.pickup_location}</Text>
           </View>
         )}
-        
+
         {tour.preferred_date && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Preferred Date:</Text>
             <Text style={styles.detailValue}>{formatDate(tour.preferred_date)}</Text>
           </View>
         )}
-        
+
         {tour.preferred_duration_hours && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Duration:</Text>
             <Text style={styles.detailValue}>{tour.preferred_duration_hours} hours</Text>
           </View>
         )}
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Contact:</Text>
           <Text style={styles.detailValue}>{tour.contact_number || 'N/A'}</Text>
         </View>
-        
+
         {tour.approved_price && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Approved Price:</Text>
             <Text style={styles.detailValue}>{formatCurrency(tour.approved_price)}</Text>
           </View>
         )}
-        
+
         {tour.special_requests && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Special Requests:</Text>
@@ -596,11 +553,8 @@ export default function DriverBookScreen({ navigation }) {
       </View>
 
       {tour.status === 'waiting_for_driver' && activeTab === 'available' && (
-        <TouchableOpacity 
-          style={[styles.acceptButton, styles.customTourAcceptButton]}
-          onPress={() => handleAcceptBooking(tour)}
-        >
-          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+        <TouchableOpacity style={[styles.acceptButton, styles.customTourAcceptButton]} onPress={() => handleAcceptBooking(tour)}>
+          <Ionicons name="checkmark-circle" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Accept Tour</Text>
         </TouchableOpacity>
       )}
@@ -609,16 +563,10 @@ export default function DriverBookScreen({ navigation }) {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons 
-        name={
-          activeTab === 'available'
-            ? 'car-outline'
-            : activeTab === 'ongoing'
-            ? 'time-outline'
-            : 'checkmark-done-circle'
-        } 
-        size={64} 
-        color="#ccc" 
+      <Ionicons
+        name={activeTab === 'available' ? 'car-outline' : activeTab === 'ongoing' ? 'time-outline' : 'checkmark-done-circle'}
+        size={64}
+        color="#C9C9C9"
       />
       <Text style={styles.emptyStateTitle}>
         {activeTab === 'available'
@@ -628,17 +576,13 @@ export default function DriverBookScreen({ navigation }) {
           : 'No Booking History'}
       </Text>
       <Text style={styles.emptyStateSubtitle}>
-        {activeTab === 'available' 
+        {activeTab === 'available'
           ? 'There are currently no bookings or custom tours waiting for drivers. Check back later!'
           : activeTab === 'ongoing'
           ? 'You have no ongoing bookings. Accepted bookings appear here until you complete them.'
-          : 'You haven\'t accepted any bookings yet. Start by accepting available bookings!'
-        }
+          : "You haven't accepted any bookings yet. Start by accepting available bookings!"}
       </Text>
-      <TouchableOpacity 
-        style={styles.refreshButton}
-        onPress={onRefresh}
-      >
+      <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
         <Text style={styles.refreshButtonText}>Refresh</Text>
       </TouchableOpacity>
     </View>
@@ -646,46 +590,28 @@ export default function DriverBookScreen({ navigation }) {
 
   const renderTabBar = () => (
     <View style={styles.tabBar}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.tabButton, activeTab === 'available' && styles.activeTabButton]}
         onPress={() => setActiveTab('available')}
       >
-        <Ionicons 
-          name="car-outline" 
-          size={20} 
-          color={activeTab === 'available' ? '#6B2E2B' : '#666'} 
-        />
-        <Text style={[styles.tabButtonText, activeTab === 'available' && styles.activeTabButtonText]}>
-          Available
-        </Text>
+        <Ionicons name="car-outline" size={18} color={activeTab === 'available' ? '#6B2E2B' : '#777'} />
+        <Text style={[styles.tabButtonText, activeTab === 'available' && styles.activeTabButtonText]}>Available</Text>
       </TouchableOpacity>
-      
-      <TouchableOpacity 
+
+      <TouchableOpacity
         style={[styles.tabButton, activeTab === 'ongoing' && styles.activeTabButton]}
         onPress={() => setActiveTab('ongoing')}
       >
-        <Ionicons 
-          name="time-outline" 
-          size={20} 
-          color={activeTab === 'ongoing' ? '#6B2E2B' : '#666'} 
-        />
-        <Text style={[styles.tabButtonText, activeTab === 'ongoing' && styles.activeTabButtonText]}>
-          Ongoing
-        </Text>
+        <Ionicons name="time-outline" size={18} color={activeTab === 'ongoing' ? '#6B2E2B' : '#777'} />
+        <Text style={[styles.tabButtonText, activeTab === 'ongoing' && styles.activeTabButtonText]}>Ongoing</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.tabButton, activeTab === 'history' && styles.activeTabButton]}
         onPress={() => setActiveTab('history')}
       >
-        <Ionicons 
-          name="checkmark-done-circle" 
-          size={20} 
-          color={activeTab === 'history' ? '#6B2E2B' : '#666'} 
-        />
-        <Text style={[styles.tabButtonText, activeTab === 'history' && styles.activeTabButtonText]}>
-          History
-        </Text>
+        <Ionicons name="checkmark-done-circle" size={18} color={activeTab === 'history' ? '#6B2E2B' : '#777'} />
+        <Text style={[styles.tabButtonText, activeTab === 'history' && styles.activeTabButtonText]}>History</Text>
       </TouchableOpacity>
     </View>
   );
@@ -700,23 +626,19 @@ export default function DriverBookScreen({ navigation }) {
   });
 
   const currentBookings =
-    activeTab === 'available'
-      ? availableBookings
-      : activeTab === 'ongoing'
-      ? ongoingBookings
-      : historyBookings;
+    activeTab === 'available' ? availableBookings : activeTab === 'ongoing' ? ongoingBookings : historyBookings;
 
   const currentCustomTours = activeTab === 'available' ? availableCustomTours : [];
 
-  // Debug logging
-  console.log('Current tab:', activeTab);
-  console.log('Available bookings count:', availableBookings.length);
-  console.log('Driver bookings count:', driverBookings.length);
-  console.log('Current bookings to display:', currentBookings.length);
+  // ====== Animated helpers for modals ======
+  const acceptTranslateY = acceptAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
+  const acceptOpacity = acceptAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+
+  const completeTranslateY = completeAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
+  const completeOpacity = completeAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   return (
     <View style={styles.container}>
-      
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>
@@ -727,20 +649,15 @@ export default function DriverBookScreen({ navigation }) {
               : 'Booking History'}
           </Text>
           <Text style={styles.subtitle}>
-            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}'s {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'completed'} bookings
+            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}
+            {'\u2019'}s {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'completed'} bookings
           </Text>
           <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              style={styles.refreshButton}
-              onPress={onRefresh}
-            >
+            <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
               <Text style={styles.refreshButtonText}>Refresh</Text>
             </TouchableOpacity>
             {activeTab === 'history' && (
-              <TouchableOpacity 
-                style={[styles.refreshButton, { marginLeft: 8 }]}
-                onPress={refreshHistory}
-              >
+              <TouchableOpacity style={[styles.refreshButton, { marginLeft: 8 }]} onPress={refreshHistory}>
                 <Text style={styles.refreshButtonText}>Debug History</Text>
               </TouchableOpacity>
             )}
@@ -756,14 +673,12 @@ export default function DriverBookScreen({ navigation }) {
             </Text>
           </View>
         ) : (
-          <ScrollView 
+          <ScrollView
             style={styles.scrollView}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             showsVerticalScrollIndicator={false}
           >
-            {(currentBookings.length > 0 || currentCustomTours.length > 0) ? (
+            {currentBookings.length > 0 || currentCustomTours.length > 0 ? (
               <>
                 {currentBookings.map(renderBookingCard)}
                 {currentCustomTours.map(renderCustomTourCard)}
@@ -775,127 +690,175 @@ export default function DriverBookScreen({ navigation }) {
         )}
       </View>
 
-      {/* Accept Booking Modal */}
+      {/* Accept Booking - Modern bottom-sheet modal */}
       <Modal
         visible={showAcceptModal}
-        transparent={true}
-        animationType="slide"
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowAcceptModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {selectedBooking?.request_type === 'custom_tour' ? 'Accept Custom Tour' : 'Accept Booking'}
-            </Text>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !acceptingBooking && setShowAcceptModal(false)} />
+          <Animated.View
+            style={[
+              styles.sheet,
+              { transform: [{ translateY: acceptTranslateY }], opacity: acceptOpacity },
+            ]}
+          >
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              
+              <Text style={styles.modalTitle}>
+                {selectedBooking?.request_type === 'custom_tour' ? 'Accept Custom Tour' : 'Accept Booking'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => !acceptingBooking && setShowAcceptModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color="#777" />
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.modalText}>
-              Are you sure you want to accept this {selectedBooking?.request_type === 'custom_tour' ? 'custom tour request' : 'booking'}?
+              Are you sure you want to accept this{' '}
+              {selectedBooking?.request_type === 'custom_tour' ? 'custom tour request' : 'booking'}?
             </Text>
+
             {selectedBooking && (
               <View style={styles.modalBookingInfo}>
                 {selectedBooking.request_type === 'custom_tour' ? (
                   <>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Destination:</Text> {selectedBooking.destination || 'N/A'}
+                      <Text style={styles.modalLabel}>Destination: </Text>
+                      {selectedBooking.destination || 'N/A'}
                     </Text>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Customer:</Text> {selectedBooking.customer_name || 'N/A'}
+                      <Text style={styles.modalLabel}>Customer: </Text>
+                      {selectedBooking.customer_name || 'N/A'}
                     </Text>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                      <Text style={styles.modalLabel}>Passengers: </Text>
+                      {selectedBooking.number_of_pax}
                     </Text>
                     {selectedBooking.preferred_date && (
                       <Text style={styles.modalBookingText}>
-                        <Text style={styles.modalLabel}>Preferred Date:</Text> {formatDate(selectedBooking.preferred_date)}
+                        <Text style={styles.modalLabel}>Preferred Date: </Text>
+                        {formatDate(selectedBooking.preferred_date)}
                       </Text>
                     )}
                   </>
                 ) : (
                   <>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Package:</Text> {selectedBooking.package_name}
+                      <Text style={styles.modalLabel}>Package: </Text>
+                      {selectedBooking.package_name}
                     </Text>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Date:</Text> {formatDate(selectedBooking.booking_date)}
+                      <Text style={styles.modalLabel}>Date: </Text>
+                      {formatDate(selectedBooking.booking_date)}
                     </Text>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                      <Text style={styles.modalLabel}>Passengers: </Text>
+                      {selectedBooking.number_of_pax}
                     </Text>
                     <Text style={styles.modalBookingText}>
-                      <Text style={styles.modalLabel}>Pickup:</Text> {selectedBooking.pickup_address}
+                      <Text style={styles.modalLabel}>Pickup: </Text>
+                      {selectedBooking.pickup_address}
                     </Text>
                   </>
                 )}
               </View>
             )}
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]}
+
+            <View style={styles.sheetButtons}>
+              <TouchableOpacity
+                style={[styles.btnSecondary, acceptingBooking && styles.disabledButton]}
                 onPress={() => setShowAcceptModal(false)}
                 disabled={acceptingBooking}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.btnSecondaryText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.confirmButton, acceptingBooking && styles.disabledButton]}
+              <TouchableOpacity
+                style={[styles.btnPrimary, acceptingBooking && styles.disabledButton]}
                 onPress={confirmAcceptBooking}
                 disabled={acceptingBooking}
               >
-                {acceptingBooking ? (
-                  <Text style={styles.confirmButtonText}>Accepting...</Text>
-                ) : (
-                  <Text style={styles.confirmButtonText}>Accept</Text>
-                )}
+                <Text style={styles.btnPrimaryText}>{acceptingBooking ? 'Accepting...' : 'Accept'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
-      {/* Complete Booking Modal */}
+      {/* Complete Booking - Modern bottom-sheet modal */}
       <Modal
         visible={showCompleteModal}
-        transparent={true}
-        animationType="slide"
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowCompleteModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Complete Booking</Text>
-            <Text style={styles.modalText}>Are you sure you want to mark this booking as completed?</Text>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !acceptingBooking && setShowCompleteModal(false)} />
+          <Animated.View
+            style={[
+              styles.sheet,
+              { transform: [{ translateY: completeTranslateY }], opacity: completeOpacity },
+            ]}
+          >
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <View style={[styles.sheetIcon, { backgroundColor: 'rgba(25, 118, 210, 0.12)' }]}>
+                <Ionicons name="checkmark-done" size={22} color="#1976D2" />
+              </View>
+              <Text style={styles.modalTitle}>Complete Booking</Text>
+              <TouchableOpacity
+                onPress={() => !acceptingBooking && setShowCompleteModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color="#777" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalText}>
+              Are you sure you want to mark this booking as completed?
+            </Text>
+
             {selectedBooking && (
               <View style={styles.modalBookingInfo}>
                 <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Package:</Text> {selectedBooking.package_name}
+                  <Text style={styles.modalLabel}>Package: </Text>
+                  {selectedBooking.package_name}
                 </Text>
                 <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Date:</Text> {formatDate(selectedBooking.booking_date)}
+                  <Text style={styles.modalLabel}>Date: </Text>
+                  {formatDate(selectedBooking.booking_date)}
                 </Text>
                 <Text style={styles.modalBookingText}>
-                  <Text style={styles.modalLabel}>Passengers:</Text> {selectedBooking.number_of_pax}
+                  <Text style={styles.modalLabel}>Passengers: </Text>
+                  {selectedBooking.number_of_pax}
                 </Text>
               </View>
             )}
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]}
+
+            <View style={styles.sheetButtons}>
+              <TouchableOpacity
+                style={[styles.btnSecondary, acceptingBooking && styles.disabledButton]}
                 onPress={() => setShowCompleteModal(false)}
                 disabled={acceptingBooking}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.btnSecondaryText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.confirmButton, acceptingBooking && styles.disabledButton]}
+              <TouchableOpacity
+                style={[styles.btnPrimaryBlue, acceptingBooking && styles.disabledButton]}
                 onPress={confirmCompleteBooking}
                 disabled={acceptingBooking}
               >
-                {acceptingBooking ? (
-                  <Text style={styles.confirmButtonText}>Completing...</Text>
-                ) : (
-                  <Text style={styles.confirmButtonText}>Complete</Text>
-                )}
+                <Text style={styles.btnPrimaryText}>
+                  {acceptingBooking ? 'Completing...' : 'Complete'}
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </View>
@@ -903,287 +866,216 @@ export default function DriverBookScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  header: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
+  /* Page */
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  content: { flex: 1, paddingHorizontal: 16 },
+
+  /* Header */
+  header: { paddingVertical: 18, alignItems: 'center' },
+  title: { fontSize: 20, fontWeight: '800', color: '#222', marginBottom: 6, letterSpacing: 0.2, textAlign: 'center' },
+  subtitle: { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 10 },
+  headerButtons: { flexDirection: 'row', marginTop: 6 },
+
+  /* Tabs */
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 4,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EDE7E6',
   },
   tabButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  activeTabButton: {
-    backgroundColor: '#6B2E2B',
-  },
-  tabButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    marginLeft: 8,
-  },
-  activeTabButtonText: {
-    color: '#fff',
-  },
-  scrollView: {
-    flex: 1,
-  },
+  activeTabButton: { backgroundColor: 'rgba(107,46,43,0.10)' },
+  tabButtonText: { fontSize: 13, fontWeight: '700', color: '#777', marginLeft: 8 },
+  activeTabButtonText: { color: '#6B2E2B' },
+
+  /* List */
+  scrollView: { flex: 1 },
+
+  /* Card */
   bookingCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#EDE7E6',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   bookingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3EFEE',
   },
-  bookingInfo: {
-    flex: 1,
-  },
-  bookingReference: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  bookingDate: {
-    fontSize: 14,
-    color: '#666',
-  },
+  bookingInfo: { flex: 1, paddingRight: 8 },
+  bookingReference: { fontSize: 14, fontWeight: '800', color: '#222', marginBottom: 2 },
+  bookingDate: { fontSize: 12, color: '#888' },
+
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: '#F7F7F7',
+    gap: 6,
   },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  bookingDetails: {
-    gap: 8,
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-    flex: 1,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#333',
-    flex: 2,
-    textAlign: 'right',
-  },
+  statusText: { fontSize: 12, fontWeight: '800' },
+
+  bookingDetails: { gap: 8, marginBottom: 8 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  detailLabel: { fontSize: 13, color: '#777', fontWeight: '600', flex: 1, paddingRight: 10 },
+  detailValue: { fontSize: 13, color: '#222', flex: 2, textAlign: 'right' },
+
+  /* Buttons */
   acceptButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#2E7D32',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: 8,
+    gap: 8,
   },
-  acceptButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 20,
-  },
+  completeBtn: { backgroundColor: '#1976D2' },
+  acceptButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
+  /* Loading */
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 14, color: '#777' },
+
+  /* Empty */
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 56 },
+  emptyStateTitle: { fontSize: 18, fontWeight: '800', color: '#222', marginTop: 12, marginBottom: 6 },
+  emptyStateSubtitle: { fontSize: 13, color: '#777', textAlign: 'center', marginBottom: 18, paddingHorizontal: 20 },
+
+  /* Header small button */
   refreshButton: {
     backgroundColor: '#6B2E2B',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: 999,
   },
-  refreshButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  // Modal Styles
+  refreshButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+
+  /* === Modals (Bottom Sheet) === */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    alignItems: 'stretch',
   },
-  modalContent: {
+  sheet: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 24,
-    marginHorizontal: 20,
-    maxWidth: 400,
-    width: '100%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderWidth: 1,
+    borderColor: '#EDE7E6',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 6,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-    textAlign: 'center',
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#E7E2E1',
+    marginBottom: 10,
   },
-  modalText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  modalBookingInfo: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  modalBookingText: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 4,
-  },
-  modalLabel: {
-    fontWeight: '600',
-  },
-  modalButtons: {
+  sheetHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    marginBottom: 6,
   },
-  modalButton: {
+  sheetIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalTitle: { fontSize: 18, fontWeight: '900', color: '#222', textAlign: 'center', flex: 1 },
+  modalText: { fontSize: 14, color: '#666', textAlign: 'center', marginTop: 6, marginBottom: 12 },
+
+  modalBookingInfo: {
+    backgroundColor: '#FAF7F6',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#EDE7E6',
+  },
+  modalBookingText: { fontSize: 13, color: '#222', marginBottom: 4 },
+  modalLabel: { fontWeight: '800' },
+
+  sheetButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  btnSecondary: {
     flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E0DFDF',
+    borderRadius: 12,
     paddingVertical: 12,
-    borderRadius: 8,
     alignItems: 'center',
   },
-  cancelButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#dee2e6',
+  btnSecondaryText: { color: '#333', fontSize: 14, fontWeight: '800' },
+  btnPrimary: {
+    flex: 1,
+    backgroundColor: '#2E7D32',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+  btnPrimaryBlue: {
+    flex: 1,
+    backgroundColor: '#1976D2',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
-  confirmButton: {
-    backgroundColor: '#4CAF50',
-  },
-  confirmButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  // Custom tour card styles
-  customTourCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#9C27B0',
-  },
+  btnPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  disabledButton: { opacity: 0.6 },
+
+  /* Custom tour accent */
+  customTourCard: { borderLeftWidth: 4, borderLeftColor: '#9C27B0' },
   customTourBadge: {
     backgroundColor: '#9C27B0',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
     marginTop: 4,
     alignSelf: 'flex-start',
   },
-  customTourBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  customTourAcceptButton: {
-    backgroundColor: '#9C27B0',
-  },
+  customTourBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  customTourAcceptButton: { backgroundColor: '#9C27B0' },
 });
