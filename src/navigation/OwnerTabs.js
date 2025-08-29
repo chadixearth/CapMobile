@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
 import OwnerBookScreen from '../screens/main/OwnerBookScreen';
+import EarningsScreen from '../screens/main/EarningsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
@@ -43,6 +44,8 @@ export default function OwnerTabs({ setRole }) {
         tabBarIcon: ({ color, size }) => {
           if (route.name === Routes.HOME) {
             return <Ionicons name="home-outline" size={size} color={color} />;
+          } else if (route.name === 'Earnings') {
+            return <Ionicons name="wallet-outline" size={size} color={color} />;
           } else if (route.name === Routes.EVENTS) {
             return <Ionicons name="star-outline" size={size} color={color} />;
           } else if (route.name === Routes.PROFILE) {
@@ -62,6 +65,11 @@ export default function OwnerTabs({ setRole }) {
         component={OwnerHomeScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
+      <Tab.Screen 
+        name={Routes.EARNINGS} 
+        component={EarningsScreen} 
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      
       <Tab.Screen
         name={Routes.EVENTS}
         component={OwnerBookScreen}
