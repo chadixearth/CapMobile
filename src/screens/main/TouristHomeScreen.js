@@ -179,7 +179,8 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+      <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')}
+                      onMessagePress={() => navigation.navigate('Chat')} />
 
       {/* Search Bar */}
       <View style={styles.searchBar}>

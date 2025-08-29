@@ -1,5 +1,5 @@
 // screens/main/OwnerHomeScreen.jsx
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 const MAROON = '#6B2E2B';
 const MAROON_LIGHT = '#F5E9E2';
@@ -105,6 +106,11 @@ const MOCK_EARNINGS = {
 };
 
 export default function OwnerHomeScreen({ navigation }) {
+  // Hide the default stack header (keep only TARTRACKHeader)
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const [selected, setSelected] = useState(null);
   const [visible, setVisible] = useState(false);
   const [loadingEarnings] = useState(false); // set true when wiring real API
@@ -142,260 +148,253 @@ export default function OwnerHomeScreen({ navigation }) {
     MOCK_EARNINGS.trend || { percentage_change: 0, is_increase: true };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 32 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Earnings Card (revised to match mock) */}
-      <View style={styles.incomeCard}>
-        <View style={styles.incomeTopRow}>
-          <Text style={styles.incomeTitle}>Owner Earnings (Month)</Text>
-          <View
-            style={[
-              styles.trendChip,
-              { backgroundColor: changeData.is_increase ? '#EAF7EE' : '#FDEEEE' },
-            ]}
-          >
-            <Ionicons
-              name={
-                changeData.is_increase
-                  ? 'trending-up-outline'
-                  : 'trending-down-outline'
-              }
-              size={14}
-              color={changeData.is_increase ? '#2E7D32' : '#C62828'}
-            />
-            <Text
+    <View style={styles.container}>
+      {/* Custom Header with Chat + Notification */}
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Earnings Card */}
+        <View style={styles.incomeCard}>
+          <View style={styles.incomeTopRow}>
+            <Text style={styles.incomeTitle}>Owner Earnings (Month)</Text>
+            <View
               style={[
-                styles.trendText,
-                { color: changeData.is_increase ? '#2E7D32' : '#C62828' },
+                styles.trendChip,
+                { backgroundColor: changeData.is_increase ? '#EAF7EE' : '#FDEEEE' },
               ]}
             >
-              {changeData.is_increase ? '+' : '-'}
-              {formatPercentage(changeData.percentage_change)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.incomeMainRow}>
-          <View style={{ flex: 1 }}>
-            {loadingEarnings ? (
-              <ActivityIndicator />
-            ) : (
-              <>
-                <Text style={styles.incomeAmount}>
-                  {formatCurrency(totalEarnings)}
-                </Text>
-                <Text style={styles.incomeSub}>
-                  {todayEarnings > 0
-                    ? `Today: ${formatCurrency(todayEarnings)}`
-                    : 'No earnings yet today'}
-                </Text>
-              </>
-            )}
-          </View>
-          <TouchableOpacity
-            style={styles.detailBtn}
-            onPress={() => navigation?.navigate?.('OwnerEarningsScreen')}
-          >
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Bottom stats aligned with mock */}
-        <View style={styles.splitRow}>
-          <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Tartanillas</Text>
-            <Text style={styles.splitValue}>
-              {MOCK_EARNINGS.number_tartanillas || 0}
-            </Text>
-          </View>
-          <View style={styles.vDivider} />
-          <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Avg / tartanilla</Text>
-            <Text style={styles.splitValue}>
-              {formatCurrency(MOCK_EARNINGS.avg_earning_per_tartanilla || 0)}
-            </Text>
-          </View>
-          <View style={styles.vDivider} />
-          <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Today</Text>
-            <Text style={styles.splitValue}>
-              {formatCurrency(todayEarnings || 0)}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Latest Notifications */}
-      <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Latest Notifications</Text>
-        <TouchableOpacity
-          onPress={() => navigation?.navigate?.('NotificationScreen')}
-        >
-          <Text style={styles.link}>View all</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.card}>
-        {NOTIFS.map((n) => (
-          <View key={n.id} style={styles.notifRow}>
-            <View style={styles.notifIconWrap}>
-              <Ionicons name="calendar-outline" size={18} color={MAROON} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={styles.notifHeader}>
-                <Text style={styles.notifTitle}>{n.title}</Text>
-                <Text style={styles.notifTime}>{n.time}</Text>
-              </View>
-              <Text style={styles.notifBody} numberOfLines={2}>
-                {n.body}
+              <Ionicons
+                name={
+                  changeData.is_increase
+                    ? 'trending-up-outline'
+                    : 'trending-down-outline'
+                }
+                size={14}
+                color={changeData.is_increase ? '#2E7D32' : '#C62828'}
+              />
+              <Text
+                style={[
+                  styles.trendText,
+                  { color: changeData.is_increase ? '#2E7D32' : '#C62828' },
+                ]}
+              >
+                {changeData.is_increase ? '+' : '-'}
+                {formatPercentage(changeData.percentage_change)}
               </Text>
             </View>
           </View>
-        ))}
-      </View>
 
-      {/* Quick Cards */}
-      <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-        <TouchableOpacity
-          style={styles.quickCard}
-          onPress={() => navigation?.navigate?.('DriversScreen')}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Ionicons name="car-sport" size={22} color={MAROON} />
-            <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
-              Drivers
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-        <TouchableOpacity
-          style={styles.quickCard}
-          onPress={() => navigation?.navigate?.('BookingsScreen')}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Ionicons name="calendar-outline" size={22} color={MAROON} />
-            <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
-              Bookings
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
-        </TouchableOpacity>
-      </View>
-
-      {/* List of Tartanillas (preview - max 2) */}
-      <View style={[styles.headerRow, { marginTop: 10 }]}>
-        <Text style={styles.sectionTitle}>List of Tartanilla Carriages</Text>
-        <TouchableOpacity
-          onPress={() => navigation?.navigate?.('TartanillaCarriages')}
-        >
-          <Text style={styles.link}>View all</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.card, { paddingVertical: 12 }]}>
-        <FlatList
-          data={preview}
-          keyExtractor={(i) => i.id}
-          scrollEnabled={false}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          renderItem={({ item }) => (
-            <View style={styles.tartanillaRow}>
-              <Image source={item.photo} style={styles.tartanillaImg} />
-              <View style={styles.tartanillaInfo}>
-                <Text style={styles.tcCode}>{item.code}</Text>
-
-                {/* Driver with people icon */}
-                <View
-                  style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}
-                >
-                  <Ionicons name="people-outline" size={16} color="#444" />
-                  <Text style={styles.tcDriver}> {item.driver.name}</Text>
-                </View>
-
-                <View style={{ alignItems: 'flex-end' }}>
-                  <TouchableOpacity
-                    style={styles.seeBtn}
-                    onPress={() => openSheet(item)}
-                  >
-                    <Text style={styles.seeBtnText}>See Details</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.trashBtn}
-                onPress={() => {
-                  /* optional later */
-                }}
-              >
-                <Ionicons name="trash-outline" size={18} color="#7D7D7D" />
-              </TouchableOpacity>
+          <View style={styles.incomeMainRow}>
+            <View style={{ flex: 1 }}>
+              {loadingEarnings ? (
+                <ActivityIndicator />
+              ) : (
+                <>
+                  <Text style={styles.incomeAmount}>
+                    {formatCurrency(totalEarnings)}
+                  </Text>
+                  <Text style={styles.incomeSub}>
+                    {todayEarnings > 0
+                      ? `Today: ${formatCurrency(todayEarnings)}`
+                      : 'No earnings yet today'}
+                  </Text>
+                </>
+              )}
             </View>
-          )}
-        />
-      </View>
+            <TouchableOpacity
+              style={styles.detailBtn}
+              onPress={() => navigation?.navigate?.('OwnerEarningsScreen')}
+            >
+              <Ionicons name="arrow-forward" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
-      {/* DETAILS BOTTOM SHEET */}
-      <Modal visible={visible} transparent animationType="none" onRequestClose={closeSheet}>
-        <TouchableOpacity
-          style={styles.sheetBackdrop}
-          activeOpacity={1}
-          onPress={closeSheet}
-        />
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: y }] }]}>
-          {selected && (
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-              <View style={styles.driverHeader}>
-                <Image source={selected.photo} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.headerCode}>{selected.code}</Text>
-                  <Text style={styles.headerDriver}>
-                    Driver : {selected.driver.name}
-                  </Text>
+          {/* Bottom stats */}
+          <View style={styles.splitRow}>
+            <View style={styles.splitCol}>
+              <Text style={styles.splitLabel}>Tartanillas</Text>
+              <Text style={styles.splitValue}>
+                {MOCK_EARNINGS.number_tartanillas || 0}
+              </Text>
+            </View>
+            <View style={styles.vDivider} />
+            <View style={styles.splitCol}>
+              <Text style={styles.splitLabel}>Avg / tartanilla</Text>
+              <Text style={styles.splitValue}>
+                {formatCurrency(MOCK_EARNINGS.avg_earning_per_tartanilla || 0)}
+              </Text>
+            </View>
+            <View style={styles.vDivider} />
+            <View style={styles.splitCol}>
+              <Text style={styles.splitLabel}>Today</Text>
+              <Text style={styles.splitValue}>
+                {formatCurrency(todayEarnings || 0)}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Latest Notifications */}
+        <View style={styles.headerRow}>
+          <Text style={styles.sectionTitle}>Latest Notifications</Text>
+          {/* CHANGED: unify with header to use 'Notification' route */}
+          <TouchableOpacity onPress={() => navigation?.navigate?.('Notification')}>
+            <Text style={styles.link}>View all</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
+          {NOTIFS.map((n) => (
+            <View key={n.id} style={styles.notifRow}>
+              <View style={styles.notifIconWrap}>
+                <Ionicons name="calendar-outline" size={18} color={MAROON} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.notifHeader}>
+                  <Text style={styles.notifTitle}>{n.title}</Text>
+                  <Text style={styles.notifTime}>{n.time}</Text>
                 </View>
+                <Text style={styles.notifBody} numberOfLines={2}>
+                  {n.body}
+                </Text>
               </View>
+            </View>
+          ))}
+        </View>
 
-              <View style={styles.detailCard}>
-                <Text style={styles.detailLine}>
-                  <Text style={styles.bold}>Name : </Text>
-                  {selected.driver.name}
-                </Text>
-                {!!selected.driver.birthdate && (
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.bold}>Birth Date : </Text>
-                    {selected.driver.birthdate}
-                  </Text>
-                )}
-                <Text style={styles.detailLine}>
-                  <Text style={styles.bold}>Contact # : </Text>
-                  {selected.driver.phone}
-                </Text>
-                <Text style={styles.detailLine}>
-                  <Text style={styles.bold}>Email : </Text>
-                  {selected.driver.email}
-                </Text>
-                {!!selected.driver.address && (
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.bold}>Home Address : </Text>
-                    {selected.driver.address}
-                  </Text>
-                )}
+        {/* Quick Cards */}
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <TouchableOpacity
+            style={styles.quickCard}
+            onPress={() => navigation?.navigate?.('DriversScreen')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="car-sport" size={22} color={MAROON} />
+              <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
+                Drivers
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <TouchableOpacity
+            style={styles.quickCard}
+            onPress={() => navigation?.navigate?.('BookingsScreen')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="calendar-outline" size={22} color={MAROON} />
+              <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
+                Bookings
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
+        </View>
+
+        {/* List of Tartanillas (preview - max 2) */}
+        <View style={[styles.headerRow, { marginTop: 10 }]}>
+          <Text style={styles.sectionTitle}>List of Tartanilla Carriages</Text>
+          <TouchableOpacity onPress={() => navigation?.navigate?.('TartanillaCarriages')}>
+            <Text style={styles.link}>View all</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.card, { paddingVertical: 12 }]}>
+          <FlatList
+            data={preview}
+            keyExtractor={(i) => i.id}
+            scrollEnabled={false}
+            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            renderItem={({ item }) => (
+              <View style={styles.tartanillaRow}>
+                <Image source={item.photo} style={styles.tartanillaImg} />
+                <View style={styles.tartanillaInfo}>
+                  <Text style={styles.tcCode}>{item.code}</Text>
+
+                  {/* Driver with people icon */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                    <Ionicons name="people-outline" size={16} color="#444" />
+                    <Text style={styles.tcDriver}> {item.driver.name}</Text>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <TouchableOpacity style={styles.seeBtn} onPress={() => openSheet(item)}>
+                      <Text style={styles.seeBtnText}>See Details</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.trashBtn}
+                  onPress={() => {
+                    /* optional later */
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#7D7D7D" />
+                </TouchableOpacity>
               </View>
+            )}
+          />
+        </View>
 
-              <TouchableOpacity style={styles.closeBtn} onPress={closeSheet}>
-                <Text style={styles.closeText}>Close</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          )}
-        </Animated.View>
-      </Modal>
-    </ScrollView>
+        {/* DETAILS BOTTOM SHEET */}
+        <Modal visible={visible} transparent animationType="none" onRequestClose={closeSheet}>
+          <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={closeSheet} />
+          <Animated.View style={[styles.sheet, { transform: [{ translateY: y }] }]}>
+            {selected && (
+              <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+                <View style={styles.driverHeader}>
+                  <Image source={selected.photo} style={styles.avatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.headerCode}>{selected.code}</Text>
+                    <Text style={styles.headerDriver}>Driver : {selected.driver.name}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailCard}>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.bold}>Name : </Text>
+                    {selected.driver.name}
+                  </Text>
+                  {!!selected.driver.birthdate && (
+                    <Text style={styles.detailLine}>
+                      <Text style={styles.bold}>Birth Date : </Text>
+                      {selected.driver.birthdate}
+                    </Text>
+                  )}
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.bold}>Contact # : </Text>
+                    {selected.driver.phone}
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.bold}>Email : </Text>
+                    {selected.driver.email}
+                  </Text>
+                  {!!selected.driver.address && (
+                    <Text style={styles.detailLine}>
+                      <Text style={styles.bold}>Home Address : </Text>
+                      {selected.driver.address}
+                    </Text>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.closeBtn} onPress={closeSheet}>
+                  <Text style={styles.closeText}>Close</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </Animated.View>
+        </Modal>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -443,7 +442,7 @@ const styles = StyleSheet.create({
   notifTime: { color: '#9A9A9A', fontSize: 11 },
   notifBody: { color: '#6D6D6D', fontSize: 12, marginTop: 2 },
 
-  // Earnings (revised)
+  // Earnings
   incomeCard: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -519,7 +518,7 @@ const styles = StyleSheet.create({
   tartanillaImg: {
     width: 120,
     height: '100%',
-    resizeMode: 'cover', // fill left side
+    resizeMode: 'cover',
   },
   tartanillaInfo: {
     flex: 1,

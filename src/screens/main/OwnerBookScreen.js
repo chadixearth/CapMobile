@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import {
   getAvailableSpecialEventRequestsForOwners,
   ownerAcceptSpecialEventRequest,
@@ -22,6 +23,11 @@ import { getCurrentUser } from '../../services/authService';
 const MAROON = '#6B2E2B';
 
 export default function OwnerBookScreen({ navigation }) {
+  // Hide the native stack header to avoid double headers
+  useLayoutEffect(() => {
+    navigation?.setOptions?.({ headerShown: false });
+  }, [navigation]);
+
   const [availableEvents, setAvailableEvents] = useState([]);
   const [acceptedEvents, setAcceptedEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -307,6 +313,12 @@ export default function OwnerBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Custom Header with Chat + Notification */}
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
+
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { colors, spacing, card } from '../../styles/global';
 
 /** Demo data */
@@ -39,7 +40,12 @@ const peso = (n) =>
     maximumFractionDigits: 2,
   })}`;
 
-export default function EarningsScreen() {
+export default function EarningsScreen({ navigation }) {
+  // Hide default stack header to avoid two headers
+  useLayoutEffect(() => {
+    navigation?.setOptions?.({ headerShown: false });
+  }, [navigation]);
+
   const [frequency, setFrequency] = useState('Daily');
   const [freqOpen, setFreqOpen] = useState(false);
   const freqOptions = ['Daily', 'Weekly', 'Monthly'];
@@ -66,202 +72,210 @@ export default function EarningsScreen() {
     frequency === 'Daily' ? 'Daily Income' : frequency === 'Weekly' ? 'Weekly Income' : 'Monthly Income';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: spacing.lg }}>
-      {/* INCOME */}
-      <View style={[card, styles.incomeCard]}>
-        <View style={styles.incomeTopRow}>
-          <Text style={styles.incomeTitle}>{incomeTitle}</Text>
-          <View style={[styles.trendChip, { backgroundColor: trend.up ? '#EAF7EE' : '#FDEEEE' }]}>
-            <Ionicons
-              name={trend.up ? 'trending-up-outline' : 'trending-down-outline'}
-              size={14}
-              color={trend.up ? '#2E7D32' : '#C62828'}
-            />
-            <Text style={[styles.trendText, { color: trend.up ? '#2E7D32' : '#C62828' }]}>{trend.pct}</Text>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Custom Header with Chat + Notifications */}
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
+
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: spacing.lg }}>
+        {/* INCOME */}
+        <View style={[card, styles.incomeCard]}>
+          <View style={styles.incomeTopRow}>
+            <Text style={styles.incomeTitle}>{incomeTitle}</Text>
+            <View style={[styles.trendChip, { backgroundColor: trend.up ? '#EAF7EE' : '#FDEEEE' }]}>
+              <Ionicons
+                name={trend.up ? 'trending-up-outline' : 'trending-down-outline'}
+                size={14}
+                color={trend.up ? '#2E7D32' : '#C62828'}
+              />
+              <Text style={[styles.trendText, { color: trend.up ? '#2E7D32' : '#C62828' }]}>{trend.pct}</Text>
+            </View>
+          </View>
+
+          <View style={styles.incomeMainRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.incomeAmount}>{peso(incomeToday)}</Text>
+              <Text style={styles.incomeSub}>
+                {frequency === 'Daily' ? 'From recent tours' : 'Right on track—keep going!'}
+              </Text>
+            </View>
+
+            <TouchableOpacity style={styles.detailBtn}>
+              <Ionicons name="arrow-forward" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.segmentRow}>
+            {['Daily', 'Weekly', 'Monthly'].map((f) => (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setFrequency(f)}
+                style={[styles.segmentBtn, frequency === f && styles.segmentBtnActive]}
+              >
+                <Text style={[styles.segmentText, frequency === f && styles.segmentTextActive]}>{f}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
-        <View style={styles.incomeMainRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.incomeAmount}>{peso(incomeToday)}</Text>
-            <Text style={styles.incomeSub}>
-              {frequency === 'Daily' ? 'From recent tours' : 'Right on track—keep going!'}
+        {/* TO BE PAID */}
+        <Text style={styles.sectionTitle}>To be Paid</Text>
+        <View style={[card, styles.cardTight]}>
+          {toBePaid.map((item, idx) => (
+            <View key={idx}>
+              <View style={styles.toBePaidRow}>
+                <Text style={styles.toBePaidLabel}>{item.label}</Text>
+                <Text style={styles.toBePaidAmount}>{peso(item.amount)}</Text>
+                <View style={[styles.statusPill, item.status === 'Paid' ? styles.pillPaid : styles.pillPending]}>
+                  <Text style={[styles.statusText, item.status === 'Paid' ? styles.paid : styles.pending]}>
+                    {item.status}
+                  </Text>
+                </View>
+              </View>
+              {idx < toBePaid.length - 1 && <View style={styles.rowDivider} />}
+            </View>
+          ))}
+        </View>
+
+        {/* EARNINGS FEED */}
+        <Text style={styles.sectionTitle}>Earnings</Text>
+        <View style={[card, styles.cardTight]}>
+          {earnings.map((e, i) => (
+            <View key={e.id} style={[styles.earningRow, i < earnings.length - 1 && styles.feedDivider]}>
+              <View style={styles.feedIcon}>
+                <MaterialCommunityIcons name="calendar-account" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.earningMsg}>You’ve earned {peso(e.amount)} from your tour</Text>
+              </View>
+              <Text style={styles.earningTime}>{e.time}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* BREAK-EVEN */}
+        <View style={styles.breakEvenHeader}>
+          <Text style={styles.sectionTitle}>Break Even Calculator</Text>
+
+          <View style={styles.dropdownWrap}>
+            <TouchableOpacity
+              style={styles.frequencyBtn}
+              onPress={() => setFreqOpen((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.frequencyText}>{frequency}</Text>
+              <Ionicons
+                name={freqOpen ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.primary}
+                style={{ marginLeft: 6 }}
+              />
+            </TouchableOpacity>
+
+            {freqOpen && (
+              <View style={styles.dropdown}>
+                {['Daily', 'Weekly', 'Monthly'].map((opt) => {
+                  const active = opt === frequency;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                      onPress={() => {
+                        setFrequency(opt);
+                        setFreqOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.dropdownText, active && styles.dropdownTextActive]}>{opt}</Text>
+                      {active && <Ionicons name="checkmark" size={16} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={[card, styles.cardTight]}>
+          <Text style={styles.inputLabel}>Total Expenses</Text>
+          <View style={styles.inputWrap}>
+            <Text style={styles.inputPrefix}>₱</Text>
+            <TextInput
+              style={styles.input}
+              value={expenses}
+              onChangeText={setExpenses}
+              keyboardType="numeric"
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+
+          <Text style={styles.inputLabel}>Fare per rent</Text>
+          <View style={styles.inputWrap}>
+            <Text style={styles.inputPrefix}>₱</Text>
+            <TextInput
+              style={styles.input}
+              value={fare}
+              onChangeText={setFare}
+              keyboardType="numeric"
+              placeholder="0.00"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+
+          <Text style={styles.inputLabel}>Booking you need to accept</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={[styles.input, { paddingLeft: 0 }]}
+              value={bookings}
+              onChangeText={setBookings}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+
+          <Text style={styles.inputLabel}>Total Revenue</Text>
+          <View style={styles.inputWrapDisabled}>
+            <Text style={styles.inputPrefix}>₱</Text>
+            <Text style={styles.inputDisabledText}>
+              {Number(totalRevenue).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.detailBtn}>
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
-          </TouchableOpacity>
+          <Text style={styles.inputLabel}>Profit</Text>
+          <View style={styles.inputWrapDisabled}>
+            <Text style={styles.inputPrefix}>₱</Text>
+            <Text style={styles.inputDisabledText}>
+              {Number(profit).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.segmentRow}>
-          {['Daily', 'Weekly', 'Monthly'].map((f) => (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setFrequency(f)}
-              style={[styles.segmentBtn, frequency === f && styles.segmentBtnActive]}
-            >
-              <Text style={[styles.segmentText, frequency === f && styles.segmentTextActive]}>{f}</Text>
-            </TouchableOpacity>
+        {/* REPORTS */}
+        <View style={styles.breakEvenHeader}>
+          <Text style={styles.sectionTitle}>Breakeven Reports</Text>
+          <TouchableOpacity>
+            <Text style={styles.viewAllText}>View all reports</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={[card, styles.cardTight]}>
+          {breakevenReports.map((r, idx) => (
+            <View key={r.id} style={[styles.reportRow, idx < breakevenReports.length - 1 && styles.feedDivider]}>
+              <View style={styles.feedIcon}>
+                <MaterialCommunityIcons name="chart-areaspline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.reportTitle}>{r.title}</Text>
+                <Text style={styles.reportDesc}>{r.desc}</Text>
+              </View>
+              <Text style={styles.earningTime}>{r.time}</Text>
+            </View>
           ))}
         </View>
-      </View>
-
-      {/* TO BE PAID */}
-      <Text style={styles.sectionTitle}>To be Paid</Text>
-      <View style={[card, styles.cardTight]}>
-        {toBePaid.map((item, idx) => (
-          <View key={idx}>
-            <View style={styles.toBePaidRow}>
-              <Text style={styles.toBePaidLabel}>{item.label}</Text>
-              <Text style={styles.toBePaidAmount}>{peso(item.amount)}</Text>
-              <View style={[styles.statusPill, item.status === 'Paid' ? styles.pillPaid : styles.pillPending]}>
-                <Text style={[styles.statusText, item.status === 'Paid' ? styles.paid : styles.pending]}>
-                  {item.status}
-                </Text>
-              </View>
-            </View>
-            {idx < toBePaid.length - 1 && <View style={styles.rowDivider} />}
-          </View>
-        ))}
-      </View>
-
-      {/* EARNINGS FEED */}
-      <Text style={styles.sectionTitle}>Earnings</Text>
-      <View style={[card, styles.cardTight]}>
-        {earnings.map((e, i) => (
-          <View key={e.id} style={[styles.earningRow, i < earnings.length - 1 && styles.feedDivider]}>
-            <View style={styles.feedIcon}>
-              <MaterialCommunityIcons name="calendar-account" size={18} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.earningMsg}>You’ve earned {peso(e.amount)} from your tour</Text>
-            </View>
-            <Text style={styles.earningTime}>{e.time}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* BREAK-EVEN */}
-      <View style={styles.breakEvenHeader}>
-        <Text style={styles.sectionTitle}>Break Even Calculator</Text>
-
-        <View style={styles.dropdownWrap}>
-          <TouchableOpacity
-            style={styles.frequencyBtn}
-            onPress={() => setFreqOpen((v) => !v)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.frequencyText}>{frequency}</Text>
-            <Ionicons
-              name={freqOpen ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={colors.primary}
-              style={{ marginLeft: 6 }}
-            />
-          </TouchableOpacity>
-
-          {freqOpen && (
-            <View style={styles.dropdown}>
-              {['Daily', 'Weekly', 'Monthly'].map((opt) => {
-                const active = opt === frequency;
-                return (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
-                    onPress={() => {
-                      setFrequency(opt);
-                      setFreqOpen(false);
-                    }}
-                  >
-                    <Text style={[styles.dropdownText, active && styles.dropdownTextActive]}>{opt}</Text>
-                    {active && <Ionicons name="checkmark" size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-        </View>
-      </View>
-
-      <View style={[card, styles.cardTight]}>
-        <Text style={styles.inputLabel}>Total Expenses</Text>
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputPrefix}>₱</Text>
-          <TextInput
-            style={styles.input}
-            value={expenses}
-            onChangeText={setExpenses}
-            keyboardType="numeric"
-            placeholder="0.00"
-            placeholderTextColor={colors.textSecondary}
-          />
-        </View>
-
-        <Text style={styles.inputLabel}>Fare per rent</Text>
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputPrefix}>₱</Text>
-          <TextInput
-            style={styles.input}
-            value={fare}
-            onChangeText={setFare}
-            keyboardType="numeric"
-            placeholder="0.00"
-            placeholderTextColor={colors.textSecondary}
-          />
-        </View>
-
-        <Text style={styles.inputLabel}>Booking you need to accept</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={[styles.input, { paddingLeft: 0 }]}
-            value={bookings}
-            onChangeText={setBookings}
-            keyboardType="number-pad"
-            placeholder="0"
-            placeholderTextColor={colors.textSecondary}
-          />
-        </View>
-
-        <Text style={styles.inputLabel}>Total Revenue</Text>
-        <View style={styles.inputWrapDisabled}>
-          <Text style={styles.inputPrefix}>₱</Text>
-          <Text style={styles.inputDisabledText}>
-            {Number(totalRevenue).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-        </View>
-
-        <Text style={styles.inputLabel}>Profit</Text>
-        <View style={styles.inputWrapDisabled}>
-          <Text style={styles.inputPrefix}>₱</Text>
-          <Text style={styles.inputDisabledText}>
-            {Number(profit).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-        </View>
-      </View>
-
-      {/* REPORTS */}
-      <View style={styles.breakEvenHeader}>
-        <Text style={styles.sectionTitle}>Breakeven Reports</Text>
-        <TouchableOpacity>
-          <Text style={styles.viewAllText}>View all reports</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={[card, styles.cardTight]}>
-        {breakevenReports.map((r, idx) => (
-          <View key={r.id} style={[styles.reportRow, idx < breakevenReports.length - 1 && styles.feedDivider]}>
-            <View style={styles.feedIcon}>
-              <MaterialCommunityIcons name="chart-areaspline" size={18} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.reportTitle}>{r.title}</Text>
-              <Text style={styles.reportDesc}>{r.desc}</Text>
-            </View>
-            <Text style={styles.earningTime}>{r.time}</Text>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
