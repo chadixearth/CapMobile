@@ -974,7 +974,7 @@ const styles = StyleSheet.create({
 
   /* Loading */
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24 },
-  loadingText: { fontSize: 14, color: '#777', marginTop: 8 },
+  loadingText: { fontSize: 14, color: '#777' },
 
   /* Empty */
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 56 },

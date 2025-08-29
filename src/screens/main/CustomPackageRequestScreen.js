@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import { createCustomTourRequest, createSpecialEventRequest } from '../../services/specialpackage/customPackageRequest';
@@ -440,7 +439,6 @@ export default function CustomPackageRequestScreen({ navigation }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
       <BackButton onPress={() => navigation.goBack()} />
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -529,11 +527,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
+    marginTop: 24,
+    marginLeft: 40
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#666',
     textAlign: 'center',
+    marginLeft: 35,
   },
   typeSelector: {
     flexDirection: 'row',

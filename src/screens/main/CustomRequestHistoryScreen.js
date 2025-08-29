@@ -9,7 +9,6 @@ import {
   Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import BackButton from '../../components/BackButton';
 import { getCustomerCustomRequests } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
@@ -233,8 +232,6 @@ export default function CustomRequestHistoryScreen({ navigation }) {
             <Text style={styles.adminResponse}>{request.admin_response}</Text>
           </View>
         )}
-
-
       </View>
     </View>
   );
@@ -257,15 +254,13 @@ export default function CustomRequestHistoryScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
       <BackButton onPress={() => navigation.goBack()} />
-      
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Custom Request History</Text>
-          <Text style={styles.subtitle}>
+          {/* <Text style={styles.subtitle}>
             {user?.name || user?.user_metadata?.name || user?.email || 'Your'} custom package requests
-          </Text>
+          </Text> */}
         </View>
 
         {loading ? (
@@ -324,6 +319,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
+    marginTop: 23,
+    marginLeft: 40,
   },
   subtitle: {
     fontSize: 14,
