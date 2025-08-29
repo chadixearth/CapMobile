@@ -8,7 +8,7 @@ import { apiBaseUrl } from './networkConfig';
 // - Android emulator: 10.0.2.2 (maps to host machine's localhost)
 // - iOS simulator: localhost
 // If you need a custom API host, set API_BASE_URL_OVERRIDE below.
-const API_BASE_URL_OVERRIDE = 'http://192.168.4.63:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
+const API_BASE_URL_OVERRIDE = 'http://10.201.88.148:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
 
 function getDevServerHost() {
   try {
