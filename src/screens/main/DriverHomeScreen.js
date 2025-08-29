@@ -10,8 +10,8 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import {
@@ -46,9 +46,9 @@ const defaultNotifications = [
 ];
 
 export default function DriverHomeScreen({ navigation }) {
+  // Hide the default stack header; we’ll render our custom TARTRACKHeader
   useLayoutEffect(() => {
-    // Hide any stack/native header to avoid the "two headers" issue
-    navigation.setOptions?.({ headerShown: true });
+    navigation.setOptions?.({ headerShown: false });
   }, [navigation]);
 
   const [user, setUser] = useState(null);
@@ -222,25 +222,18 @@ export default function DriverHomeScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-    
+      {/* Custom Header with Chat + Notification */}
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
+
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Greeting strip */}
-        {/* <View style={styles.greetCard}>
-          <View>
-            <Text style={styles.greetHi}>Hi, {user?.name || user?.user_metadata?.name || 'Driver'} 👋</Text>
-            <Text style={styles.greetSub}>Have a safe and productive day on the road.</Text>
-          </View>
-          <Image
-            source={{ uri: 'https://dummyimage.com/80x60/f5e9e2/6b2e2b&text=🐴' }}
-            style={{ width: 80, height: 60, borderRadius: 10 }}
-          />
-        </View> */}
-
         {/* Earnings Card */}
         <View style={styles.incomeCard}>
           <View style={styles.incomeTopRow}>
@@ -340,37 +333,7 @@ export default function DriverHomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  topSafe: { backgroundColor: MAROON },
   container: { flex: 1, backgroundColor: '#fff' },
-
-  /* Header */
-  header: {
-    backgroundColor: MAROON,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 14,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  brand: { color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
-
-  /* Greeting */
-  greetCard: {
-    backgroundColor: MAROON_LIGHT,
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginTop: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  greetHi: { color: TEXT, fontSize: 16, fontWeight: '800' },
-  greetSub: { color: MUTED, fontSize: 12, marginTop: 4 },
 
   /* Income Card */
   incomeCard: {

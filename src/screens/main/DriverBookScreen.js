@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,10 @@ import {
   Animated,
   Easing,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { supabase } from '../../services/supabase';
 import {
   getAvailableBookingsForDrivers,
@@ -30,6 +32,11 @@ import { getCurrentUser } from '../../services/authService';
 import * as Routes from '../../constants/routes';
 
 export default function DriverBookScreen({ navigation }) {
+  // Hide the default stack header (avoid double headers)
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const [availableBookings, setAvailableBookings] = useState([]);
   const [availableCustomTours, setAvailableCustomTours] = useState([]);
   const [driverBookings, setDriverBookings] = useState([]);
@@ -149,7 +156,7 @@ export default function DriverBookScreen({ navigation }) {
             tour.accepted_driver ||
             tour.taken_by ||
             tour.claimed_by;
-        return status === 'waiting_for_driver' && !assignedDriverId;
+          return status === 'waiting_for_driver' && !assignedDriverId;
         });
         setAvailableCustomTours(filtered);
       } else {
@@ -398,7 +405,7 @@ export default function DriverBookScreen({ navigation }) {
     return timeString;
   };
 
-  const formatCurrency = (amount) => {
+  const formatCurrencyLocal = (amount) => {
     if (!amount) return 'N/A';
     return `₱${parseFloat(amount).toFixed(2)}`;
   };
@@ -446,7 +453,7 @@ export default function DriverBookScreen({ navigation }) {
 
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Total Amount:</Text>
-          <Text style={styles.detailValue}>{formatCurrency(booking.total_amount)}</Text>
+          <Text style={styles.detailValue}>{formatCurrencyLocal(booking.total_amount)}</Text>
         </View>
 
         {booking.special_requests && (
@@ -540,7 +547,7 @@ export default function DriverBookScreen({ navigation }) {
         {tour.approved_price && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Approved Price:</Text>
-            <Text style={styles.detailValue}>{formatCurrency(tour.approved_price)}</Text>
+            <Text style={styles.detailValue}>{formatCurrencyLocal(tour.approved_price)}</Text>
           </View>
         )}
 
@@ -639,6 +646,12 @@ export default function DriverBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Custom header with Chat + Notifications */}
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
+
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>
@@ -668,6 +681,7 @@ export default function DriverBookScreen({ navigation }) {
 
         {loading ? (
           <View style={styles.loadingContainer}>
+            <ActivityIndicator />
             <Text style={styles.loadingText}>
               Loading {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'history'} bookings...
             </Text>
@@ -707,7 +721,6 @@ export default function DriverBookScreen({ navigation }) {
           >
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              
               <Text style={styles.modalTitle}>
                 {selectedBooking?.request_type === 'custom_tour' ? 'Accept Custom Tour' : 'Accept Booking'}
               </Text>
@@ -870,7 +883,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   content: { flex: 1, paddingHorizontal: 16 },
 
-  /* Header */
+  /* Header (screen’s own title section under TARTRACKHeader) */
   header: { paddingVertical: 18, alignItems: 'center' },
   title: { fontSize: 20, fontWeight: '800', color: '#222', marginBottom: 6, letterSpacing: 0.2, textAlign: 'center' },
   subtitle: { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 10 },
@@ -960,8 +973,8 @@ const styles = StyleSheet.create({
   acceptButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   /* Loading */
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 14, color: '#777' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24 },
+  loadingText: { fontSize: 14, color: '#777', marginTop: 8 },
 
   /* Empty */
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 56 },
