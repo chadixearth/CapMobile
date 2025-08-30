@@ -77,36 +77,104 @@ const LeafletMapView = ({
       <!DOCTYPE html>
       <html>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=no, viewport-fit=cover" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+              integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+              crossorigin="" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+                integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+                crossorigin=""></script>
         <style>
-          body { margin: 0; padding: 0; }
-          #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-          .custom-marker {
-            background-color: white;
-            border: 2px solid #333;
-            border-radius: 50%;
-            width: 12px;
-            height: 12px;
+          * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+          }
+          html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+          }
+          #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            background: #f0f0f0;
+          }
+          /* Improve marker rendering */
+          .leaflet-marker-icon {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+          }
+          /* Improve tile rendering */
+          .leaflet-tile {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+          }
+          .leaflet-container {
+            background: #ddd;
+            font-size: 14px;
+          }
+          /* Custom popup styling */
+          .leaflet-popup-content {
+            margin: 13px 19px;
+            line-height: 1.4;
+            font-size: 14px;
+          }
+          .leaflet-popup-content strong {
+            font-weight: 600;
+            color: #333;
           }
         </style>
       </head>
       <body>
         <div id="map"></div>
         <script>
-          // Initialize the map
+          // Initialize the map with better rendering options
           var map = L.map('map', {
             center: [${center.lat}, ${center.lng}],
             zoom: ${center.zoom},
             zoomControl: true,
-            attributionControl: false
+            attributionControl: false,
+            preferCanvas: false, // Use SVG for sharper rendering
+            renderer: L.svg(),
+            zoomAnimation: true,
+            fadeAnimation: true,
+            markerZoomAnimation: true,
+            wheelDebounceTime: 40,
+            wheelPxPerZoomLevel: 60,
+            tap: true,
+            tapTolerance: 15,
+            touchZoom: true,
+            bounceAtZoomLimits: true
           });
 
-          // Add tile layer
+          // Add tile layer with better quality settings
           L.tileLayer('${tileLayer}', {
             maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
+            minZoom: 2,
+            attribution: '© OpenStreetMap contributors',
+            tileSize: 256,
+            zoomOffset: 0,
+            detectRetina: true, // Enable high-DPI support
+            updateWhenIdle: false,
+            updateWhenZooming: false,
+            keepBuffer: 2,
+            crossOrigin: true
           }).addTo(map);
 
           // Parse data

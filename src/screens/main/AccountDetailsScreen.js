@@ -274,7 +274,23 @@ export default function AccountDetailsScreen({ navigation }) {
         return;
       }
       if (!bioDescription.trim()) {
-        setBioMessage('Please enter a bio description.');
+        // If empty bio: delete existing post if present, otherwise no-op
+        if (existingBioId) {
+          try {
+            const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
+            if (!del.success) {
+              setBioMessage(del.error || 'Failed to clear bio');
+              return;
+            }
+            setExistingBioId(null);
+          } catch (err) {
+            setBioMessage(err.message || 'Failed to clear bio');
+            return;
+          }
+        }
+        setBioDescription('');
+        setBioPhotos([]);
+        setBioMessage('Bio cleared!');
         return;
       }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TouchableOpacity, RefreshControl, Modal, FlatList } from 'react-native';
-import LeafletMapView from '../../components/LeafletMapView'; // Using Leaflet for consistency with web
+import LeafletMapView from '../../components/LeafletMapView'; // WebView-based Leaflet map
 import BackButton from '../../components/BackButton';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
 
@@ -290,7 +290,7 @@ const MapViewScreen = ({ navigation }) => {
 
     return (
       <View style={styles.mapWrapper}>
-        {/* Full screen map */}
+        {/* Full screen Leaflet map in WebView */}
         <View style={styles.fullMapContainer}>
           <LeafletMapView 
             region={region} 
