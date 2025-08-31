@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,30 +6,34 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Modal,
+  ImageBackground,
 } from 'react-native';
-// Removed DateTimePicker import - using basic inputs instead
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
-import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { Ionicons } from '@expo/vector-icons';
-import Button from '../../components/Button';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/authService';
 
+const MAROON = '#6B2E2B';
+const BG = '#F7F4F2';
+const CARD = '#FFFFFF';
+const BORDER = '#E9DAD1';
+const MUTED = '#6B7280';
+const TEXT = '#1F2937';
+
 const RequestBookingScreen = ({ route, navigation }) => {
   const { packageId, packageData } = route.params || {};
-  
+
   // Form state
   const [formData, setFormData] = useState({
     package_id: packageId || '',
-    customer_id: '', // Will be set from user context
+    customer_id: '',
     booking_date: new Date(),
     pickup_time: '09:00',
     number_of_pax: 1,
@@ -40,14 +44,17 @@ const RequestBookingScreen = ({ route, navigation }) => {
     pickup_address: '',
   });
 
-  const [packages, setPackages] = useState([]);
+  const [packages, setPackages] = useState([]); // kept for validation fallback, no dropdown
   const [loading, setLoading] = useState(false);
-  const [showPackagePicker, setShowPackagePicker] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [bookingReference, setBookingReference] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Date/Time picker visibility
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Ensure pickup_time is in HH:MM:SS and valid
   const sanitizeTime = (timeStr) => {
@@ -63,24 +70,38 @@ const RequestBookingScreen = ({ route, navigation }) => {
   };
 
   useEffect(() => {
-    if (!packageData) {
+    // Keep this in case screen can be reached without full packageData
+    if (!packageData && packageId) {
       loadPackages();
     }
     if (packageData) {
       setSelectedPackage(packageData);
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         package_id: packageData.id,
         pickup_address: packageData.pickup_location || '',
         total_amount: packageData.price || 0,
       }));
     }
-  }, [packageData]);
+  }, [packageData, packageId]);
 
   const loadPackages = async () => {
     try {
-      const packages = await tourPackageService.getAllPackages();
-      setPackages(packages);
+      const list = await tourPackageService.getAllPackages();
+      setPackages(list);
+      // If we only got an ID, bind the full object so hero/pills work
+      if (!packageData && packageId) {
+        const found = list.find((p) => p.id === packageId);
+        if (found) {
+          setSelectedPackage(found);
+          setFormData((prev) => ({
+            ...prev,
+            package_id: found.id,
+            pickup_address: found.pickup_location || prev.pickup_address,
+            total_amount: found.price || prev.total_amount,
+          }));
+        }
+      }
     } catch (error) {
       console.error('Error loading packages:', error);
       setErrorMessage('Failed to load tour packages');
@@ -89,20 +110,20 @@ const RequestBookingScreen = ({ route, navigation }) => {
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
 
-    // Recalculate total amount when package or number of pax changes
-    if (field === 'package_id' || field === 'number_of_pax') {
-      const pkg = selectedPackage || packages.find(p => p.id === (field === 'package_id' ? value : formData.package_id));
+    // Recalculate total when pax changes
+    if (field === 'number_of_pax') {
+      const pkg = selectedPackage;
       if (pkg) {
         const maxPax = pkg.max_pax ? parseInt(pkg.max_pax) : null;
-        const desiredPax = field === 'number_of_pax' ? value : formData.number_of_pax;
+        const desiredPax = value;
         const clampedPax = maxPax ? Math.min(desiredPax, maxPax) : desiredPax;
         const newTotal = (Number(pkg.price) || 0) * clampedPax;
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           number_of_pax: clampedPax,
           total_amount: newTotal,
@@ -111,8 +132,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
     }
   };
-
-
 
   const validateForm = () => {
     const requiredFields = ['package_id', 'booking_date', 'number_of_pax', 'total_amount'];
@@ -131,15 +150,22 @@ const RequestBookingScreen = ({ route, navigation }) => {
     }
 
     // Validate pickup_time format HH:MM or HH:MM:SS
-    const timeOk = typeof formData.pickup_time === 'string' && /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
+    const timeOk =
+      typeof formData.pickup_time === 'string' &&
+      /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
     if (!timeOk) {
       setErrorMessage('Pickup time must be in HH:MM format');
       setShowErrorModal(true);
       return false;
     }
 
-    const selectedPackageForValidation = packages.find(p => p.id === formData.package_id) || selectedPackage;
-    if (selectedPackageForValidation && selectedPackageForValidation.max_pax && formData.number_of_pax > selectedPackageForValidation.max_pax) {
+    const selectedPackageForValidation =
+      selectedPackage || packages.find((p) => p.id === formData.package_id);
+    if (
+      selectedPackageForValidation &&
+      selectedPackageForValidation.max_pax &&
+      formData.number_of_pax > selectedPackageForValidation.max_pax
+    ) {
       setErrorMessage(`Maximum passengers allowed: ${selectedPackageForValidation.max_pax}`);
       setShowErrorModal(true);
       return false;
@@ -154,7 +180,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
       return false;
     }
 
-    // Contact number validation (PH): starts with 09 or 63 and 10-13 digits total
+    // Contact number validation (PH)
     if (formData.contact_number) {
       const cn = String(formData.contact_number).replace(/\D/g, '');
       const startsValid = cn.startsWith('09') || cn.startsWith('63');
@@ -171,7 +197,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
     }
 
-    // Email validation (basic @ presence)
+    // Email validation
     if (formData.contact_email && !String(formData.contact_email).includes('@')) {
       setErrorMessage('Please enter a valid email address');
       setShowErrorModal(true);
@@ -192,7 +218,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
       if (currentUser && currentUser.id) {
         userId = currentUser.id;
       } else {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
         if (!userError && user && user.id) {
           userId = user.id;
         }
@@ -215,26 +244,25 @@ const RequestBookingScreen = ({ route, navigation }) => {
         special_requests: formData.special_requests || '',
         contact_number: String(formData.contact_number || ''),
         pickup_address: formData.pickup_address || '',
-        // contact_email is intentionally omitted to avoid backend mis-parsing into time
+        // contact_email intentionally omitted
       };
 
       const response = await createBooking(bookingData);
-      
+
       if (response.success) {
-         setBookingReference(response.data?.booking_reference || 'N/A');
-         setShowSuccessModal(true);
+        setBookingReference(response.data?.booking_reference || 'N/A');
+        setShowSuccessModal(true);
       } else {
-         setErrorMessage(response.error || 'Failed to create booking');
-         setShowErrorModal(true);
+        setErrorMessage(response.error || 'Failed to create booking');
+        setShowErrorModal(true);
       }
     } catch (error) {
       console.error('Error creating booking:', error);
-      // Provide a clearer message on timeouts/aborts
       const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
       setErrorMessage(
         isAbort
           ? 'Request timed out. Please check your connection and try again.'
-          : (error.message || 'Failed to create booking')
+          : error.message || 'Failed to create booking'
       );
       setShowErrorModal(true);
     } finally {
@@ -250,41 +278,108 @@ const RequestBookingScreen = ({ route, navigation }) => {
     });
   };
 
-  return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <TARTRACKHeader title="Request Booking" showBack onBackPress={() => navigation.goBack()} />
+  const todayStart = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.formContainer}>
-          {/* Package Summary Card */}
+  const formatTimeHM = (date) => {
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  const onChangeDate = (event, selectedDate) => {
+    if (Platform.OS !== 'ios') setShowDatePicker(false);
+    if (!selectedDate) return; // dismissed
+    const chosen = new Date(selectedDate);
+    chosen.setHours(0, 0, 0, 0);
+    const safeDate = chosen < todayStart ? todayStart : chosen;
+    setFormData((prev) => ({ ...prev, booking_date: safeDate }));
+  };
+
+  const onChangeTime = (event, selectedTime) => {
+    if (Platform.OS !== 'ios') setShowTimePicker(false);
+    if (!selectedTime) return; // dismissed
+    const timeStr = formatTimeHM(selectedTime);
+    setFormData((prev) => ({ ...prev, pickup_time: timeStr }));
+  };
+
+  // ——— UI helpers (pure presentation) ———
+  const pkgImage = useMemo(() => {
+    const p = selectedPackage || {};
+    return p.image_url || p.cover_image || p.photo_url || p.thumbnail || p.image || null;
+  }, [selectedPackage]);
+
+  const pills = useMemo(() => {
+    const arr = [];
+    if (selectedPackage?.duration_hours)
+      arr.push({ icon: 'time-outline', text: `${selectedPackage.duration_hours}h` });
+    if (selectedPackage?.max_pax)
+      arr.push({ icon: 'people-outline', text: `${selectedPackage.max_pax}` });
+    return arr;
+  }, [selectedPackage]);
+
+  return (
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* HERO with background image */}
+      <View style={styles.heroWrap}>
+        <ImageBackground
+          source={pkgImage ? { uri: pkgImage } : undefined}
+          style={styles.hero}
+          imageStyle={styles.heroImg}
+        >
+          <View style={styles.heroOverlay} />
+          <View style={styles.heroTopRow}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={20} color={CARD} />
+            </TouchableOpacity>
+            <Text style={styles.heroTitle} numberOfLines={1}>
+              {selectedPackage?.package_name || 'Tour Package'}
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          {/* Pills + price */}
+          <View style={styles.pillsRow}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {pills.map((p, i) => (
+                <View key={i} style={styles.metaPill}>
+                  <Ionicons name={p.icon} size={12} color={MAROON} />
+                  <Text style={styles.metaText}>{p.text}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.priceTop}>
+              ₱ {Number(selectedPackage?.price || formData.total_amount || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          {/* About card */}
           {selectedPackage && (
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryTitle} numberOfLines={1}>{selectedPackage.package_name}</Text>
-                <Text style={styles.summaryPrice}>₱{Number(selectedPackage.price || 0).toFixed(2)}</Text>
-              </View>
-              <View style={styles.summaryMeta}>
-                {selectedPackage.duration_hours ? (
-                  <View style={styles.metaPill}>
-                    <Ionicons name="time-outline" size={12} color="#6B2E2B" />
-                    <Text style={styles.metaText}>{selectedPackage.duration_hours}h</Text>
-                  </View>
-                ) : null}
-                {selectedPackage.max_pax ? (
-                  <View style={styles.metaPill}>
-                    <Ionicons name="people-outline" size={12} color="#6B2E2B" />
-                    <Text style={styles.metaText}>{selectedPackage.max_pax}</Text>
-                  </View>
-                ) : null}
-              </View>
+            <View style={styles.aboutCard}>
+              <Text style={styles.aboutTitle}>About this Package</Text>
+              {!!selectedPackage.description && (
+                <Text style={styles.aboutText} numberOfLines={6}>
+                  {String(selectedPackage.description).trim()}
+                </Text>
+              )}
             </View>
           )}
+        </ImageBackground>
+      </View>
 
+      {/* CONTENT */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.formContainer}>
+          {/* Tour Package (read-only) */}
           <Text style={styles.sectionTitle}>Tour Package</Text>
-          <View style={[styles.pickerContainer, { borderColor: '#eee' }]}> 
+          <View style={styles.readonlyPackageRow}>
             <Text style={styles.pickerText} numberOfLines={1}>
               {selectedPackage?.package_name || 'Selected package'}
             </Text>
@@ -292,52 +387,57 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
           {/* Date & Time row */}
           <View style={styles.row}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }] }>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.label}>Booking Date *</Text>
-              <TextInput
-                style={styles.input}
-                value={formatDate(formData.booking_date)}
-                placeholder="YYYY-MM-DD"
-                onChangeText={(text) => {
-                  const date = new Date(text);
-                  if (!isNaN(date.getTime())) {
-                    setFormData(prev => ({ ...prev, booking_date: date }));
-                  }
-                }}
-              />
+              <TouchableOpacity
+                style={[styles.input, styles.inputButton]}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.inputButtonContent}>
+                  <Ionicons name="calendar-outline" size={16} color={MAROON} />
+                  <Text style={styles.inputButtonText}>{formatDate(formData.booking_date)}</Text>
+                </View>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={formData.booking_date instanceof Date ? formData.booking_date : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={todayStart}
+                  onChange={onChangeDate}
+                />
+              )}
             </View>
-            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }] }>
+            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.label}>Pickup Time</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.pickup_time}
-                placeholder="HH:MM"
-                onChangeText={(text) => setFormData(prev => ({ ...prev, pickup_time: text }))}
-              />
+              <TouchableOpacity
+                style={[styles.input, styles.inputButton]}
+                onPress={() => setShowTimePicker(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.inputButtonContent}>
+                  <Ionicons name="time-outline" size={16} color={MAROON} />
+                  <Text style={styles.inputButtonText}>{formData.pickup_time}</Text>
+                </View>
+              </TouchableOpacity>
+              {showTimePicker && (
+                <DateTimePicker
+                  value={(() => {
+                    // Build a Date using today's date and current HH:MM
+                    const [h, m] = String(formData.pickup_time || '09:00').split(':').map((x) => parseInt(x, 10) || 0);
+                    const d = new Date();
+                    d.setHours(h, m, 0, 0);
+                    return d;
+                  })()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  is24Hour={true}
+                  onChange={onChangeTime}
+                />
+              )}
             </View>
           </View>
-
-          {/* Pax stepper */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Passengers *</Text>
-            <View style={styles.stepperRow}>
-              <TouchableOpacity style={styles.stepperBtn} onPress={() => handleInputChange('number_of_pax', Math.max(1, formData.number_of_pax - 1))}>
-                <Ionicons name="remove" size={18} color="#6B2E2B" />
-              </TouchableOpacity>
-              <Text style={styles.stepperValue}>{formData.number_of_pax}</Text>
-              <TouchableOpacity style={styles.stepperBtn} onPress={() => handleInputChange('number_of_pax', formData.number_of_pax + 1)}>
-                <Ionicons name="add" size={18} color="#6B2E2B" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Total */}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>₱{Number(formData.total_amount || 0).toFixed(2)}</Text>
-          </View>
-
-          <Text style={styles.sectionTitle}>Contact</Text>
 
           {/* Contact Number */}
           <View style={styles.inputGroup}>
@@ -379,320 +479,183 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
           {/* Special Requests */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Special Requests</Text>
+            <Text style={styles.label}>Special Request</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
               value={formData.special_requests}
               onChangeText={(value) => handleInputChange('special_requests', value)}
-              placeholder="Any special requests or notes"
+              placeholder="Any special request or notes"
               multiline
               numberOfLines={4}
             />
           </View>
-
-          <Button
-            title={loading ? 'Processing...' : 'Submit Booking'}
-            onPress={handleSubmit}
-            disabled={loading}
-          />
         </View>
       </ScrollView>
 
+      {/* Sticky Bottom Bar */}
+      <View style={styles.bottomBar}>
+        <View>
+          <Text style={styles.totalCaption}>Total Price</Text>
+          <Text style={styles.totalValue}>₱ {Number(formData.total_amount || 0).toFixed(2)}</Text>
+        </View>
 
+        <View style={styles.stepperRow}>
+          <TouchableOpacity
+            style={styles.stepperBtn}
+            onPress={() =>
+              handleInputChange('number_of_pax', Math.max(1, formData.number_of_pax - 1))
+            }
+          >
+            <Ionicons name="remove" size={18} color={MAROON} />
+          </TouchableOpacity>
+          <Text style={styles.stepperValue}>{formData.number_of_pax}</Text>
+          <TouchableOpacity
+            style={styles.stepperBtn}
+            onPress={() => handleInputChange('number_of_pax', formData.number_of_pax + 1)}
+          >
+            <Ionicons name="add" size={18} color={MAROON} />
+          </TouchableOpacity>
+        </View>
 
-             {loading && (
-         <View style={styles.loadingOverlay}>
-           <ActivityIndicator size="large" color="#007AFF" />
-         </View>
-       )}
+        <TouchableOpacity style={styles.bookBtn} onPress={handleSubmit} disabled={loading}>
+          <Text style={styles.bookBtnText}>{loading ? 'Processing…' : 'Book'}</Text>
+        </TouchableOpacity>
+      </View>
 
-       {/* Package Picker Modal */}
-       <Modal
-         visible={showPackagePicker}
-         transparent={true}
-         animationType="slide"
-         onRequestClose={() => setShowPackagePicker(false)}
-       >
-         <View style={styles.modalOverlay}>
-           <View style={styles.modalContent}>
-             <View style={styles.modalHeader}>
-               <Text style={styles.modalTitle}>Select Tour Package</Text>
-               <TouchableOpacity
-                 onPress={() => setShowPackagePicker(false)}
-                 style={styles.closeButton}
-               >
-                 <Text style={styles.closeButtonText}>✕</Text>
-               </TouchableOpacity>
-             </View>
-             <ScrollView style={styles.modalScrollView}>
-               {packages.map((pkg) => (
-                 <TouchableOpacity
-                   key={pkg.id}
-                   style={styles.packageOption}
-                   onPress={() => {
-                     handleInputChange('package_id', pkg.id);
-                     setShowPackagePicker(false);
-                   }}
-                 >
-                   <Text style={styles.packageOptionTitle}>{pkg.package_name}</Text>
-                   <Text style={styles.packageOptionPrice}>₱{pkg.price}</Text>
-                   <Text style={styles.packageOptionDescription}>{pkg.description}</Text>
-                 </TouchableOpacity>
-               ))}
-             </ScrollView>
-           </View>
-         </View>
-               </Modal>
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={MAROON} />
+        </View>
+      )}
 
-            {/* Success Modal */}
-        <SuccessModal
-          visible={showSuccessModal}
-          title="Booking Successful!"
-          message={`Your booking has been created successfully!\n\nBooking Reference: ${bookingReference}`}
-          primaryActionText="Go Home"
-          onClose={() => setShowSuccessModal(false)}
-          primaryAction={() => {
-            setShowSuccessModal(false);
-            navigation.navigate('Main');
-          }}
-        />
+      {/* Success Modal */}
+      <SuccessModal
+        visible={showSuccessModal}
+        title="Booking Successful!"
+        message={`Your booking has been created successfully!\n\nBooking Reference: ${bookingReference}`}
+        primaryActionText="Go Home"
+        onClose={() => setShowSuccessModal(false)}
+        primaryAction={() => {
+          setShowSuccessModal(false);
+          navigation.navigate('Main');
+        }}
+      />
 
-        {/* Error Modal */}
-        <ErrorModal
-          visible={showErrorModal}
-          title="Booking Error"
-          message={errorMessage}
-          primaryActionText="OK"
-          onClose={() => setShowErrorModal(false)}
-        />
-      </KeyboardAvoidingView>
-    );
-  };
+      {/* Error Modal */}
+      <ErrorModal
+        visible={showErrorModal}
+        title="Booking Error"
+        message={errorMessage}
+        primaryActionText="OK"
+        onClose={() => setShowErrorModal(false)}
+      />
+    </KeyboardAvoidingView>
+  );
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+  container: { flex: 1, backgroundColor: BG },
+  heroWrap: { width: '100%', height: 220, backgroundColor: '#f5f5f5' },
+  hero: { flex: 1, justifyContent: 'flex-end' },
+  heroImg: { width: '100%', height: '100%', resizeMode: 'cover' },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
-  scrollView: {
-    flex: 1,
-  },
-  formContainer: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 12,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#333',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  pickerContainer: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E0CFC2',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  pickerText: {
-    fontSize: 16,
-    color: '#333',
-    flex: 1,
-    marginRight: 8,
-  },
-  dateButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    justifyContent: 'center',
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  totalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E0CFC2',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 8,
-  },
-  totalLabel: {
-    fontSize: 16,
-    color: '#555',
-    fontWeight: '600',
-  },
-  totalValue: {
-    fontSize: 18,
-    color: '#6B2E2B',
-    fontWeight: '800',
-  },
-  buttonContainer: {
-    marginTop: 30,
-    marginBottom: 20,
-  },
-  submitButton: {
-    backgroundColor: '#6B2E2B',
-  },
-  loadingOverlay: {
+  heroTopRow: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalHeader: {
+    top: 14,
+    left: 14,
+    right: 14,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: '#666',
-  },
-  modalScrollView: {
-    maxHeight: 400,
-  },
-  packageOption: {
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  packageOptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  packageOptionPrice: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#6B2E2B',
-    marginBottom: 4,
-  },
-  packageOptionDescription: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  stepperBtn: {
+  backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F5E9E2',
-    borderWidth: 1,
-    borderColor: '#E0CFC2',
+    backgroundColor: MAROON,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperValue: {
-    minWidth: 24,
+  heroTitle: {
+    flex: 1,
     textAlign: 'center',
+    color: CARD,
     fontWeight: '700',
-    color: '#6B2E2B',
+    fontSize: 14,
   },
-  summaryCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-    padding: 12,
-  },
-  summaryRow: {
+  pillsRow: {
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
   },
-  summaryTitle: {
+  priceTop: { color: CARD, fontWeight: '800', fontSize: 14 },
+  aboutCard: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 14,
+    padding: 12,
+    margin: 16,
+  },
+  aboutTitle: { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 6 },
+  aboutText: { fontSize: 12, color: MUTED, lineHeight: 16 },
+
+  scrollView: { flex: 1 },
+  formContainer: { padding: 16 },
+
+  sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#333',
-    flex: 1,
-    marginRight: 8,
+    color: TEXT,
+    marginTop: 8,
+    marginBottom: 10,
   },
-  summaryPrice: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#6B2E2B',
+
+  inputGroup: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: '600', color: TEXT, marginBottom: 6 },
+  input: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    color: TEXT,
   },
-  summaryMeta: {
+  inputButton: {
+    justifyContent: 'center',
+  },
+  inputButtonContent: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
+  inputButtonText: {
+    fontSize: 14,
+    color: TEXT,
+    fontWeight: '600',
+  },
+  textArea: { height: 84, textAlignVertical: 'top' },
+
+  readonlyPackageRow: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pickerText: { fontSize: 14, color: TEXT, flex: 1, marginRight: 8 },
+
+  row: { flexDirection: 'row', alignItems: 'center' },
+
   metaPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -704,10 +667,61 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0CFC2',
   },
-  metaText: {
-    color: '#6B2E2B',
-    fontSize: 11,
-    fontWeight: '700',
+  metaText: { color: MAROON, fontSize: 11, fontWeight: '700' },
+
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: CARD,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  totalCaption: { fontSize: 11, color: MUTED },
+  totalValue: { fontSize: 16, fontWeight: '800', color: TEXT },
+
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginLeft: 'auto',
+    marginRight: 6,
+  },
+  stepperBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperValue: { minWidth: 20, textAlign: 'center', fontWeight: '700', color: MAROON },
+
+  bookBtn: {
+    backgroundColor: MAROON,
+    borderRadius: 999,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+  },
+  bookBtnText: { color: '#fff', fontWeight: '700' },
+
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

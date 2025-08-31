@@ -1,44 +1,64 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, TextInput, Image, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  TextInput,
+  Image,
+  Modal,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerCustomRequests } from '../../services/specialpackage/customPackageRequest';
+import { createPackageReview, createDriverReview } from '../../services/reviews';
+import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 
 const MAROON = '#6B2E2B';
 
 export default function BookScreen({ navigation }) {
-  // All hooks must be called at the top level, before any conditional returns
   const auth = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
+
+  // filters & search
   const [activeFilter, setActiveFilter] = useState('all'); // all | upcoming | completed | cancelled | pending | confirmed
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedMap, setExpandedMap] = useState({}); // id -> boolean for dropdown
+
+  // expand map
+  const [expandedMap, setExpandedMap] = useState({});
+
+  // custom requests (no separate filter)
   const [customRequests, setCustomRequests] = useState([]);
 
-  // Handle authentication redirect in useEffect to avoid hooks rule violation
+  // reviews & verification UI state
+  const [ratedMap, setRatedMap] = useState({}); // { [bookingId]: { package: bool, driver: bool } }
+  const [verificationMap, setVerificationMap] = useState({}); // { [bookingId]: { checked: bool, available: bool, url: string|null } }
+  const [viewer, setViewer] = useState({ visible: false, url: null });
+
+  const [ratingModal, setRatingModal] = useState({ visible: false, type: 'package', booking: null });
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingComment, setRatingComment] = useState('');
+
   useEffect(() => {
     if (!auth.loading && !auth.isAuthenticated) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
+      navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
     }
   }, [auth.loading, auth.isAuthenticated, navigation]);
 
   useEffect(() => {
-    if (!auth.loading && auth.isAuthenticated) {
-      fetchUserAndBookings();
-    }
+    if (!auth.loading && auth.isAuthenticated) fetchUserAndBookings();
   }, [auth.loading, auth.isAuthenticated]);
 
-  // Show loading while auth is being determined
   if (auth.loading) {
     return (
       <View style={styles.container}>
@@ -48,81 +68,47 @@ export default function BookScreen({ navigation }) {
       </View>
     );
   }
-
-  // Return null while redirecting (but after all hooks have been called)
-  if (!auth.isAuthenticated) {
-    return null;
-  }
+  if (!auth.isAuthenticated) return null;
 
   const fetchUserAndBookings = async () => {
     try {
       setLoading(true);
-      
-      // Check new auth system first
+
       let currentUser = await getCurrentUser();
       let userId = null;
-      
+
       if (currentUser) {
-        // User is logged in via new auth system
-        console.log('Current user (new auth):', currentUser);
         setUser(currentUser);
         userId = currentUser.id;
       } else {
-        // Fallback to Supabase for existing users
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
         if (userError || !user) {
           Alert.alert('Error', 'Please log in to view your bookings');
           return;
         }
-
-        console.log('Current user (Supabase):', user);
         setUser(user);
         userId = user.id;
       }
 
-      // Fetch user's bookings
-      console.log('Fetching bookings for user ID:', userId);
       const bookingsData = await getCustomerBookings(userId);
-      console.log('Bookings data received:', bookingsData);
-      
-      // Handle different response formats
+
       let processedBookings = [];
-      if (Array.isArray(bookingsData)) {
-        processedBookings = bookingsData;
-      } else if (bookingsData && Array.isArray(bookingsData.results)) {
-        processedBookings = bookingsData.results;
-      } else if (bookingsData && Array.isArray(bookingsData.data)) {
-        processedBookings = bookingsData.data;
-      } else if (bookingsData && bookingsData.bookings) {
-        processedBookings = bookingsData.bookings;
-      } else if (bookingsData && bookingsData.data && Array.isArray(bookingsData.data.bookings)) {
-        // Handle the nested structure: {data: {bookings: [...]}}
-        processedBookings = bookingsData.data.bookings;
-      } else if (bookingsData && bookingsData.success && bookingsData.data && Array.isArray(bookingsData.data.bookings)) {
-        // Handle the structure: {success: true, data: {bookings: [...]}}
-        processedBookings = bookingsData.data.bookings;
-      } else {
-        console.log('Unexpected bookings data format:', bookingsData);
-        processedBookings = [];
-      }
-      
-      console.log('Processed bookings:', processedBookings);
-      if (processedBookings.length > 0) {
-        console.log('First booking sample:', processedBookings[0]);
-      }
+      if (Array.isArray(bookingsData)) processedBookings = bookingsData;
+      else if (bookingsData?.results) processedBookings = bookingsData.results;
+      else if (bookingsData?.data?.bookings) processedBookings = bookingsData.data.bookings;
+      else if (bookingsData?.bookings) processedBookings = bookingsData.bookings;
+      else if (Array.isArray(bookingsData?.data)) processedBookings = bookingsData.data;
+      else processedBookings = [];
+
       setBookings(processedBookings);
 
-      // Fetch user's custom requests (custom tours + special events)
       try {
         const customRes = await getCustomerCustomRequests(userId);
-        if (customRes && customRes.success) {
-          setCustomRequests(Array.isArray(customRes.data) ? customRes.data : []);
-        } else {
-          setCustomRequests([]);
-        }
-      } catch (e) {
-        console.warn('Failed to load custom requests:', e?.message || e);
+        setCustomRequests(customRes?.success && Array.isArray(customRes?.data) ? customRes.data : []);
+      } catch {
         setCustomRequests([]);
       }
     } catch (error) {
@@ -139,523 +125,471 @@ export default function BookScreen({ navigation }) {
     setRefreshing(false);
   };
 
+  // ---------- helpers
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return '#4CAF50';
-      case 'pending':
-        return '#FF9800';
-      case 'cancelled':
-        return '#F44336';
-      case 'completed':
-        return '#2196F3';
-      default:
-        return '#757575';
+    switch ((status || '').toLowerCase()) {
+      case 'confirmed': return '#2e7d32';
+      case 'pending':   return '#ef6c00';
+      case 'cancelled': return '#c62828';
+      case 'completed': return '#1565c0';
+      default:          return '#616161';
     }
   };
-
   const getStatusIcon = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'checkmark-circle';
-      case 'pending':
-        return 'time';
-      case 'cancelled':
-        return 'close-circle';
-      case 'completed':
-        return 'checkmark-done-circle';
-      default:
-        return 'help-circle';
+    switch ((status || '').toLowerCase()) {
+      case 'confirmed': return 'checkmark-circle';
+      case 'pending':   return 'time';
+      case 'cancelled': return 'close-circle';
+      case 'completed': return 'checkmark-done-circle';
+      default:          return 'help-circle';
     }
   };
+  const prettyStatus = (s) =>
+    (s || 'Unknown').toString().toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : 'N/A';
+  const formatTime = (t) => t || 'N/A';
+  const formatCurrency = (a) => (a || a === 0) ? `₱${parseFloat(a).toFixed(2)}` : 'N/A';
+
+  const getPackageName = (b) =>
+    b?.package_name || b?.package?.package_name || b?.package?.name || b?.tour_package_name || b?.packageTitle || b?.name || null;
+
+  const getPackageDetails = (b) => {
+    const p = b?.package || b?.tour_package || {};
+    return {
+      durationHours: b?.duration_hours ?? p?.duration_hours ?? p?.duration ?? null,
+      maxPax:        b?.max_pax ?? p?.max_pax ?? p?.capacity ?? null,
+      pickupLocation:b?.pickup_location ?? p?.pickup_location ?? null,
+      destination:   b?.destination ?? p?.destination ?? null,
+      route:         b?.route ?? p?.route ?? null,
+      availableDays: b?.available_days ?? p?.available_days ?? null,
+      description:   b?.package_description ?? p?.description ?? null,
+    };
   };
 
-  const formatTime = (timeString) => {
-    if (!timeString) return 'N/A';
-    return timeString;
+  const getBookingDateValue = (b) => b?.booking_date || b?.date || b?.preferred_date || b?.event_date || null;
+  const getPickupTimeValue  = (b) => b?.pickup_time || b?.time || b?.event_time || null;
+  const getNumPax           = (b) => b?.number_of_pax ?? b?.num_pax ?? b?.pax ?? b?.passengers ?? null;
+  const getPickupAddress    = (b) => b?.pickup_address || b?.pickup_location || b?.address || b?.event_address || null;
+  const getContactNumber    = (b) => b?.contact_number || b?.contact || b?.phone || b?.customer_phone || null;
+  const getTotalAmount      = (b) => b?.total_amount ?? b?.approved_price ?? b?.total_price ?? b?.price ?? null;
+  const getBookingReference = (b) => b?.booking_reference || b?.reference || b?.ref || b?.id || null;
+
+  const getDriverName = (b) => {
+    const n = b?.assigned_driver?.name || b?.driver?.name || b?.assigned_driver_name || b?.driver_name || null;
+    if (n && /@/.test(String(n))) return null;
+    return n && String(n).trim() ? n : null;
   };
-
-  const formatCurrency = (amount) => {
-    if (!amount) return 'N/A';
-    return `₱${parseFloat(amount).toFixed(2)}`;
-  };
-
-  // Safe getters for inconsistent backend shapes
-  const getPackageName = (booking) => (
-    booking?.package_name ||
-    booking?.package?.package_name ||
-    booking?.package?.name ||
-    booking?.tour_package_name ||
-    booking?.packageTitle ||
-    booking?.name ||
-    null
-  );
-
-  // Additional safe getters for package details
-  const getPackageDetails = (booking) => {
-    const pkg = booking?.package || booking?.tour_package || null;
-    const durationHours = booking?.duration_hours ?? pkg?.duration_hours ?? pkg?.duration ?? null;
-    const maxPax = booking?.max_pax ?? pkg?.max_pax ?? pkg?.capacity ?? null;
-    const pickupLocation = booking?.pickup_location ?? pkg?.pickup_location ?? null;
-    const destination = booking?.destination ?? pkg?.destination ?? null;
-    const route = booking?.route ?? pkg?.route ?? null;
-    const availableDays = booking?.available_days ?? pkg?.available_days ?? null;
-    const description = booking?.package_description ?? pkg?.description ?? null;
-    return { durationHours, maxPax, pickupLocation, destination, route, availableDays, description };
-  };
-
-  const getBookingDateValue = (booking) => (
-    booking?.booking_date || booking?.date || booking?.preferred_date || booking?.event_date || null
-  );
-
-  const getPickupTimeValue = (booking) => (
-    booking?.pickup_time || booking?.time || booking?.event_time || null
-  );
-
-  const getNumPax = (booking) => (
-    booking?.number_of_pax ?? booking?.num_pax ?? booking?.pax ?? booking?.passengers ?? null
-  );
-
-  const getPickupAddress = (booking) => (
-    booking?.pickup_address || booking?.pickup_location || booking?.address || booking?.event_address || null
-  );
-
-  const getContactNumber = (booking) => (
-    booking?.contact_number || booking?.contact || booking?.phone || booking?.customer_phone || null
-  );
-
-  const getTotalAmount = (booking) => (
-    booking?.total_amount ?? booking?.approved_price ?? booking?.total_price ?? booking?.price ?? null
-  );
-
-  const getBookingReference = (booking) => (
-    booking?.booking_reference || booking?.reference || booking?.ref || booking?.id || null
-  );
-
-  // Safely extract assigned driver info from various possible backend shapes
-  const getDriverName = (booking) => {
-    const candidate = (
-      booking?.assigned_driver?.name ||
-      booking?.driver?.name ||
-      booking?.assigned_driver_name ||
-      booking?.driver_name ||
-      null
-    );
-    // Hide emails; show Not set yet instead
-    if (candidate && /@/.test(String(candidate))) return null;
-    return candidate && String(candidate).trim().length > 0 ? candidate : null;
-  };
-
-  const getDriverAvatarUrl = (booking) => {
-    const source = booking?.assigned_driver || booking?.driver || null;
-    const name = getDriverName(booking) || 'Driver';
+  const getDriverAvatarUrl = (b) => {
+    const src = b?.assigned_driver || b?.driver || null;
+    const name = getDriverName(b) || 'Driver';
     const url =
-      source?.profile_photo_url ||
-      source?.profile_photo ||
-      source?.avatar_url ||
-      source?.photo_url ||
-      source?.image_url ||
-      null;
-    if (url && typeof url === 'string' && url.startsWith('http')) return url;
-    // Fallback to generated avatar
+      src?.profile_photo_url || src?.profile_photo || src?.avatar_url || src?.photo_url || src?.image_url || null;
+    if (url && String(url).startsWith('http')) return url;
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`;
   };
-
-  const getDriverRating = (booking) => {
-    const raw =
-      booking?.assigned_driver?.average_rating ??
-      booking?.assigned_driver?.rating ??
-      booking?.driver?.average_rating ??
-      booking?.driver?.rating ??
-      booking?.driver_rating ??
-      booking?.assigned_driver_rating ??
-      null;
-    const rating = Number(raw);
-    if (Number.isFinite(rating) && rating > 0) {
-      return Math.min(5, rating);
-    }
-    return null;
+  const getDriverRating = (b) => {
+    const raw = b?.assigned_driver?.average_rating ?? b?.assigned_driver?.rating ?? b?.driver?.average_rating ??
+                b?.driver?.rating ?? b?.driver_rating ?? b?.assigned_driver_rating ?? null;
+    const r = Number(raw);
+    return Number.isFinite(r) && r > 0 ? Math.min(5, r) : null;
   };
+  const hasAssignedDriver = (b) => !!getDriverName(b);
 
-  const hasAssignedDriver = (booking) => {
-    const name = getDriverName(booking);
-    if (name && String(name).trim().length > 0) return true;
-    return false;
-  };
-
-  // ===== Custom Requests helpers =====
-  const getCustomTitle = (req) => {
-    if (req?.request_type === 'special_event') {
-      return req?.event_type || 'Special Event';
-    }
-    const dest = req?.destination || req?.route || '';
-    return dest ? `Custom Tour: ${dest}` : 'Custom Tour';
-  };
-
-  const getCustomDate = (req) => (
-    req?.preferred_date || req?.event_date || null
-  );
-
-  const getCustomTime = (req) => (
-    req?.event_time || null
-  );
-
-  const getCustomPax = (req) => (
-    req?.number_of_pax ?? req?.pax ?? null
-  );
-
-  const getCustomPickupAddress = (req) => (
-    req?.pickup_location || req?.event_address || null
-  );
-
-  const getCustomStatus = (req) => (
-    req?.status || 'pending'
-  );
-
-  const getCustomDriverName = (req) => (
-    req?.driver_name || req?.accepted_driver_name || req?.assigned_driver?.name || null
-  );
-
-  const hasAssignedDriverForCustom = (req) => {
-    const name = getCustomDriverName(req);
-    return !!(name && String(name).trim().length > 0);
-  };
+  const getDriverId = (b) => b?.driver_id || b?.assigned_driver_id || b?.driver?.id || b?.assigned_driver?.id || null;
+  const getPackageId = (b) => b?.package_id || b?.package?.id || b?.tour_package_id || null;
 
   const buildStars = (rating) => {
-    if (rating === null || rating === undefined) return null;
+    if (rating == null) return null;
     const full = Math.floor(rating);
-    const hasHalf = rating - full >= 0.5;
-    const empty = 5 - full - (hasHalf ? 1 : 0);
+    const half = rating - full >= 0.5;
+    const empty = 5 - full - (half ? 1 : 0);
     return (
       <View style={styles.ratingRow}>
-        {Array.from({ length: full }).map((_, i) => (
-          <Ionicons key={`full-${i}`} name="star" size={14} color="#F5A623" />
-        ))}
-        {hasHalf ? <Ionicons name="star-half" size={14} color="#F5A623" /> : null}
-        {Array.from({ length: empty }).map((_, i) => (
-          <Ionicons key={`empty-${i}`} name="star-outline" size={14} color="#F5A623" />
-        ))}
+        {Array.from({ length: full }).map((_, i) => <Ionicons key={`f${i}`} name="star" size={14} />)}
+        {half ? <Ionicons name="star-half" size={14} /> : null}
+        {Array.from({ length: empty }).map((_, i) => <Ionicons key={`e${i}`} name="star-outline" size={14} />)}
         <Text style={styles.ratingText}>{Number(rating).toFixed(1)}</Text>
       </View>
     );
   };
 
-  const renderBookingCard = (booking) => {
-    const driverName = getDriverName(booking);
-    const avatarUrl = getDriverAvatarUrl(booking);
-    const rating = getDriverRating(booking);
-    const pkgName = getPackageName(booking);
-    const bookingDate = getBookingDateValue(booking);
-    const pickupTime = getPickupTimeValue(booking);
-    const pax = getNumPax(booking);
-    const addr = getPickupAddress(booking);
-    const contact = getContactNumber(booking);
-    const amount = getTotalAmount(booking);
-    const ref = getBookingReference(booking);
-    const expandId = String(ref || booking.id || 'unknown');
+  // ---------- reusable row
+  const Row = ({ icon, label, value, valueStyle }) => (
+    <View style={styles.row}>
+      <View style={styles.rowLeft}>
+        <Ionicons name={icon} size={16} color="#9aa0a6" />
+        <Text style={styles.rowLabel} numberOfLines={1}>{label}</Text>
+      </View>
+      <Text style={[styles.rowValue, valueStyle]} numberOfLines={2} ellipsizeMode="tail">
+        {String(value ?? '')}
+      </Text>
+    </View>
+  );
+
+  // ---------- verification & reviews helpers
+  const loadVerificationFor = async (booking) => {
+    try {
+      const res = await getVerificationStatus(booking.id, user?.id);
+      const available = !!(res?.data?.verification_available);
+      const url = res?.data?.verification_photo_url || null;
+      setVerificationMap((prev) => ({
+        ...prev,
+        [String(booking.id)]: { checked: true, available, url },
+      }));
+    } catch (e) {
+      setVerificationMap((prev) => ({
+        ...prev,
+        [String(booking.id)]: { checked: true, available: false, url: null },
+      }));
+    }
+  };
+
+  const openRating = (booking, type) => {
+    setRatingValue(0);
+    setRatingComment('');
+    setRatingModal({ visible: true, type, booking });
+  };
+
+  const submitRating = async () => {
+    const bk = ratingModal.booking;
+    if (!bk || !user) return;
+    if (!ratingValue || ratingValue < 1 || ratingValue > 5) {
+      Alert.alert('Select rating', 'Please select a rating from 1 to 5 stars.');
+      return;
+    }
+    try {
+      let res;
+      if (ratingModal.type === 'package') {
+        const packageId = getPackageId(bk);
+        if (!packageId) {
+          Alert.alert('Error', 'Missing package ID for this booking.');
+          return;
+        }
+        res = await createPackageReview({
+          package_id: packageId,
+          booking_id: bk.id,
+          reviewer_id: user.id,
+          rating: ratingValue,
+          comment: ratingComment,
+        });
+      } else {
+        const driverId = getDriverId(bk);
+        if (!driverId) {
+          Alert.alert('Error', 'No driver assigned to this booking.');
+          return;
+        }
+        res = await createDriverReview({
+          driver_id: driverId,
+          booking_id: bk.id,
+          reviewer_id: user.id,
+          rating: ratingValue,
+          comment: ratingComment,
+        });
+      }
+
+      if (res.success) {
+        setRatedMap((prev) => ({
+          ...prev,
+          [String(bk.id)]: {
+            ...(prev[String(bk.id)] || {}),
+            [ratingModal.type]: true,
+          },
+        }));
+        Alert.alert('Thank you!', 'Your review has been submitted.');
+        setRatingModal({ visible: false, type: 'package', booking: null });
+      } else {
+        const msg = res.error || 'Failed to submit review';
+        Alert.alert('Error', msg);
+        // If duplicate, mark as rated to avoid prompting again
+        if (/already exists|already reviewed/i.test(msg)) {
+          setRatedMap((prev) => ({
+            ...prev,
+            [String(bk.id)]: {
+              ...(prev[String(bk.id)] || {}),
+              [ratingModal.type]: true,
+            },
+          }));
+          setRatingModal({ visible: false, type: 'package', booking: null });
+        }
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to submit review');
+    }
+  };
+
+  const StarPicker = ({ value, onChange }) => (
+    <View style={styles.starSelectRow}>
+      {Array.from({ length: 5 }).map((_, i) => {
+        const idx = i + 1;
+        const active = value >= idx;
+        return (
+          <TouchableOpacity key={idx} onPress={() => onChange(idx)}>
+            <Ionicons name={active ? 'star' : 'star-outline'} size={28} color={active ? '#F5A623' : '#999'} />
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  // ---------- booking card
+  const renderBookingCard = (b) => {
+    const pkgName   = getPackageName(b);
+    const date      = getBookingDateValue(b);
+    const time      = getPickupTimeValue(b);
+    const pax       = getNumPax(b);
+    const addr      = getPickupAddress(b);
+    const contact   = getContactNumber(b);
+    const total     = getTotalAmount(b);
+    const ref       = getBookingReference(b);
+
+    const driverName = getDriverName(b);
+    const avatarUrl  = getDriverAvatarUrl(b);
+    const rating     = getDriverRating(b);
+
+    const expandId = String(ref || b.id || 'unknown');
     const isExpanded = !!expandedMap[expandId];
-    const toggleExpand = () => setExpandedMap((prev) => ({ ...prev, [expandId]: !prev[expandId] }));
-    const pkgDetails = getPackageDetails(booking);
+    const toggleExpand = () => {
+      setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
+      // Lazy-load verification details when expanding completed bookings
+      try {
+        if (!isExpanded && String((b.status || '')).toLowerCase() === 'completed' && b?.id && !verificationMap[String(b.id)]) {
+          loadVerificationFor(b);
+        }
+      } catch {}
+    };
+    const pkgDetails = getPackageDetails(b);
+
     return (
-    <View key={booking.id || ref} style={styles.bookingCard}>
-      <TouchableOpacity style={styles.bookingHeader} onPress={toggleExpand} activeOpacity={0.8}>
-        <View style={styles.bookingInfo}>
-          <Text style={styles.cardTitle}>{pkgName || 'Package'}</Text>
-          <Text style={styles.cardSubtitle}>
-            {formatDate(bookingDate)} • {formatTime(pickupTime)}
-          </Text>
-        </View>
-        <View style={styles.headerRight}>
-          <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(booking.status)}20` }]}> 
-            <Ionicons name={getStatusIcon(booking.status)} size={16} color={getStatusColor(booking.status)} />
-            <Text style={[styles.statusBadgeText, { color: getStatusColor(booking.status) }]}>
-              {booking.status || 'Unknown'}
-            </Text>
-          </View>
-          {hasAssignedDriver(booking) && (
-            <View style={styles.driverBadge}>
-              <Ionicons name="person" size={14} color="#1a73e8" />
-              <Text style={styles.driverBadgeText} numberOfLines={1}>
-                {getDriverName(booking)}
+      <View key={b.id || ref} style={styles.card}>
+        {/* Header */}
+        <TouchableOpacity onPress={toggleExpand} activeOpacity={0.85}>
+          <View style={styles.cardHeader}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+                {pkgName || 'Package'}
               </Text>
             </View>
-          )}
-          <Ionicons name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'} size={20} color="#888" />
-        </View>
-      </TouchableOpacity>
 
-      {isExpanded && (
-      <View style={styles.bookingDetails}>
-        {/* Package section */}
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="pricetag-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Package</Text>
-          </View>
-          <Text style={styles.detailValue}>{pkgName || 'N/A'}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="calendar-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Date</Text>
-          </View>
-          <Text style={styles.detailValue}>{formatDate(bookingDate)}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="time-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Pickup Time</Text>
-          </View>
-          <Text style={styles.detailValue}>{formatTime(pickupTime)}</Text>
-        </View>
-
-        {/* Package details (if available) */}
-        {(pkgDetails.durationHours || pkgDetails.maxPax || pkgDetails.pickupLocation || pkgDetails.destination || pkgDetails.route || (Array.isArray(pkgDetails.availableDays) && pkgDetails.availableDays.length > 0) || pkgDetails.description) && (
-          <View style={styles.packageSection}>
-            <Text style={styles.sectionLabel}>Package Details</Text>
-            {pkgDetails.durationHours ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="time-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Duration</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.durationHours} hours</Text>
-              </View>
-            ) : null}
-            {pkgDetails.maxPax ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="people-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Max Pax</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.maxPax}</Text>
-              </View>
-            ) : null}
-            {pkgDetails.pickupLocation ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="navigate-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Pickup</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.pickupLocation}</Text>
-              </View>
-            ) : null}
-            {pkgDetails.destination ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="flag-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Destination</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.destination}</Text>
-              </View>
-            ) : null}
-            {pkgDetails.route ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="map-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Route</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.route}</Text>
-              </View>
-            ) : null}
-            {Array.isArray(pkgDetails.availableDays) && pkgDetails.availableDays.length > 0 ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="calendar-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Available</Text>
-                </View>
-                <Text style={styles.detailValue}>{pkgDetails.availableDays.join(', ')}</Text>
-              </View>
-            ) : null}
-            {pkgDetails.description ? (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="document-text-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Description</Text>
-                </View>
-                <Text style={[styles.detailValue, { textAlign: 'left' }]} numberOfLines={4}>
-                  {pkgDetails.description}
+            <View style={styles.headerRight}>
+              <View style={[styles.statusPill, { backgroundColor: `${getStatusColor(b.status)}1A` }]}>
+                <Ionicons name={getStatusIcon(b.status)} size={14} color={getStatusColor(b.status)} />
+                <Text
+                  style={[styles.statusPillText, { color: getStatusColor(b.status) }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {prettyStatus(b.status)}
                 </Text>
               </View>
-            ) : null}
-          </View>
-        )}
-
-        {/* Driver section (clean UI) */}
-        <View style={styles.driverSection}>
-          <Text style={styles.sectionLabel}>Driver</Text>
-          <View style={styles.driverRow}>
-            <Image source={{ uri: avatarUrl }} style={styles.driverAvatar} />
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>{driverName || 'Not set yet'}</Text>
-              {buildStars(rating)}
+              <Ionicons
+                name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+                size={20}
+                color="#8a8a8a"
+              />
             </View>
           </View>
-        </View>
 
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="people-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Passengers</Text>
+          {/* Sub header: date/time on left, driver chip on right */}
+          <View style={styles.subHeader}>
+            <Text style={styles.subMeta} numberOfLines={1}>
+              {formatDate(date)} • {formatTime(time)}
+            </Text>
+
+            {hasAssignedDriver(b) && (
+              <View style={styles.driverChip}>
+                <Image source={{ uri: avatarUrl }} style={styles.driverChipAvatar} />
+                <Text style={styles.driverChipText} numberOfLines={1} ellipsizeMode="middle">
+                  {driverName}
+                </Text>
+              </View>
+            )}
           </View>
-          <Text style={styles.detailValue}>{pax ?? 'N/A'}</Text>
-        </View>
+        </TouchableOpacity>
 
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="location-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Pickup Address</Text>
-          </View>
-          <Text style={styles.detailValue}>{addr || 'N/A'}</Text>
-        </View>
+        {/* Details */}
+        {isExpanded && (
+          <View style={styles.details}>
+            <Row icon="people-outline" label="Passengers" value={pax ?? 'N/A'} />
+            <Row icon="location-outline" label="Pickup Address" value={addr || 'N/A'} />
+            <Row icon="call-outline" label="Contact" value={contact || 'N/A'} />
 
-        <View style={styles.detailRow}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="call-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Contact</Text>
-          </View>
-          <Text style={styles.detailValue}>{contact || 'N/A'}</Text>
-        </View>
+            {(pkgDetails.durationHours || pkgDetails.maxPax || pkgDetails.pickupLocation || pkgDetails.destination || pkgDetails.route) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Package</Text>
+                {pkgDetails.durationHours ? <Row icon="time-outline" label="Duration" value={`${pkgDetails.durationHours} hours`} /> : null}
+                {pkgDetails.maxPax ? <Row icon="people-outline" label="Max Pax" value={pkgDetails.maxPax} /> : null}
+                {pkgDetails.pickupLocation ? <Row icon="navigate-outline" label="Pickup" value={pkgDetails.pickupLocation} /> : null}
+                {pkgDetails.destination ? <Row icon="flag-outline" label="Destination" value={pkgDetails.destination} /> : null}
+                {pkgDetails.route ? <Row icon="map-outline" label="Route" value={pkgDetails.route} /> : null}
+              </View>
+            )}
 
-        {booking.special_requests && (
-          <View style={styles.detailRow}>
-            <View style={styles.detailLabelRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#999" />
-              <Text style={styles.detailLabel}>Special Requests</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Driver</Text>
+              <View style={styles.driverBlock}>
+                <Image source={{ uri: avatarUrl }} style={styles.driverAvatarLg} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.driverName} numberOfLines={1} ellipsizeMode="middle">
+                    {driverName || 'Not set yet'}
+                  </Text>
+                  {buildStars(rating)}
+                </View>
+              </View>
             </View>
-            <Text style={styles.detailValue}>{booking.special_requests}</Text>
+
+            <Row
+              icon="wallet-outline"
+              label="Total"
+              value={formatCurrency(total)}
+              valueStyle={{ fontWeight: '700', color: '#2E7D32' }}
+            />
+
+            {String((b.status || '')).toLowerCase() === 'completed' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>After Trip</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (ratedMap[String(b.id)]?.package) && styles.actionBtnDisabled]}
+                    onPress={() => openRating(b, 'package')}
+                    disabled={!!ratedMap[String(b.id)]?.package}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="star-outline" size={16} color={MAROON} />
+                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Package</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (!getDriverId(b) || ratedMap[String(b.id)]?.driver) && styles.actionBtnDisabled]}
+                    onPress={() => openRating(b, 'driver')}
+                    disabled={!getDriverId(b) || !!ratedMap[String(b.id)]?.driver}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="person-outline" size={16} color={MAROON} />
+                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Driver</Text>
+                  </TouchableOpacity>
+
+                  {verificationMap[String(b.id)]?.available && (
+                    <TouchableOpacity
+                      style={styles.actionBtn}
+                      onPress={() => setViewer({ visible: true, url: verificationMap[String(b.id)]?.url })}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="image-outline" size={16} color={MAROON} />
+                      <Text style={styles.actionBtnText} numberOfLines={1}>View Photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {verificationMap[String(b.id)]?.checked && !verificationMap[String(b.id)]?.available ? (
+                  <Text style={styles.smallNote}>No verification photo uploaded for this booking.</Text>
+                ) : null}
+              </View>
+            )}
+
+            <Text style={styles.refText}>Ref: {ref || 'N/A'}</Text>
           </View>
         )}
-
-        <View style={[styles.detailRow, { marginTop: 4 }]}>
-          <View style={styles.detailLabelRow}>
-            <Ionicons name="wallet-outline" size={16} color="#999" />
-            <Text style={styles.detailLabel}>Total</Text>
-          </View>
-          <Text style={[styles.detailValue, { fontWeight: '700', color: '#2E7D32' }]}>
-            {formatCurrency(amount)}
-          </Text>
-        </View>
-
-        <Text style={styles.refText}>Ref: {ref || 'N/A'}</Text>
       </View>
-      )}
-    </View>
     );
   };
 
-  const renderCustomRequestCard = (req) => {
-    const title = getCustomTitle(req);
-    const date = getCustomDate(req);
-    const time = getCustomTime(req);
-    const pax = getCustomPax(req);
-    const addr = getCustomPickupAddress(req);
-    const status = getCustomStatus(req);
-    const driver = getCustomDriverName(req);
-    const ref = req?.id;
-    const expandId = `custom-${ref}`;
+  // ---------- custom request helpers (re-using same layout)
+  const getCustomTitle   = (r) => (r?.request_type === 'special_event'
+    ? (r?.event_type || 'Special Event')
+    : (r?.destination || r?.route ? `Custom Tour: ${r.destination || r.route}` : 'Custom Tour'));
+  const getCustomDate    = (r) => r?.preferred_date || r?.event_date || null;
+  const getCustomTime    = (r) => r?.event_time || null;
+  const getCustomPax     = (r) => r?.number_of_pax ?? r?.pax ?? null;
+  const getCustomPickupAddress = (r) => r?.pickup_location || r?.event_address || null;
+  const getCustomStatus  = (r) => r?.status || 'pending';
+  const getCustomDriverName = (r) => r?.driver_name || r?.accepted_driver_name || r?.assigned_driver?.name || null;
+  const hasAssignedDriverForCustom = (r) => !!(getCustomDriverName(r) && String(getCustomDriverName(r)).trim());
+
+  // ---------- custom request card (same design as booking)
+  const renderCustomRequestCard = (r) => {
+    const title  = getCustomTitle(r);
+    const date   = getCustomDate(r);
+    const time   = getCustomTime(r);
+    const pax    = getCustomPax(r);
+    const addr   = getCustomPickupAddress(r);
+    const status = getCustomStatus(r);
+    const driver = getCustomDriverName(r);
+
+    const expandId = `custom-${r?.id}`;
     const isExpanded = !!expandedMap[expandId];
-    const toggleExpand = () => setExpandedMap((prev) => ({ ...prev, [expandId]: !prev[expandId] }));
+    const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
 
     return (
-      <View key={expandId} style={styles.bookingCard}>
-        <TouchableOpacity style={styles.bookingHeader} onPress={toggleExpand} activeOpacity={0.8}>
-          <View style={styles.bookingInfo}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={styles.typeBadge}>
-                <Ionicons name={req?.request_type === 'special_event' ? 'calendar' : 'construct'} size={12} color="#6B2E2B" />
-                <Text style={styles.typeBadgeText}>{req?.request_type === 'special_event' ? 'Special Event' : 'Custom Tour'}</Text>
-              </View>
-              <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
-            </View>
-            <Text style={styles.cardSubtitle}>
-              {formatDate(date)}{time ? ` • ${formatTime(time)}` : ''}
-            </Text>
-          </View>
-          <View style={styles.headerRight}>
-            <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(status)}20` }]}> 
-              <Ionicons name={getStatusIcon(status)} size={16} color={getStatusColor(status)} />
-              <Text style={[styles.statusBadgeText, { color: getStatusColor(status) }]}>
-                {status || 'Unknown'}
+      <View key={expandId} style={styles.card}>
+        <TouchableOpacity onPress={toggleExpand} activeOpacity={0.85}>
+          {/* Header */}
+          <View style={styles.cardHeader}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+                {title}
               </Text>
             </View>
-            {hasAssignedDriverForCustom(req) && (
-              <View style={styles.driverBadge}>
+
+            <View style={styles.headerRight}>
+              <View style={[styles.statusPill, { backgroundColor: `${getStatusColor(status)}1A` }]}>
+                <Ionicons name={getStatusIcon(status)} size={14} color={getStatusColor(status)} />
+                <Text style={[styles.statusPillText, { color: getStatusColor(status) }]} numberOfLines={1}>
+                  {prettyStatus(status)}
+                </Text>
+              </View>
+              <Ionicons
+                name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+                size={20}
+                color="#8a8a8a"
+              />
+            </View>
+          </View>
+
+          {/* Sub header row: type badge on left, driver chip on right (like bookings) */}
+          <View style={styles.subHeader}>
+            <View style={styles.typePill}>
+              <Ionicons
+                name={r?.request_type === 'special_event' ? 'calendar' : 'construct'}
+                size={12}
+                color={MAROON}
+              />
+              <Text style={styles.typePillText} numberOfLines={1}>
+                {r?.request_type === 'special_event' ? 'Special Event' : 'Custom Tour'}
+              </Text>
+            </View>
+
+            <Text style={[styles.subMeta, { marginLeft: 8 }]} numberOfLines={1}>
+              {formatDate(date)}{time ? ` • ${formatTime(time)}` : ''}
+            </Text>
+
+            {hasAssignedDriverForCustom(r) && (
+              <View style={styles.driverChip}>
                 <Ionicons name="person" size={14} color="#1a73e8" />
-                <Text style={styles.driverBadgeText} numberOfLines={1}>
+                <Text style={styles.driverChipText} numberOfLines={1} ellipsizeMode="middle">
                   {driver}
                 </Text>
               </View>
             )}
-            <Ionicons name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'} size={20} color="#888" />
           </View>
         </TouchableOpacity>
 
         {isExpanded && (
-          <View style={styles.bookingDetails}>
-            <View style={styles.detailRow}>
-              <View style={styles.detailLabelRow}>
-                <Ionicons name="people-outline" size={16} color="#999" />
-                <Text style={styles.detailLabel}>Passengers</Text>
-              </View>
-              <Text style={styles.detailValue}>{pax ?? 'N/A'}</Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <View style={styles.detailLabelRow}>
-                <Ionicons name="location-outline" size={16} color="#999" />
-                <Text style={styles.detailLabel}>Pickup Address</Text>
-              </View>
-              <Text style={styles.detailValue}>{addr || 'N/A'}</Text>
-            </View>
-
-            {!!req?.special_requests && (
-              <View style={styles.detailRow}>
-                <View style={styles.detailLabelRow}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={16} color="#999" />
-                  <Text style={styles.detailLabel}>Special Requests</Text>
-                </View>
-                <Text style={styles.detailValue}>{req.special_requests}</Text>
-              </View>
+          <View style={styles.details}>
+            <Row icon="people-outline" label="Passengers" value={pax ?? 'N/A'} />
+            <Row icon="location-outline" label="Pickup Address" value={addr || 'N/A'} />
+            {!!r?.special_requests && (
+              <Row icon="chatbubble-ellipses-outline" label="Special Requests" value={r.special_requests} />
             )}
-
-            <Text style={styles.refText}>Req ID: {ref}</Text>
+            <Text style={styles.refText}>Req ID: {r?.id}</Text>
           </View>
         )}
       </View>
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="calendar-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Bookings Found</Text>
-      <Text style={styles.emptyStateSubtitle}>
-        You haven't made any bookings yet. Start exploring our tour packages!
-      </Text>
-      <TouchableOpacity 
-        style={styles.exploreButton}
-        onPress={() => navigation.navigate('TouristHome')}
-      >
-        <Text style={styles.exploreButtonText}>Explore Packages</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  // Derived filtered list
-  const filterMatches = (booking) => {
-    const status = (booking.status || '').toLowerCase();
+  // ---------- derived lists / counts (single filter path)
+  const filterMatches = (item) => {
+    const status = (item?.status || '').toLowerCase();
     if (activeFilter === 'all') return true;
     if (activeFilter === 'upcoming') return status === 'pending' || status === 'confirmed';
     if (activeFilter === 'completed') return status === 'completed';
@@ -665,38 +599,23 @@ export default function BookScreen({ navigation }) {
     return true;
   };
 
-  const searchMatches = (booking) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.trim().toLowerCase();
-    return (
-      (booking.booking_reference || '').toLowerCase().includes(q) ||
-      (booking.package_name || '').toLowerCase().includes(q)
-    );
-  };
-
-  const filteredBookings = bookings.filter((b) => filterMatches(b) && searchMatches(b));
-
-  // Merge custom requests into the list, labeled differently and searchable by simple key fields
-  const filteredCustom = customRequests.filter((r) => {
+  const searchMatches = (b) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.trim().toLowerCase();
     const composite = [
-      r.id,
-      r.request_type,
-      r.destination,
-      r.event_type,
-      r.status,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
+      b?.booking_reference, b?.package_name, b?.tour_package_name, b?.packageTitle, b?.name,
+      b?.id, b?.request_type, b?.destination, b?.event_type, b?.status
+    ].filter(Boolean).join(' ').toLowerCase();
     return composite.includes(q);
-  });
+  };
 
-  // Compute counts for filter chips (no hooks to avoid conditional hook issues)
+  const filteredBookings = bookings.filter((b) => filterMatches(b) && searchMatches(b));
+  const filteredCustom   = customRequests.filter((r) => filterMatches(r) && searchMatches(r));
+
   const statusCounts = (() => {
-    const counts = { all: bookings.length, upcoming: 0, confirmed: 0, pending: 0, completed: 0, cancelled: 0 };
-    for (const b of bookings) {
+    const allItems = bookings; // counts are for tour bookings only (as before)
+    const counts = { all: allItems.length, upcoming: 0, confirmed: 0, pending: 0, completed: 0, cancelled: 0 };
+    for (const b of allItems) {
       const s = (b.status || '').toLowerCase();
       if (s === 'pending' || s === 'confirmed') counts.upcoming += 1;
       if (counts[s] !== undefined) counts[s] += 1;
@@ -713,78 +632,76 @@ export default function BookScreen({ navigation }) {
     { key: 'cancelled', label: 'Cancelled', icon: 'close-circle-outline' },
   ];
 
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="bicycle-outline" size={40} color="#c7b7a3" />
+      <Text style={styles.emptyTitle}>No bookings yet</Text>
+      <Text style={styles.emptySub}>
+        When you book a tour or create a custom request, it will show up here.
+      </Text>
+      <TouchableOpacity style={styles.cta} onPress={() => navigation.navigate('Home')}>
+        <Text style={styles.ctaText}>Explore Packages</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ---------- render
   return (
     <View style={styles.container}>
+      {/* Search */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color="#fff" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by reference or package"
+          placeholderTextColor="#fff"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={18} color="#fff" />
+          </TouchableOpacity>
+        )}
+      </View>
+
       <View style={styles.content}>
+        {/* Title + actions */}
         <View style={styles.header}>
-          <Text style={styles.title}>My Bookings</Text>
-          <Text style={styles.subtitle}>
-            {user?.name || user?.user_metadata?.name || user?.email || 'User'}'s booking history
-          </Text>
+          <Text style={styles.pageTitle}>My Bookings</Text>
           <View style={styles.headerActions}>
             {(user?.role === 'tourist' || (!user?.role && user)) && (
-              <TouchableOpacity 
-                style={styles.pillButton}
-                onPress={() => navigation.navigate('CustomRequestHistory')}
-              >
+              <TouchableOpacity style={styles.pillBtn} onPress={() => navigation.navigate('CustomRequestHistory')}>
                 <Ionicons name="time-outline" size={16} color="#fff" />
-                <Text style={styles.pillButtonText}>Custom Requests</Text>
+                <Text style={styles.pillBtnText}>Custom Requests</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity 
-              style={[styles.pillButton, { backgroundColor: '#444' }]}
-              onPress={() => fetchUserAndBookings()}
-            >
+            <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444' }]} onPress={fetchUserAndBookings}>
               <Ionicons name="refresh" size={16} color="#fff" />
-              <Text style={styles.pillButtonText}>Refresh</Text>
+              <Text style={styles.pillBtnText}>Refresh</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Search */}
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color="#888" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by reference or package"
-            placeholderTextColor="#888"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color="#bbb" />
-            </TouchableOpacity>
-          )}
-        </View>
-
         {/* Filters */}
-        <View style={styles.filterDropdownContainer}>
-          <TouchableOpacity
-            style={styles.filterDropdownButton}
-            onPress={() => setShowFilterPicker(true)}
-            activeOpacity={0.8}
-          >
+        <View style={styles.filtersRow}>
+          <Text style={styles.filtersLabel}>Filters</Text>
+          <TouchableOpacity style={styles.filterBtn} onPress={() => setShowFilterPicker(true)} activeOpacity={0.85}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name={FILTERS.find(f => f.key === activeFilter)?.icon || 'filter'} size={16} color={MAROON} />
-              <Text style={styles.filterDropdownLabel} numberOfLines={1}>
-                {FILTERS.find(f => f.key === activeFilter)?.label || 'Filter'}
+              <Ionicons name={FILTERS.find((f) => f.key === activeFilter)?.icon || 'filter'} size={16} color={MAROON} />
+              <Text style={styles.filterBtnLabel} numberOfLines={1}>
+                {FILTERS.find((f) => f.key === activeFilter)?.label || 'Filter'}
               </Text>
-              <View style={styles.filterCountPill}>
-                <Text style={styles.filterCountText}>{statusCounts[activeFilter] ?? 0}</Text>
+              <View style={styles.countPill}>
+                <Text style={styles.countPillText}>{statusCounts[activeFilter] ?? 0}</Text>
               </View>
             </View>
             <Ionicons name="chevron-down" size={16} color="#666" />
           </TouchableOpacity>
         </View>
 
-        {/* Filter Picker Modal */}
-        <Modal
-          visible={showFilterPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowFilterPicker(false)}
-        >
+        {/* Filter modal */}
+        <Modal visible={showFilterPicker} transparent animationType="fade" onRequestClose={() => setShowFilterPicker(false)}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <View style={styles.modalHeader}>
@@ -794,37 +711,109 @@ export default function BookScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
               <ScrollView style={{ maxHeight: 300 }}>
-                {FILTERS.map((f) => (
-                  <TouchableOpacity
-                    key={f.key}
-                    style={[styles.modalOption, activeFilter === f.key && styles.modalOptionActive]}
-                    onPress={() => { setActiveFilter(f.key); setShowFilterPicker(false); }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Ionicons name={f.icon} size={16} color={activeFilter === f.key ? MAROON : '#666'} />
-                      <Text style={[styles.modalOptionText, activeFilter === f.key && { color: MAROON, fontWeight: '700' }]}>
-                        {f.label}
-                      </Text>
-                    </View>
-                    <View style={[styles.countBadge, activeFilter === f.key && styles.countBadgeActive]}>
-                      <Text style={[styles.countBadgeText, activeFilter === f.key && styles.countBadgeTextActive]}>
-                        {statusCounts[f.key] ?? 0}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {FILTERS.map((f) => {
+                  const active = activeFilter === f.key;
+                  return (
+                    <TouchableOpacity
+                      key={f.key}
+                      style={[styles.modalOption, active && styles.modalOptionActive]}
+                      onPress={() => { setActiveFilter(f.key); setShowFilterPicker(false); }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Ionicons name={f.icon} size={16} color={active ? MAROON : '#666'} />
+                        <Text style={[styles.modalOptionText, active && { color: MAROON, fontWeight: '700' }]}
+                        >
+                          {f.label}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={[styles.smallPill, active && styles.smallPillActive]}>
+                          <Text style={[styles.smallPillText, active && styles.smallPillTextActive]}>
+                            {statusCounts[f.key] ?? 0}
+                          </Text>
+                        </View>
+                        {active ? <Ionicons name="checkmark-circle" size={18} color={MAROON} /> : null}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
           </View>
         </Modal>
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading your bookings...</Text>
+        {/* Rating modal */}
+        <Modal
+          visible={ratingModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRatingModal({ visible: false, type: 'package', booking: null })}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {ratingModal.type === 'package' ? 'Rate Package' : 'Rate Driver'}
+                </Text>
+                <TouchableOpacity onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                <StarPicker value={ratingValue} onChange={setRatingValue} />
+                <Text style={{ marginTop: 8, fontSize: 12, color: '#777' }}>Optional comment</Text>
+                <TextInput
+                  style={styles.modalTextarea}
+                  placeholder="Share your experience"
+                  placeholderTextColor="#999"
+                  value={ratingComment}
+                  onChangeText={setRatingComment}
+                  multiline
+                />
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                  <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444', flex: 1 }]} onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
+                    <Text style={styles.pillBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.pillBtn, { flex: 1 }]} onPress={submitRating}>
+                    <Text style={styles.pillBtnText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           </View>
+        </Modal>
+
+        {/* Verification viewer */}
+        <Modal
+          visible={viewer.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewer({ visible: false, url: null })}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Verification Photo</Text>
+                <TouchableOpacity onPress={() => setViewer({ visible: false, url: null })}>
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                {viewer.url ? (
+                  <Image source={{ uri: viewer.url }} style={styles.viewerImage} />
+                ) : (
+                  <Text style={{ color: '#666' }}>No photo available</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
+        {/* Lists */}
+        {loading ? (
+          <View style={styles.loadingContainer}><Text style={styles.loadingText}>Loading your bookings...</Text></View>
         ) : (
-          <ScrollView 
-            style={styles.scrollView}
+          <ScrollView
+            style={{ flex: 1 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             showsVerticalScrollIndicator={false}
           >
@@ -832,18 +821,16 @@ export default function BookScreen({ navigation }) {
               renderEmptyState()
             ) : (
               <>
-                {/* Standard tour bookings */}
                 {filteredBookings.length > 0 && (
                   <>
-                    <Text style={styles.listSectionLabel}>Tour Bookings</Text>
+                    <Text style={styles.sectionCaption}>Tour Bookings</Text>
                     {filteredBookings.map(renderBookingCard)}
                   </>
                 )}
 
-                {/* Custom requests */}
                 {filteredCustom.length > 0 && (
                   <>
-                    <Text style={styles.listSectionLabel}>Custom Requests</Text>
+                    <Text style={styles.sectionCaption}>Custom Requests</Text>
                     {filteredCustom.map(renderCustomRequestCard)}
                   </>
                 )}
@@ -857,363 +844,124 @@ export default function BookScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  header: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  headerActions: {
+  container: { flex: 1, backgroundColor: '#fff' },
+  content: { flex: 1, paddingHorizontal: 16 },
+
+  // search
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    gap: 8,
-  },
-  historyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6B2E2B',
+    backgroundColor: MAROON,
+    borderRadius: 18,
+    marginHorizontal: 16,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    height: 36,
+    marginTop: 18,
   },
-  historyButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  bookingCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+  searchInput: { flex: 1, color: '#fff', marginLeft: 6, fontSize: 13 },
+
+  // top header
+  header: { paddingVertical: 12, alignItems: 'center' },
+  pageTitle: { fontSize: 24, fontWeight: 'bold', color: '#222', marginBottom: 10, marginTop: 4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+
+  pillBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: MAROON, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  pillBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // filters
+  filtersRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, marginBottom: 6 },
+  filtersLabel: { fontSize: 12, letterSpacing: 0.6, color: '#999', fontWeight: '700', textTransform: 'uppercase' },
+  filterBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minWidth: 140 },
+  filterBtnLabel: { color: '#333', fontWeight: '700' },
+  countPill: { backgroundColor: '#F5E9E2', borderColor: '#E0CFC2', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
+  countPillText: { color: MAROON, fontWeight: '700', fontSize: 12 },
+
+  // modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalCard: { backgroundColor: '#fff', borderRadius: 14, width: '90%', maxWidth: 420, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#333' },
+  modalOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f6f6f6' },
+  modalOptionActive: { backgroundColor: '#F9F2EE' },
+  modalOptionText: { color: '#333', fontSize: 14 },
+  smallPill: { backgroundColor: '#f0f0f0', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
+  smallPillActive: { backgroundColor: '#EED7CD' },
+  smallPillText: { fontSize: 10, fontWeight: '700', color: '#666' },
+  smallPillTextActive: { color: MAROON },
+
+  // modal forms
+  modalTextarea: { marginTop: 8, minHeight: 80, borderWidth: 1, borderColor: '#eee', borderRadius: 8, padding: 10, color: '#333' },
+  starSelectRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  viewerImage: { width: '100%', height: 320, borderRadius: 10, resizeMode: 'cover', backgroundColor: '#eee' },
+
+  // sections
+  sectionCaption: { marginTop: 8, marginBottom: 6, color: '#999', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700' },
+
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee', borderRadius: 999 },
+  actionBtnText: { color: MAROON, fontSize: 12, fontWeight: '700' },
+  actionBtnDisabled: { opacity: 0.5 },
+  smallNote: { fontSize: 12, color: '#9aa0a6', marginTop: 6 },
+
+  // card
+  card: {
+    backgroundColor: '#fafafa',
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#eee',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 1,
   },
-  bookingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  bookingInfo: {
-    flex: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#222' },
-  cardSubtitle: { fontSize: 12, color: '#777', marginTop: 2 },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusBadgeText: { fontSize: 12, fontWeight: '700' },
-  bookingDetails: {
-    gap: 8,
-  },
-  driverBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#E3F2FD',
-    borderColor: '#BBDEFB',
-    borderWidth: 1,
-    borderRadius: 999,
-    maxWidth: 160,
-  },
-  driverBadgeText: {
-    fontSize: 12,
-    color: '#1a73e8',
-    fontWeight: '700',
-    maxWidth: 120,
-  },
-  packageSection: {
-    marginTop: 6,
-    marginBottom: 2,
-    gap: 8,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  driverSection: {
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  driverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  driverAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#eee',
-    backgroundColor: '#fafafa',
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '600',
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    gap: 2,
-  },
-  ratingText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 6,
-    fontWeight: '600',
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-    flex: 1,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#333',
-    flex: 2,
-    textAlign: 'right',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 24,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 20,
-  },
-  exploreButton: {
-    backgroundColor: MAROON,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  exploreButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  debugButton: {
-    display: 'none',
-  },
-  debugButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#333',
-  },
-  filtersRow: {
-    paddingHorizontal: 8,
-    marginBottom: 12,
-  },
-  filterDropdownContainer: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  filterDropdownButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#eee',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  filterDropdownLabel: { color: '#333', fontWeight: '700' },
-  filterCountPill: {
-    backgroundColor: '#F5E9E2',
-    borderColor: '#E0CFC2',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  filterCountText: { color: MAROON, fontWeight: '700', fontSize: 12 },
-  filterChip: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#eee',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    marginHorizontal: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  filterChipActive: {
-    backgroundColor: '#F5E9E2',
-    borderColor: '#E0CFC2',
-  },
-  filterChipText: { color: '#666', fontWeight: '700', fontSize: 12 },
-  filterChipTextActive: {
-    color: MAROON,
-  },
-  countBadge: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 999,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  countBadgeActive: {
-    backgroundColor: '#EED7CD',
-  },
-  countBadgeText: { fontSize: 10, fontWeight: '700', color: '#666' },
-  countBadgeTextActive: { color: MAROON },
-  detailLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  refText: { marginTop: 10, fontSize: 12, color: '#999', textAlign: 'right' },
-  listSectionLabel: {
-    marginTop: 8,
-    marginBottom: 6,
-    color: '#999',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    fontWeight: '700',
-  },
-  pillButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: MAROON,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  pillButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  // Modal base styles (reused)
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxWidth: 420,
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#333' },
-  modalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f6f6f6',
-  },
-  modalOptionActive: { backgroundColor: '#F9F2EE' },
-  modalOptionText: { color: '#333', fontSize: 14 },
+
+  // card header & subheader
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+
+  titleText: { fontSize: 16, fontWeight: '700', color: '#222', flexShrink: 1 },
+  subHeader: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  subMeta: { fontSize: 12, color: '#666', flex: 1, minWidth: 0 },
+
+  // pills / chips
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, maxWidth: 160 },
+  statusPillText: { fontSize: 12, fontWeight: '700', flexShrink: 1 },
+
+  typePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#F5E9E2', borderColor: '#E0CFC2', borderWidth: 1, borderRadius: 999, alignSelf: 'flex-start' },
+  typePillText: { fontSize: 10, color: MAROON, fontWeight: '700' },
+
+  driverChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#E3F2FD', borderColor: '#BBDEFB', borderWidth: 1, borderRadius: 999, maxWidth: 200 },
+  driverChipAvatar: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff' },
+  driverChipText: { fontSize: 12, color: '#1a73e8', fontWeight: '700', maxWidth: 164 },
+
+  // details
+  details: { marginTop: 10, gap: 10 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0, width: 140 },
+  rowLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
+  rowValue: { flex: 1, fontSize: 14, color: '#333', textAlign: 'right', minWidth: 0 },
+
+  section: { marginTop: 6, gap: 8 },
+  sectionLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700' },
+  driverBlock: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  driverAvatarLg: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: '#eee', backgroundColor: '#fff' },
+  driverName: { fontSize: 14, color: '#333', fontWeight: '700' },
+
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+  ratingText: { fontSize: 12, color: '#666', marginLeft: 6, fontWeight: '600' },
+
+  refText: { marginTop: 8, fontSize: 12, color: '#9aa0a6', textAlign: 'right' },
+
+  // empty
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: '#666' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 16, marginBottom: 8 },
+  emptySub: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },
+  cta: { backgroundColor: MAROON, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

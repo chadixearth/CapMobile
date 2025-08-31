@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, StyleSheet } from 'react-native';
-import GoogleMap from '../../components/GoogleMap';
+import UniversalMap from '../../components/UniversalMap';
 import BackButton from '../../components/BackButton';
 
 const TERMINALS = [
@@ -32,7 +32,7 @@ const TerminalsScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       
       <View style={styles.mapContainer}>
-        <GoogleMap
+        <UniversalMap
           region={DEFAULT_REGION}
           markers={TERMINALS.map(t => ({
             latitude: t.latitude,
@@ -40,14 +40,11 @@ const TerminalsScreen = ({ navigation, route }) => {
             title: t.name,
             description: `Tap to select as ${type}`,
             id: t.id,
-            pinColor: selectedId === t.id ? '#6B2E2B' : undefined,
-            onPress: () => handleMarkerPress(t),
+            pointType: 'terminal',
+            iconColor: selectedId === t.id ? '#6B2E2B' : '#00AA00',
           }))}
-          onMarkerPress={e => {
-            const markerId = e.nativeEvent.id;
-            const terminal = TERMINALS.find(t => t.id === markerId);
-            if (terminal) handleMarkerPress(terminal);
-          }}
+          mapStyle="CARTO_VOYAGER"
+          showSatellite={false}
         />
       </View>
     </SafeAreaView>

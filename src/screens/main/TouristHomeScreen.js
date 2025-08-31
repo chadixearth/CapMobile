@@ -18,8 +18,8 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import GoogleMap from '../../components/GoogleMap';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import UniversalMap from '../../components/UniversalMap';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
@@ -445,7 +445,7 @@ export default function TouristHomeScreen({ navigation }) {
 
           {/* Map */}
           <View style={styles.mapWrap}>
-            <GoogleMap
+            <UniversalMap
               style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
               region={mapRegion}
               onPress={handleMapPress}

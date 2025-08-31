@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
 import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
@@ -26,6 +27,7 @@ export default function LoginScreen({ navigation, setRole, setIsAuthenticated })
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showDeletionWarning, setShowDeletionWarning] = useState(false);
 
   const handleLogin = async () => {
     setError('');
@@ -34,13 +36,42 @@ export default function LoginScreen({ navigation, setRole, setIsAuthenticated })
       const allowedRoles = ['tourist', 'driver', 'owner'];
       const result = await loginUser(email, password, allowedRoles);
       setLoading(false);
+      
       if (result.success) {
-        const userRole = result.user?.role || 'tourist';
-        setRole?.(userRole);
-        setIsAuthenticated?.(true);
-        navigation.reset({ index: 0, routes: [{ name: Routes.MAIN }] });
+        // Check if account deletion was cancelled
+        if (result.deletion_cancelled || result.account_reactivated) {
+          // Show success alert about cancelled deletion
+          Alert.alert(
+            '🎉 Welcome Back!',
+            'Good news! Your scheduled account deletion has been automatically cancelled. Your account is now fully active and all your data is safe.',
+            [
+              {
+                text: 'Great!',
+                onPress: () => {
+                  const userRole = result.user?.role || 'tourist';
+                  setRole?.(userRole);
+                  setIsAuthenticated?.(true);
+                  navigation.reset({ index: 0, routes: [{ name: Routes.MAIN }] });
+                },
+                style: 'default'
+              }
+            ],
+            { cancelable: false }
+          );
+        } else {
+          // Normal login flow
+          const userRole = result.user?.role || 'tourist';
+          setRole?.(userRole);
+          setIsAuthenticated?.(true);
+          navigation.reset({ index: 0, routes: [{ name: Routes.MAIN }] });
+        }
       } else {
-        setError(result.error || 'Login failed.');
+        // Check if account is suspended for deletion
+        if (result.account_suspended || result.deletion_scheduled) {
+          setError('Your account is scheduled for deletion. Please contact support if you need assistance.');
+        } else {
+          setError(result.error || 'Login failed.');
+        }
       }
     } catch (e) {
       setLoading(false);

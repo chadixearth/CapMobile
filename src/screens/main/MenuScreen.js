@@ -18,6 +18,7 @@ import { getCurrentUser, getUserProfile } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
+import { requestAccountDeletion } from '../../services/accountDeletionService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -30,6 +31,8 @@ export default function MenuScreen({ navigation }) {
   const [fetching, setFetching] = useState(true);
   const [logoutVisible, setLogoutVisible] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const auth = useAuth();
 
   const fetchUser = async () => {
@@ -77,6 +80,55 @@ export default function MenuScreen({ navigation }) {
       setLoggingOut(false);
       setLogoutVisible(false);
       navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+    }
+  };
+
+  const openDeleteAccountConfirm = () => setDeleteAccountVisible(true);
+  const closeDeleteAccountConfirm = () => {
+    if (!deletingAccount) setDeleteAccountVisible(false);
+  };
+
+  const doDeleteAccount = async () => {
+    if (!user?.id) {
+      console.error('No user ID available for account deletion');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const result = await requestAccountDeletion(user.id, 'User requested account deletion from mobile app');
+      
+      if (result.success) {
+        // Account deletion is scheduled for 7 days
+        // User will be logged out immediately
+        const days = result.days_remaining || 7;
+        const deletionDate = result.scheduled_deletion_at 
+          ? new Date(result.scheduled_deletion_at).toLocaleDateString()
+          : 'in 7 days';
+        
+        // Show success message about the 7-day deletion schedule
+        alert(
+          `Account Deletion Scheduled\n\n` +
+          `Your account will be permanently deleted on ${deletionDate}.\n\n` +
+          `You have ${days} days to change your mind.\n\n` +
+          `To cancel the deletion, simply log in again and your account will be automatically reactivated.\n\n` +
+          `You will now be logged out.`
+        );
+        
+        // Logout user immediately as required by the API
+        setTimeout(async () => {
+          await auth.logout();
+          navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+        }, 100);
+      } else {
+        alert(`Failed to request account deletion: ${result.error || 'Unknown error occurred'}`);
+      }
+    } catch (error) {
+      console.error('Account deletion error:', error);
+      alert('An error occurred while requesting account deletion. Please try again.');
+    } finally {
+      setDeletingAccount(false);
+      setDeleteAccountVisible(false);
     }
   };
 
@@ -185,6 +237,15 @@ export default function MenuScreen({ navigation }) {
             label="Privacy Policy"
             onPress={() => navigation.navigate(Routes.PRIVACY || 'Privacy')}
           />
+          <Divider />
+          <ProfileItem
+            icon={
+              <MaterialIcons name="delete-forever" size={22} color="#DC3545" />
+            }
+            label="Delete Account"
+            onPress={openDeleteAccountConfirm}
+            textStyle={{ color: '#DC3545' }}
+          />
         </View>
 
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
@@ -226,9 +287,8 @@ export default function MenuScreen({ navigation }) {
               <Ionicons name="log-out-outline" size={30} color={MAROON} />
             </View>
 
-            
             <Text style={styles.modalDesc}>
-              You will be signed out of your account. You’ll need to log in
+              You will be signed out of your account. You'll need to log in
               again to continue.
             </Text>
 
@@ -253,15 +313,59 @@ export default function MenuScreen({ navigation }) {
                 {loggingOut ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <>
-                    {/* <Ionicons
-                      name="exit-outline"
-                      size={16}
-                      color="#fff"
-                      style={{ marginRight: 6 }}
-                    /> */}
-                    <Text style={styles.modalPrimaryText}>Log out</Text>
-                  </>
+                  <Text style={styles.modalPrimaryText}>Log out</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={deleteAccountVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeleteAccountConfirm}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, { backgroundColor: '#FDEAEA' }]}>
+              <MaterialIcons name="delete-forever" size={30} color="#DC3545" />
+            </View>
+
+            <Text style={styles.modalTitle}>Delete Account</Text>
+            <Text style={styles.modalDesc}>
+              Your account will be scheduled for deletion in 7 days. During this time,{' '}
+              you can change your mind and cancel the deletion by simply logging in again.{' '}
+              After 7 days, all your data will be permanently deleted and cannot be recovered.
+            </Text>
+            <Text style={[styles.modalDesc, { fontWeight: '600', color: '#DC3545', marginTop: 4 }]}>
+              You will be logged out immediately after confirming.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={closeDeleteAccountConfirm}
+                disabled={deletingAccount}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  { backgroundColor: '#DC3545' },
+                  deletingAccount && { opacity: 0.7 },
+                ]}
+                onPress={doDeleteAccount}
+                disabled={deletingAccount}
+              >
+                {deletingAccount ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalPrimaryText}>Delete Account</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -384,6 +488,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#1F1F1F',
+    marginBottom: 8,
   },
   modalDesc: {
     textAlign: 'center',
@@ -392,6 +497,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 16,
     paddingHorizontal: 8,
+    lineHeight: 20,
   },
   modalButtons: {
     flexDirection: 'row',

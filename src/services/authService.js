@@ -141,6 +141,11 @@ async function clearStoredSession() {
   }
 }
 
+// Expose a safe helper for other modules (does not call network)
+export async function clearLocalSession() {
+  await clearStoredSession();
+}
+
 /**
  * Register a new user with email, password, and role
  * Supports roles: tourist, driver, owner (admin is web-only)
@@ -216,6 +221,8 @@ export async function loginUser(email, password, allowedRoles = null) {
       user: result.data.user,
       session: result.data.session,
       message: result.data.message,
+      deletion_cancelled: result.data.deletion_cancelled,
+      account_reactivated: result.data.account_reactivated,
     };
   }
 
