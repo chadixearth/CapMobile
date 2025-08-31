@@ -141,6 +141,11 @@ async function clearStoredSession() {
   }
 }
 
+// Expose a safe helper for other modules (does not call network)
+export async function clearLocalSession() {
+  await clearStoredSession();
+}
+
 /**
  * Register a new user with email, password, and role
  * Supports roles: tourist, driver, owner (admin is web-only)

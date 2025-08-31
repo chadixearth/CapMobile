@@ -1,21 +1,42 @@
 import * as React from 'react';
-import { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import RootNavigator from './navigation/RootNavigator';
 import AppInitService from './services/AppInitService';
+import { installFetchInterceptor, wasSessionExpiredFlagSet, clearSessionExpiredFlag } from './services/fetchInterceptor';
+import { on, off, EVENTS } from './services/eventBus';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
+  const navRef = useRef(createNavigationContainerRef());
 
   useEffect(() => {
+    // Install fetch interceptor once
+    installFetchInterceptor();
+
     initializeApp();
   }, []);
 
   const initializeApp = async () => {
     try {
       console.log('[App] Starting app initialization...');
+
+      // If previous session expired flag is set (e.g., app was backgrounded), show message once
+      if (await wasSessionExpiredFlagSet()) {
+        try { await clearSessionExpiredFlag(); } catch {}
+        // Defer alert slightly to avoid during splash
+        setTimeout(() => {
+          Alert.alert('Session expired', 'Your session has expired. Please log in again.');
+          // Navigation will go to Welcome once RootNavigator loads auth state,
+          // but we also try to reset here just in case
+          if (navRef.current?.isReady?.()) {
+            navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+          }
+        }, 600);
+      }
+
       const result = await AppInitService.initialize();
       
       if (result.errors && result.errors.length > 0) {
@@ -38,6 +59,18 @@ export default function App() {
     }
   };
 
+  // Subscribe to session expiry event
+  useEffect(() => {
+    const handler = () => {
+      Alert.alert('Session expired', 'Your session has expired. Please log in again.');
+      if (navRef.current?.isReady?.()) {
+        navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+      }
+    };
+    on(EVENTS.SESSION_EXPIRED, handler);
+    return () => off(EVENTS.SESSION_EXPIRED, handler);
+  }, []);
+
   if (isInitializing) {
     return (
       <View style={styles.splashContainer}>
@@ -51,7 +84,7 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navRef}>
       <RootNavigator />
     </NavigationContainer>
   );

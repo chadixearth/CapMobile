@@ -17,6 +17,8 @@ import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerCustomRequests } from '../../services/specialpackage/customPackageRequest';
+import { createPackageReview, createDriverReview } from '../../services/reviews';
+import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 
 const MAROON = '#6B2E2B';
 
@@ -37,6 +39,15 @@ export default function BookScreen({ navigation }) {
 
   // custom requests (no separate filter)
   const [customRequests, setCustomRequests] = useState([]);
+
+  // reviews & verification UI state
+  const [ratedMap, setRatedMap] = useState({}); // { [bookingId]: { package: bool, driver: bool } }
+  const [verificationMap, setVerificationMap] = useState({}); // { [bookingId]: { checked: bool, available: bool, url: string|null } }
+  const [viewer, setViewer] = useState({ visible: false, url: null });
+
+  const [ratingModal, setRatingModal] = useState({ visible: false, type: 'package', booking: null });
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingComment, setRatingComment] = useState('');
 
   useEffect(() => {
     if (!auth.loading && !auth.isAuthenticated) {
@@ -185,6 +196,9 @@ export default function BookScreen({ navigation }) {
   };
   const hasAssignedDriver = (b) => !!getDriverName(b);
 
+  const getDriverId = (b) => b?.driver_id || b?.assigned_driver_id || b?.driver?.id || b?.assigned_driver?.id || null;
+  const getPackageId = (b) => b?.package_id || b?.package?.id || b?.tour_package_id || null;
+
   const buildStars = (rating) => {
     if (rating == null) return null;
     const full = Math.floor(rating);
@@ -213,6 +227,111 @@ export default function BookScreen({ navigation }) {
     </View>
   );
 
+  // ---------- verification & reviews helpers
+  const loadVerificationFor = async (booking) => {
+    try {
+      const res = await getVerificationStatus(booking.id, user?.id);
+      const available = !!(res?.data?.verification_available);
+      const url = res?.data?.verification_photo_url || null;
+      setVerificationMap((prev) => ({
+        ...prev,
+        [String(booking.id)]: { checked: true, available, url },
+      }));
+    } catch (e) {
+      setVerificationMap((prev) => ({
+        ...prev,
+        [String(booking.id)]: { checked: true, available: false, url: null },
+      }));
+    }
+  };
+
+  const openRating = (booking, type) => {
+    setRatingValue(0);
+    setRatingComment('');
+    setRatingModal({ visible: true, type, booking });
+  };
+
+  const submitRating = async () => {
+    const bk = ratingModal.booking;
+    if (!bk || !user) return;
+    if (!ratingValue || ratingValue < 1 || ratingValue > 5) {
+      Alert.alert('Select rating', 'Please select a rating from 1 to 5 stars.');
+      return;
+    }
+    try {
+      let res;
+      if (ratingModal.type === 'package') {
+        const packageId = getPackageId(bk);
+        if (!packageId) {
+          Alert.alert('Error', 'Missing package ID for this booking.');
+          return;
+        }
+        res = await createPackageReview({
+          package_id: packageId,
+          booking_id: bk.id,
+          reviewer_id: user.id,
+          rating: ratingValue,
+          comment: ratingComment,
+        });
+      } else {
+        const driverId = getDriverId(bk);
+        if (!driverId) {
+          Alert.alert('Error', 'No driver assigned to this booking.');
+          return;
+        }
+        res = await createDriverReview({
+          driver_id: driverId,
+          booking_id: bk.id,
+          reviewer_id: user.id,
+          rating: ratingValue,
+          comment: ratingComment,
+        });
+      }
+
+      if (res.success) {
+        setRatedMap((prev) => ({
+          ...prev,
+          [String(bk.id)]: {
+            ...(prev[String(bk.id)] || {}),
+            [ratingModal.type]: true,
+          },
+        }));
+        Alert.alert('Thank you!', 'Your review has been submitted.');
+        setRatingModal({ visible: false, type: 'package', booking: null });
+      } else {
+        const msg = res.error || 'Failed to submit review';
+        Alert.alert('Error', msg);
+        // If duplicate, mark as rated to avoid prompting again
+        if (/already exists|already reviewed/i.test(msg)) {
+          setRatedMap((prev) => ({
+            ...prev,
+            [String(bk.id)]: {
+              ...(prev[String(bk.id)] || {}),
+              [ratingModal.type]: true,
+            },
+          }));
+          setRatingModal({ visible: false, type: 'package', booking: null });
+        }
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to submit review');
+    }
+  };
+
+  const StarPicker = ({ value, onChange }) => (
+    <View style={styles.starSelectRow}>
+      {Array.from({ length: 5 }).map((_, i) => {
+        const idx = i + 1;
+        const active = value >= idx;
+        return (
+          <TouchableOpacity key={idx} onPress={() => onChange(idx)}>
+            <Ionicons name={active ? 'star' : 'star-outline'} size={28} color={active ? '#F5A623' : '#999'} />
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
   // ---------- booking card
   const renderBookingCard = (b) => {
     const pkgName   = getPackageName(b);
@@ -230,7 +349,15 @@ export default function BookScreen({ navigation }) {
 
     const expandId = String(ref || b.id || 'unknown');
     const isExpanded = !!expandedMap[expandId];
-    const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
+    const toggleExpand = () => {
+      setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
+      // Lazy-load verification details when expanding completed bookings
+      try {
+        if (!isExpanded && String((b.status || '')).toLowerCase() === 'completed' && b?.id && !verificationMap[String(b.id)]) {
+          loadVerificationFor(b);
+        }
+      } catch {}
+    };
     const pkgDetails = getPackageDetails(b);
 
     return (
@@ -317,6 +444,47 @@ export default function BookScreen({ navigation }) {
               value={formatCurrency(total)}
               valueStyle={{ fontWeight: '700', color: '#2E7D32' }}
             />
+
+            {String((b.status || '')).toLowerCase() === 'completed' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>After Trip</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (ratedMap[String(b.id)]?.package) && styles.actionBtnDisabled]}
+                    onPress={() => openRating(b, 'package')}
+                    disabled={!!ratedMap[String(b.id)]?.package}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="star-outline" size={16} color={MAROON} />
+                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Package</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (!getDriverId(b) || ratedMap[String(b.id)]?.driver) && styles.actionBtnDisabled]}
+                    onPress={() => openRating(b, 'driver')}
+                    disabled={!getDriverId(b) || !!ratedMap[String(b.id)]?.driver}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="person-outline" size={16} color={MAROON} />
+                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Driver</Text>
+                  </TouchableOpacity>
+
+                  {verificationMap[String(b.id)]?.available && (
+                    <TouchableOpacity
+                      style={styles.actionBtn}
+                      onPress={() => setViewer({ visible: true, url: verificationMap[String(b.id)]?.url })}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="image-outline" size={16} color={MAROON} />
+                      <Text style={styles.actionBtnText} numberOfLines={1}>View Photo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {verificationMap[String(b.id)]?.checked && !verificationMap[String(b.id)]?.available ? (
+                  <Text style={styles.smallNote}>No verification photo uploaded for this booking.</Text>
+                ) : null}
+              </View>
+            )}
 
             <Text style={styles.refText}>Ref: {ref || 'N/A'}</Text>
           </View>
@@ -553,7 +721,8 @@ export default function BookScreen({ navigation }) {
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <Ionicons name={f.icon} size={16} color={active ? MAROON : '#666'} />
-                        <Text style={[styles.modalOptionText, active && { color: MAROON, fontWeight: '700' }]}>
+                        <Text style={[styles.modalOptionText, active && { color: MAROON, fontWeight: '700' }]}
+                        >
                           {f.label}
                         </Text>
                       </View>
@@ -573,6 +742,72 @@ export default function BookScreen({ navigation }) {
           </View>
         </Modal>
 
+        {/* Rating modal */}
+        <Modal
+          visible={ratingModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRatingModal({ visible: false, type: 'package', booking: null })}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {ratingModal.type === 'package' ? 'Rate Package' : 'Rate Driver'}
+                </Text>
+                <TouchableOpacity onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                <StarPicker value={ratingValue} onChange={setRatingValue} />
+                <Text style={{ marginTop: 8, fontSize: 12, color: '#777' }}>Optional comment</Text>
+                <TextInput
+                  style={styles.modalTextarea}
+                  placeholder="Share your experience"
+                  placeholderTextColor="#999"
+                  value={ratingComment}
+                  onChangeText={setRatingComment}
+                  multiline
+                />
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                  <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444', flex: 1 }]} onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
+                    <Text style={styles.pillBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.pillBtn, { flex: 1 }]} onPress={submitRating}>
+                    <Text style={styles.pillBtnText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Verification viewer */}
+        <Modal
+          visible={viewer.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewer({ visible: false, url: null })}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Verification Photo</Text>
+                <TouchableOpacity onPress={() => setViewer({ visible: false, url: null })}>
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                {viewer.url ? (
+                  <Image source={{ uri: viewer.url }} style={styles.viewerImage} />
+                ) : (
+                  <Text style={{ color: '#666' }}>No photo available</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
         {/* Lists */}
         {loading ? (
           <View style={styles.loadingContainer}><Text style={styles.loadingText}>Loading your bookings...</Text></View>
@@ -654,8 +889,19 @@ const styles = StyleSheet.create({
   smallPillText: { fontSize: 10, fontWeight: '700', color: '#666' },
   smallPillTextActive: { color: MAROON },
 
+  // modal forms
+  modalTextarea: { marginTop: 8, minHeight: 80, borderWidth: 1, borderColor: '#eee', borderRadius: 8, padding: 10, color: '#333' },
+  starSelectRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  viewerImage: { width: '100%', height: 320, borderRadius: 10, resizeMode: 'cover', backgroundColor: '#eee' },
+
   // sections
   sectionCaption: { marginTop: 8, marginBottom: 6, color: '#999', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700' },
+
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee', borderRadius: 999 },
+  actionBtnText: { color: MAROON, fontSize: 12, fontWeight: '700' },
+  actionBtnDisabled: { opacity: 0.5 },
+  smallNote: { fontSize: 12, color: '#9aa0a6', marginTop: 6 },
 
   // card
   card: {

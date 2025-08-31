@@ -272,7 +272,6 @@ export async function driverStartBooking(bookingId, driverId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    // Note: backend currently does NOT implement a start endpoint. This will 404 if called.
     const url = `${API_BASE_URL}start/${bookingId}/`;
 
     const token = await getAccessToken().catch(() => null);
@@ -304,6 +303,55 @@ export async function driverStartBooking(bookingId, driverId) {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
     console.error('Error starting booking:', error);
+    throw error;
+  }
+}
+
+/**
+ * Driver cancels an accepted booking
+ * @param {string} bookingId
+ * @param {string} driverId
+ * @param {string} reason
+ * @returns {Promise<Object>}
+ */
+export async function driverCancelBooking(bookingId, driverId, reason = 'Cancelled by driver') {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const url = `${API_BASE_URL}driver-cancel/${bookingId}/`;
+
+    const token = await getAccessToken().catch(() => null);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ driver_id: driverId, reason }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+    if (!response.ok) {
+      console.error('API Error Response:', text);
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+
+    console.log('Driver cancel booking response:', data);
+    return data;
+  } catch (error) {
+    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+    if (isAbort) {
+      console.warn('Cancel booking request aborted/timeout.');
+      return { success: false, error: 'Request timeout. Please try again.' };
+    }
+    console.error('Error cancelling booking:', error);
     throw error;
   }
 }

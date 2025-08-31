@@ -1,6 +1,7 @@
 // Reviews API service
-// Provides list helpers for package reviews endpoint
+// Provides list helpers and submission for package and driver reviews
 import { apiBaseUrl } from './networkConfig';
+import { getAccessToken } from './authService';
 
 async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 15000 } = {}) {
   const controller = new AbortController();
@@ -46,5 +47,59 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
     return { success: true, data: Array.isArray(data) ? data : [], stats };
   }
   return { success: false, error: res.data?.error || 'Failed to fetch reviews' };
+}
+
+export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '' }) {
+  try {
+    const token = await getAccessToken().catch(() => null);
+    const res = await request(`/reviews/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ package_id, booking_id, reviewer_id, rating, comment }),
+      timeoutMs: 20000,
+    });
+    if (res.ok && (res.data?.success || res.status === 201)) {
+      return { success: true, data: res.data?.data || res.data };
+    }
+    return { success: false, error: res.data?.error || 'Failed to submit package review' };
+  } catch (e) {
+    return { success: false, error: e?.message || 'Failed to submit package review' };
+  }
+}
+
+export async function createDriverReview({ driver_id, booking_id, reviewer_id, rating, comment = '' }) {
+  try {
+    const token = await getAccessToken().catch(() => null);
+    const res = await request(`/reviews/driver/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ driver_id, booking_id, reviewer_id, rating, comment }),
+      timeoutMs: 20000,
+    });
+    if (res.ok && (res.data?.success || res.status === 201)) {
+      return { success: true, data: res.data?.data || res.data };
+    }
+    return { success: false, error: res.data?.error || 'Failed to submit driver review' };
+  } catch (e) {
+    return { success: false, error: e?.message || 'Failed to submit driver review' };
+  }
+}
+
+export async function getDriverReviews({ driver_id, limit = 20 } = {}) {
+  if (!driver_id) return { success: false, error: 'driver_id is required' };
+  const res = await request(`/reviews/driver/${driver_id}/?limit=${encodeURIComponent(limit)}`, { method: 'GET' });
+  if (res.ok) {
+    const data = res.data?.data?.reviews || res.data?.data || res.data;
+    const stats = res.data?.data && {
+      average_rating: res.data?.data?.average_rating,
+      review_count: res.data?.data?.review_count,
+    };
+    return { success: true, data: Array.isArray(data) ? data : [], stats };
+  }
+  return { success: false, error: res.data?.error || 'Failed to fetch driver reviews' };
 }
 

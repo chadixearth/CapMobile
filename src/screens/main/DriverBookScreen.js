@@ -22,6 +22,12 @@ import {
   getDriverBookings,
   driverCompleteBooking,
 } from '../../services/tourpackage/acceptBooking';
+import { driverStartBooking, driverCancelBooking } from '../../services/tourpackage/acceptBooking';
+import {
+  completeBookingWithVerification,
+  hasVerificationPhoto,
+} from '../../services/tourpackage/bookingVerification';
+import VerificationPhotoModal from '../../components/VerificationPhotoModal';
 import {
   getAvailableCustomTourRequestsForDrivers,
   driverAcceptCustomTourRequest,
@@ -48,6 +54,8 @@ export default function DriverBookScreen({ navigation }) {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [acceptingBooking, setAcceptingBooking] = useState(false);
   const [activeTab, setActiveTab] = useState('available'); // 'available' | 'ongoing' | 'history'
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [bookingToVerify, setBookingToVerify] = useState(null);
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -249,7 +257,8 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(booking.id, 'in_progress');
         result = { success: !!(result && result.success), ...result };
       } else {
-        result = { success: true };
+        // Tour package: call backend start endpoint (only allowed on or after scheduled date)
+        result = await driverStartBooking(booking.id, user.id);
       }
       if (result && result.success !== false) {
         Alert.alert('Success', 'Trip started. Status set to In Progress.', [
@@ -263,6 +272,56 @@ export default function DriverBookScreen({ navigation }) {
       Alert.alert('Error', `Failed to start trip: ${error.message}`);
     } finally {
       setAcceptingBooking(false);
+    }
+  };
+
+  const handleCancelBooking = async (booking) => {
+    if (!booking || !user) return;
+    Alert.alert(
+      'Cancel Booking',
+      'Are you sure you want to cancel this accepted booking? This may affect your metrics.',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setAcceptingBooking(true);
+              let result;
+              if (booking.request_type === 'custom_tour') {
+                result = await updateCustomTourStatus(booking.id, 'cancelled');
+                result = { success: !!(result && result.success), ...result };
+              } else {
+                result = await driverCancelBooking(booking.id, user.id, 'Driver cancelled');
+              }
+              if (result && result.success) {
+                Alert.alert('Cancelled', 'The booking has been cancelled.', [
+                  { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
+                ]);
+              } else {
+                Alert.alert('Error', result?.error || 'Failed to cancel booking');
+              }
+            } catch (error) {
+              console.error('Error cancelling booking:', error);
+              Alert.alert('Error', `Failed to cancel booking: ${error.message}`);
+            } finally {
+              setAcceptingBooking(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const canStartToday = (booking) => {
+    if (!booking?.booking_date) return true;
+    try {
+      const sched = String(booking.booking_date).split('T')[0];
+      const today = new Date().toISOString().split('T')[0];
+      return today >= sched;
+    } catch {
+      return true;
     }
   };
 
@@ -322,15 +381,32 @@ export default function DriverBookScreen({ navigation }) {
   const confirmCompleteBooking = async () => {
     if (!selectedBooking || !user) return;
     const isCustom = selectedBooking.request_type === 'custom_tour';
+    
     try {
       setAcceptingBooking(true);
       let result;
+      
       if (isCustom) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
       } else {
-        result = await driverCompleteBooking(selectedBooking.id, user.id);
+        // Use the new verification-aware completion
+        result = await completeBookingWithVerification(selectedBooking.id, user.id);
+        
+        // Check if verification is required
+        if (result.verification_required) {
+          setShowCompleteModal(false);
+          setBookingToVerify(selectedBooking);
+          setShowVerificationModal(true);
+          Alert.alert(
+            'Verification Required',
+            'Please upload a verification photo before completing this booking.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
       }
+      
       if (result.success) {
         Alert.alert('Success', 'Booking marked as completed.', [
           {
@@ -352,6 +428,17 @@ export default function DriverBookScreen({ navigation }) {
     } finally {
       setAcceptingBooking(false);
     }
+  };
+
+  const handleVerificationSuccess = () => {
+    setShowVerificationModal(false);
+    setBookingToVerify(null);
+    fetchUserAndBookings();
+    Alert.alert(
+      'Photo Uploaded',
+      'Verification photo uploaded successfully. You can now complete the booking.',
+      [{ text: 'OK' }]
+    );
   };
 
   const getStatusColor = (status) => {
@@ -477,10 +564,27 @@ export default function DriverBookScreen({ navigation }) {
         </TouchableOpacity>
       )}
       {activeTab === 'ongoing' && booking.status === 'driver_assigned' && (
-        <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
-          <Ionicons name="checkmark-done" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Complete Booking</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
+            onPress={() => canStartToday(booking) && handleStartTrip(booking)}
+            disabled={!canStartToday(booking) || acceptingBooking}
+          >
+            <Ionicons name="play" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>
+              {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
+            onPress={() => handleCancelBooking(booking)}
+            disabled={acceptingBooking}
+          >
+            <Ionicons name="close-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -874,6 +978,18 @@ export default function DriverBookScreen({ navigation }) {
           </Animated.View>
         </View>
       </Modal>
+
+      {/* Verification Photo Modal */}
+      <VerificationPhotoModal
+        visible={showVerificationModal}
+        onClose={() => {
+          setShowVerificationModal(false);
+          setBookingToVerify(null);
+        }}
+        booking={bookingToVerify}
+        driverId={user?.id}
+        onSuccess={handleVerificationSuccess}
+      />
     </View>
   );
 }
