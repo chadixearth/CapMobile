@@ -1,0 +1,59 @@
+# dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+android/
+ios/
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS
+.DS_Store
+Thumbs.db
+*.pem
+
+# env files
+.env*
+
+# typescript
+*.tsbuildinfo
+
+# logs
+*.log
+logs/
+
+# cache
+.cache/
+tmp/
+temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# misc
+*.tgz
+*.tar.gz
