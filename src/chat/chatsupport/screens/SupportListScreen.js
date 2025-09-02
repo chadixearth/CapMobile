@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserConversations, hasUnreadMessages } from '../../services/chatService';
+import { getUserConversations, hasUnreadMessages } from '../../services';
 import { getCurrentUser } from '../../utils/userUtils';
-// import UserInfo from '../../components/UserInfo'; // Import the UserInfo component
+import { getRelativeTime } from '../../utils/dateTimeUtils';
+import { useUserConversations } from '../../hooks/useRealtime';
 
 const MAROON = '#6B2E2B';
 
@@ -19,25 +20,19 @@ export default function SupportListScreen({ navigation }) {
   const [tab, setTab] = useState('open');
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState(null);
+  const [user, setUser] = useState(null);
   
-  // Load conversations
+  // Load initial conversations
   useEffect(() => {
-    const loadData = async () => {
+    const loadConversations = async () => {
       try {
         setLoading(true);
-        const user = await getCurrentUser();
-        if (user) setUserId(user.id);
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
         
-        const convos = await getUserConversations();
-        
-        // Add unread status to each conversation
-        const updatedConvos = await Promise.all(convos.map(async (convo) => {
-          const hasUnread = user ? await hasUnreadMessages(convo.id, user.id) : false;
-          return { ...convo, hasUnread };
-        }));
-        
-        setConversations(updatedConvos);
+        if (currentUser) {
+          await refreshConversations(currentUser.id);
+        }
       } catch (err) {
         console.error('Error loading conversations:', err);
       } finally {
@@ -45,28 +40,59 @@ export default function SupportListScreen({ navigation }) {
       }
     };
     
-    loadData();
+    loadConversations();
   }, []);
   
+  // Helper function to refresh conversations with unread status
+  const refreshConversations = async (userId) => {
+    if (!userId) return;
+    
+    // Get conversations
+    const convos = await getUserConversations();
+    
+    // Make sure each ID is converted to string to prevent React key issues
+    const uniqueConvos = Array.from(
+      new Map(convos.map(item => [String(item.id), item])).values()
+    );
+    
+    // Add unread status
+    const convosWithUnread = await Promise.all(
+      uniqueConvos.map(async (convo) => {
+        const unread = await hasUnreadMessages(convo.id, userId);
+        return { ...convo, hasUnread: unread };
+      })
+    );
+    
+    setConversations(convosWithUnread);
+  };
+  
+  // Subscribe to conversation updates using custom hook
+  useUserConversations(user?.id, async () => {
+    // When any conversation is created or updated, refresh the whole list
+    if (user?.id) {
+      await refreshConversations(user.id);
+    }
+  }, []);
+  
+  // Filter conversations based on tab
   const openConversations = conversations.filter(c => c.status === 'open');
   const resolvedConversations = conversations.filter(c => c.status !== 'open');
   const hasActiveChat = openConversations.length > 0;
-
+  
+  // Format date for display
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
+    return getRelativeTime(dateString);
   };
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <BackBtn onPress={() => navigation.goBack()} />
         <Text style={styles.headerTitle}>Support / Help Center</Text>
       </View>
-      
-      {/* Add the UserInfo component to display the username */}
-      {/* <UserInfo /> */}
-      
+
+      {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity 
           onPress={() => setTab('open')}
@@ -86,6 +112,7 @@ export default function SupportListScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* Conversation List */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={MAROON} size="large" />
@@ -93,21 +120,27 @@ export default function SupportListScreen({ navigation }) {
       ) : (
         <FlatList
           data={tab === 'open' ? openConversations : resolvedConversations}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={item => `conversation-${String(item.id)}`}
           renderItem={({ item }) => (
             <TouchableOpacity
               onPress={() => navigation.navigate('SupportChatRoom', { 
                 conversationId: item.id,
-                subject: item.subject,
+                subject: item.subject, // Make sure it's used directly as a string
                 status: item.status
               })}
             >
               <View style={styles.chatCard}>
                 <View style={styles.chatCardContent}>
-                  <Text style={styles.chatTitle}>{item.subject}</Text>
+                  {/* Try to parse if it's JSON, otherwise use directly */}
+                  <Text style={styles.chatTitle}>
+                    {typeof item.subject === 'string' && item.subject.startsWith('{') 
+                      ? JSON.parse(item.subject)?.issue || item.subject 
+                      : item.subject}
+                  </Text>
                   <Text style={styles.chatDate}>
-                    {item.status === 'open' ? `Started on ${formatDate(item.created_at)}` : 
-                     `Resolved on ${formatDate(item.updated_at)}`}
+                    {item.status === 'open' 
+                      ? `Started ${formatDate(item.created_at)}` 
+                      : `Resolved ${formatDate(item.updated_at)}`}
                   </Text>
                 </View>
                 {item.hasUnread && <View style={styles.unreadBadge} />}
@@ -123,6 +156,7 @@ export default function SupportListScreen({ navigation }) {
         />
       )}
 
+      {/* New Chat Button */}
       {!hasActiveChat && tab === 'open' && !loading && (
         <TouchableOpacity
           style={styles.newChatBtn}

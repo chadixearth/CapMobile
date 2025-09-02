@@ -8,12 +8,30 @@ export default function ChatBubble({ message }) {
   const isMe = message.sender === 'me';
   const showStatus = isMe && message.status;
   
+  // Enhanced status icon display
   const getStatusIcon = () => {
     switch (message.status) {
-      case 'sent': return <Ionicons name="checkmark" size={12} color="#888" />;
-      case 'delivered': return <Ionicons name="checkmark-done" size={12} color="#888" />;
-      case 'read': return <Ionicons name="checkmark-done" size={12} color="#6BAE6A" />;
-      default: return null;
+      case 'sending': 
+        return <Ionicons name="time" size={12} color="#888" />;
+      case 'sent': 
+        return <Ionicons name="checkmark" size={12} color="#888" />;
+      case 'delivered': 
+        return <Ionicons name="checkmark-done" size={12} color="#888" />;
+      case 'read': 
+        return <Ionicons name="checkmark-done" size={12} color="#6BAE6A" />;
+      default: 
+        return null;
+    }
+  };
+  
+  // Format the status text
+  const getStatusText = () => {
+    switch (message.status) {
+      case 'sending': return 'Sending...';
+      case 'sent': return 'Sent';
+      case 'delivered': return 'Delivered';
+      case 'read': return 'Read';
+      default: return '';
     }
   };
 
@@ -25,7 +43,14 @@ export default function ChatBubble({ message }) {
       <Text style={styles.bubbleText}>{message.text}</Text>
       <View style={styles.timeRow}>
         {message.time && <Text style={styles.timeText}>{message.time}</Text>}
-        {showStatus && getStatusIcon()}
+        {showStatus && (
+          <View style={styles.statusContainer}>
+            {getStatusIcon()}
+            {message.status === 'read' && (
+              <Text style={styles.readStatus}>{getStatusText()}</Text>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -49,7 +74,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', 
     borderTopLeftRadius: 6 
   },
-  bubbleText: { color: '#333', fontSize: 14 },
+  bubbleText: { 
+    color: '#333', 
+    fontSize: 14 
+  },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -61,4 +89,14 @@ const styles = StyleSheet.create({
     color: '#888', 
     marginRight: 4
   },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 2,
+  },
+  readStatus: {
+    fontSize: 9,
+    color: '#6BAE6A',
+    marginLeft: 2,
+  }
 });

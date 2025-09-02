@@ -1,13 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator
+  View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, 
+  KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import ChatBubble from '../components/ChatBubble';
-import { getConversationMessages, sendMessage, markMessagesAsRead } from '../../services/chatService';
+import { 
+  getConversationMessages, 
+  sendMessage, 
+  markMessagesAsRead,
+  subscribeToConversationMessages,
+  subscribeToMessageUpdates,
+  unsubscribe,
+  hasOlderMessages
+} from '../../services';
 import { getCurrentUser } from '../../utils/userUtils';
+import { formatMessageTime, getSmartDate } from '../../utils/dateTimeUtils';
 
 const MAROON = '#6B2E2B';
+const MESSAGES_PER_PAGE = 15; // Number of messages to load at once
 
 function BackBtn({ onPress }) {
   return (
@@ -18,17 +30,46 @@ function BackBtn({ onPress }) {
 }
 
 export default function SupportChatRoom({ route, navigation }) {
+  // Explicitly use default 'open' status if none is provided
   const { conversationId, subject, status = 'open' } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [user, setUser] = useState(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
+  // Use the status from route params or default to 'open'
+  const [conversationStatus, setConversationStatus] = useState(status);
+  
   const flatListRef = useRef(null);
+  const messageSubscriptionRef = useRef(null);
+  const updateSubscriptionRef = useRef(null);
+  const sentMessagesRef = useRef(new Set());
   
-  const isResolved = status !== 'open';
+  // Use conversationStatus consistently throughout the component
+  const isResolved = conversationStatus !== 'open';
+
+  // Monitor keyboard visibility
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
   
-  // Load messages
+  // Initial load of messages and setup subscriptions
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -37,38 +78,148 @@ export default function SupportChatRoom({ route, navigation }) {
         setUser(currentUser);
         
         if (conversationId) {
-          const messageData = await getConversationMessages(conversationId);
+          // Load initial messages (limited count)
+          const messageData = await getConversationMessages(conversationId, MESSAGES_PER_PAGE);
+          
+          // Track loaded message IDs to prevent duplicates
+          messageData.forEach(msg => {
+            sentMessagesRef.current.add(String(msg.id));
+          });
+          
           setMessages(messageData);
+          
+          // Check if there are older messages
+          if (messageData.length > 0) {
+            const oldestMsgId = messageData[0].id;
+            const moreAvailable = await hasOlderMessages(conversationId, oldestMsgId);
+            setHasMore(moreAvailable);
+          }
           
           // Mark messages as read
           if (currentUser) {
             await markMessagesAsRead(conversationId, currentUser.id);
           }
+          
+          // Setup real-time subscriptions
+          const newMsgSubscription = subscribeToConversationMessages(
+            conversationId,
+            newMessage => {
+              if (!sentMessagesRef.current.has(String(newMessage.id))) {
+                sentMessagesRef.current.add(String(newMessage.id));
+                setMessages(prev => [...prev, newMessage]);
+                
+                if (currentUser && newMessage.sender_id !== currentUser.id) {
+                  markMessagesAsRead(conversationId, currentUser.id);
+                }
+              }
+            }
+          );
+          
+          const updateSubscription = subscribeToMessageUpdates(
+            conversationId,
+            updatedConversation => {
+              if (updatedConversation.status !== conversationStatus) {
+                setConversationStatus(updatedConversation.status);
+              }
+              
+              setMessages(prev => 
+                prev.map(msg => 
+                  msg.id === updatedConversation.id ? updatedConversation : msg
+                )
+              );
+            }
+          );
+          
+          messageSubscriptionRef.current = newMsgSubscription;
+          updateSubscriptionRef.current = updateSubscription;
         }
       } catch (err) {
         console.error('Error loading messages:', err);
       } finally {
         setLoading(false);
+        setInitialLoad(false);
       }
     };
     
     loadData();
-  }, [conversationId]);
+    
+    return () => {
+      // Clean up subscriptions
+      if (messageSubscriptionRef.current) unsubscribe(messageSubscriptionRef.current);
+      if (updateSubscriptionRef.current) unsubscribe(updateSubscriptionRef.current);
+    };
+  }, [conversationId, conversationStatus]);
   
-  // Format message data for ChatBubble component
+  // Function to load more (older) messages
+  const handleLoadMore = async () => {
+    if (!hasMore || loadingMore || messages.length === 0) return;
+    
+    try {
+      setLoadingMore(true);
+      const oldestMessageId = messages[0].id;
+      
+      // Get older messages
+      const olderMessages = await getConversationMessages(conversationId, MESSAGES_PER_PAGE, oldestMessageId);
+      
+      // Track loaded message IDs
+      olderMessages.forEach(msg => {
+        sentMessagesRef.current.add(String(msg.id));
+      });
+      
+      // Check if there are even more messages
+      if (olderMessages.length > 0) {
+        const newOldestId = olderMessages[0].id;
+        const moreAvailable = await hasOlderMessages(conversationId, newOldestId);
+        setHasMore(moreAvailable);
+        
+        // Update messages (prepend older messages)
+        setMessages(prevMessages => [...olderMessages, ...prevMessages]);
+      } else {
+        // No more messages to load
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('Error loading more messages:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  
+  // Format messages function
   const formatMessages = () => {
     if (!user || !messages.length) return [];
     
-    return messages.map(msg => ({
-      id: msg.id.toString(),
-      text: msg.message_text,
-      sender: msg.sender_id === user.id ? 'me' : 'other',
-      time: new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-      status: msg.is_read ? 'read' : 'sent',
-    }));
+    let currentDate = '';
+    
+    return messages.map(msg => {
+      const msgDate = new Date(msg.created_at);
+      const smartDate = getSmartDate(msgDate);
+      const showDateSeparator = smartDate !== currentDate;
+      
+      if (showDateSeparator) {
+        currentDate = smartDate;
+      }
+      
+      const uniqueKey = `${msg.id}-${msgDate.getTime()}`;
+      
+      let status = 'sent';
+      if (msg.sender_id === user.id) {
+        status = msg.is_read ? 'read' : 'sent';
+      }
+      
+      return {
+        id: uniqueKey,
+        originalId: String(msg.id),
+        text: msg.message_text,
+        sender: msg.sender_id === user.id ? 'me' : 'other',
+        time: formatMessageTime(msgDate),
+        status: status,
+        dateSeparator: showDateSeparator ? smartDate : null
+      };
+    });
   };
   
-  // Send a message
+  // Send message function
   const handleSendMessage = async () => {
     const text = input.trim();
     if (!text || !conversationId) return;
@@ -76,34 +227,7 @@ export default function SupportChatRoom({ route, navigation }) {
     try {
       setSending(true);
       setInput('');
-      
-      // Optimistic update
-      const tempId = `temp-${Date.now()}`;
-      const tempMsg = {
-        id: tempId,
-        text: text,
-        sender: 'me',
-        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-        status: 'sending'
-      };
-      
-      setMessages(prev => [...prev, {
-        id: tempId,
-        message_text: text,
-        sender_id: user?.id,
-        created_at: new Date().toISOString(),
-        is_read: false
-      }]);
-      
-      // Send to server
-      const result = await sendMessage(conversationId, text);
-      
-      // Update with server response if successful
-      if (result) {
-        setMessages(prev => 
-          prev.map(m => m.id === tempId ? result : m)
-        );
-      }
+      await sendMessage(conversationId, text);
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
@@ -111,86 +235,143 @@ export default function SupportChatRoom({ route, navigation }) {
     }
   };
   
-  // Scroll to bottom when messages change
+  // Render header for "Load More" button
+  const renderHeader = () => {
+    if (!hasMore) return null;
+    
+    return (
+      <TouchableOpacity 
+        style={styles.loadMoreButton} 
+        onPress={handleLoadMore}
+        disabled={loadingMore}
+      >
+        {loadingMore ? (
+          <ActivityIndicator size="small" color={MAROON} />
+        ) : (
+          <Text style={styles.loadMoreText}>Load more messages</Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
+  
+  // Render date separator and message bubble
+  const renderItem = ({ item, index }) => {
+    return (
+      <>
+        {item.dateSeparator && (
+          <View style={styles.dateSeparator}>
+            <Text style={styles.dateSeparatorText}>{item.dateSeparator}</Text>
+          </View>
+        )}
+        <ChatBubble message={item} />
+      </>
+    );
+  };
+  
+  // Scroll to bottom on new messages, but only if we're already at the bottom
+  // or if it's our own message
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  
+  const handleScroll = (event) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 20;
+    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= 
+      contentSize.height - paddingToBottom;
+      
+    setIsAtBottom(isCloseToBottom);
+  };
+  
   useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
+    // Only auto-scroll if we're at the bottom or during initial load
+    if ((messages.length > 0 && isAtBottom) || initialLoad) {
       setTimeout(() => {
-        flatListRef.current.scrollToEnd({ animated: true });
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: !initialLoad });
+        }
       }, 200);
     }
-  }, [messages]);
+  }, [messages, initialLoad]);
 
   return (
-    <KeyboardAvoidingView 
-      style={{ flex: 1, backgroundColor: '#fff' }} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={80}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <BackBtn onPress={() => navigation.goBack()} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
+      >
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerName} numberOfLines={1}>{subject}</Text>
-          <Text style={[
-            styles.headerStatus, 
-            { color: isResolved ? '#6BAE6A' : '#E9AB17' }
-          ]}>
-            {isResolved ? 'Resolved' : 'Active'}
-          </Text>
-        </View>
-      </View>
+          {/* Header */}
+          <View style={styles.header}>
+            <BackBtn onPress={() => navigation.goBack()} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerName} numberOfLines={1}>{subject}</Text>
+              <Text style={[
+                styles.headerStatus, 
+                { color: isResolved ? '#6BAE6A' : '#E9AB17' }
+              ]}>
+                {isResolved ? 'Resolved' : 'Active'}
+              </Text>
+            </View>
+          </View>
 
-      {isResolved && (
-        <View style={styles.resolvedBanner}>
-          <Text style={styles.resolvedText}>
-            ✓ This issue has been resolved
-          </Text>
-        </View>
-      )}
+          {/* Only show this banner if actually resolved */}
+          {isResolved && (
+            <View style={styles.resolvedBanner}>
+              <Text style={styles.resolvedText}>
+                ✓ This issue has been resolved
+              </Text>
+            </View>
+          )}
 
-      {/* Messages */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={MAROON} size="large" />
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={formatMessages()}
-          keyExtractor={(i) => i.id}
-          renderItem={({item}) => <ChatBubble message={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10 }}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No messages yet. Start the conversation!</Text>
-          }
-        />
-      )}
+          {/* Messages */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator color={MAROON} size="large" />
+            </View>
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={formatMessages()}
+              keyExtractor={(item) => item.id}
+              renderItem={renderItem}
+              contentContainerStyle={styles.messagesList}
+              ListHeaderComponent={renderHeader}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No messages yet. Start the conversation!</Text>
+              }
+              onScroll={handleScroll}
+              scrollEventThrottle={400}
+              inverted={false} // This is important - we're not using inverted list
+            />
+          )}
 
-      {/* Input - only show if not resolved */}
-      {!isResolved && (
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Type a message..."
-            placeholderTextColor="#999"
-            editable={!sending}
-          />
-          <TouchableOpacity 
-            style={[styles.fab, (!input.trim() || sending) && styles.fabDisabled]} 
-            onPress={handleSendMessage} 
-            disabled={!input.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Ionicons name="send" size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
+          {/* Input - only show if not resolved */}
+          {!isResolved && (
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Type a message..."
+                placeholderTextColor="#999"
+                editable={!sending}
+              />
+              <TouchableOpacity 
+                style={[styles.fab, (!input.trim() || sending) && styles.fabDisabled]} 
+                onPress={handleSendMessage} 
+                disabled={!input.trim() || sending}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Ionicons name="send" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      )}
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -203,7 +384,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff', // Changed from MAROON to white
+    backgroundColor: '#fff',
   },
   backBtn: { 
     width: 40, 
@@ -212,12 +393,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     justifyContent: 'center', 
     marginRight: 12,
-    backgroundColor: '#f2f2f2', // Light background for the button
+    backgroundColor: '#f2f2f2',
   },
   headerName: { 
     fontSize: 16, 
     fontWeight: 'bold', 
-    color: '#222', // Changed from white to dark text
+    color: '#222',
   },
   headerStatus: { 
     fontSize: 12,
@@ -233,12 +414,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  messagesList: {
+    paddingHorizontal: 16, 
+    paddingVertical: 10,
+    paddingBottom: 16,
+  },
+  
   inputWrap: {
     padding: 12,
-    paddingRight: 66, // space for FAB
+    paddingRight: 66,
     borderTopWidth: 1, 
     borderTopColor: '#eee',
     backgroundColor: '#fff',
+    paddingBottom: Platform.OS === 'ios' ? 32 : 24,
   },
   input: {
     height: 44, 
@@ -273,5 +461,31 @@ const styles = StyleSheet.create({
   },
   fabDisabled: {
     backgroundColor: '#ccc',
+  },
+  
+  // New styles for loading more
+  loadMoreButton: {
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreText: {
+    color: MAROON,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  // New styles for date separators
+  dateSeparator: {
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    color: '#888',
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 10,
   },
 });
