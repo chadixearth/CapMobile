@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-<<<<<<< HEAD
 import { getUserConversations, hasUnreadMessages } from '../../services';
 import { getCurrentUser } from '../../utils/userUtils';
 import { getRelativeTime } from '../../utils/dateTimeUtils';
 import { useUserConversations } from '../../hooks/useRealtime';
-=======
-import { getUserConversations, hasUnreadMessages } from '../../services/chatService';
-import { getCurrentUser } from '../../utils/userUtils';
-// import UserInfo from '../../components/UserInfo'; // Import the UserInfo component
->>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
 const MAROON = '#6B2E2B';
 

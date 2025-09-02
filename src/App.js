@@ -64,15 +64,8 @@ export default function App() {
   // Subscribe to session expiry event
   useEffect(() => {
     const handler = () => {
-<<<<<<< HEAD
-      Alert.alert('Session expired', 'Your session has expired. Please log in again.');
-      if (navRef.current?.isReady?.()) {
-        navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
-      }
-=======
       // Use the error handling service instead of direct Alert
       ErrorHandlingService.handleAuthError('session_expired');
->>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
     };
     on(EVENTS.SESSION_EXPIRED, handler);
     return () => off(EVENTS.SESSION_EXPIRED, handler);
@@ -91,11 +84,6 @@ export default function App() {
   }
 
   return (
-<<<<<<< HEAD
-    <NavigationContainer ref={navRef}>
-      <RootNavigator />
-    </NavigationContainer>
-=======
     <ErrorProvider>
       <NavigationContainer 
         ref={navRef}
@@ -107,7 +95,6 @@ export default function App() {
         <RootNavigator />
       </NavigationContainer>
     </ErrorProvider>
->>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
   );
 }
 

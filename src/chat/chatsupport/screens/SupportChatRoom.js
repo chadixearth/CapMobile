@@ -30,7 +30,6 @@ function BackBtn({ onPress }) {
 }
 
 export default function SupportChatRoom({ route, navigation }) {
-  // Explicitly use default 'open' status if none is provided
   const { conversationId, subject, status = 'open' } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -41,16 +40,13 @@ export default function SupportChatRoom({ route, navigation }) {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
-  // Use the status from route params or default to 'open'
-  const [conversationStatus, setConversationStatus] = useState(status);
   
   const flatListRef = useRef(null);
   const messageSubscriptionRef = useRef(null);
   const updateSubscriptionRef = useRef(null);
   const sentMessagesRef = useRef(new Set());
   
-  // Use conversationStatus consistently throughout the component
-  const isResolved = conversationStatus !== 'open';
+  const isResolved = status !== 'open';
 
   // Monitor keyboard visibility
   useEffect(() => {
@@ -117,14 +113,10 @@ export default function SupportChatRoom({ route, navigation }) {
           
           const updateSubscription = subscribeToMessageUpdates(
             conversationId,
-            updatedConversation => {
-              if (updatedConversation.status !== conversationStatus) {
-                setConversationStatus(updatedConversation.status);
-              }
-              
+            updatedMessage => {
               setMessages(prev => 
                 prev.map(msg => 
-                  msg.id === updatedConversation.id ? updatedConversation : msg
+                  msg.id === updatedMessage.id ? updatedMessage : msg
                 )
               );
             }
@@ -148,7 +140,7 @@ export default function SupportChatRoom({ route, navigation }) {
       if (messageSubscriptionRef.current) unsubscribe(messageSubscriptionRef.current);
       if (updateSubscriptionRef.current) unsubscribe(updateSubscriptionRef.current);
     };
-  }, [conversationId, conversationStatus]);
+  }, [conversationId]);
   
   // Function to load more (older) messages
   const handleLoadMore = async () => {
@@ -314,7 +306,6 @@ export default function SupportChatRoom({ route, navigation }) {
             </View>
           </View>
 
-          {/* Only show this banner if actually resolved */}
           {isResolved && (
             <View style={styles.resolvedBanner}>
               <Text style={styles.resolvedText}>

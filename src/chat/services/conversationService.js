@@ -48,7 +48,7 @@ export const getUserConversations = async () => {
 //     if (!user) return null;
 
 //     // In production, admin assignment should be handled by the backend
-//     const DEFAULT_ADMIN_ID = '6e9b3e0e-156f-4871-b6e0-559ad788fe5b'; // Replace with actual admin ID
+//     const DEFAULT_ADMIN_ID = '358193d8-11f9-4dca-867b-24ffff2e7ec1'; // Replace with actual admin ID
 
 //     const { data, error } = await supabase
 //       .from('support_conversations')
@@ -88,9 +88,9 @@ export const createConversation = async (subject) => {
     const user = await getCurrentUser();
     if (!user) return null;
 
-    // Fetch all users with admin role
+    // Fetch all admins from the view
     const { data: admins, error: adminError } = await supabase
-      .from('users')
+      .from('public_user_profiles')
       .select('id')
       .eq('role', 'admin');
 
@@ -116,7 +116,7 @@ export const createConversation = async (subject) => {
           user_id: user.id,
           admin_id: randomAdmin.id,
           subject: subject,
-          status: 'open', // Explicitly set as open
+          status: 'open',
         },
       ])
       .select()
@@ -185,4 +185,31 @@ export const subscribeToUserConversations = (userId, onNewConversation) => {
     .subscribe();
     
   return subscription;
+};
+
+/**
+ * Get the current status of a conversation
+ * @param {number} conversationId - The conversation ID
+ * @returns {Promise<string|null>} Conversation status or null
+ */
+export const getConversationStatus = async (conversationId) => {
+  try {
+    if (!conversationId) return null;
+    
+    const { data, error } = await supabase
+      .from('support_conversations')
+      .select('status')
+      .eq('id', conversationId)
+      .single();
+      
+    if (error) {
+      console.error('Error getting conversation status:', error.message);
+      return null;
+    }
+    
+    return data?.status || null;
+  } catch (err) {
+    console.error('Error in getConversationStatus:', err.message);
+    return null;
+  }
 };

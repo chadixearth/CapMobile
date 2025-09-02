@@ -19,10 +19,7 @@ import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { requestAccountDeletion } from '../../services/accountDeletionService';
-<<<<<<< HEAD
-=======
 import { useAuthData } from '../../hooks/useAuthData';
->>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -38,12 +35,9 @@ export default function MenuScreen({ navigation }) {
   const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const auth = useAuth();
-<<<<<<< HEAD
-=======
   
   // Get authenticated data
   const { bookings, userCarriages, earnings, hasData } = useAuthData();
->>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
   const fetchUser = async () => {
     try {
