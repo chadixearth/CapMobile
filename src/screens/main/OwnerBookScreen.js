@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
+  RefreshControl, // 🟢 pull-to-refresh
   Alert,
   Modal,
   Animated,
@@ -23,7 +23,6 @@ import { getCurrentUser } from '../../services/authService';
 const MAROON = '#6B2E2B';
 
 export default function OwnerBookScreen({ navigation }) {
-  // Hide the native stack header to avoid double headers
   useLayoutEffect(() => {
     navigation?.setOptions?.({ headerShown: false });
   }, [navigation]);
@@ -31,7 +30,7 @@ export default function OwnerBookScreen({ navigation }) {
   const [availableEvents, setAvailableEvents] = useState([]);
   const [acceptedEvents, setAcceptedEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // used for pull-to-refresh & empty-state refresh
   const [user, setUser] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -87,6 +86,7 @@ export default function OwnerBookScreen({ navigation }) {
     }
   };
 
+  // Pull-to-refresh & empty-state refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchUserAndEvents();
@@ -129,50 +129,31 @@ export default function OwnerBookScreen({ navigation }) {
     }
   };
 
-  // Match DriverBookScreen’s status styles but for owner wording
   const getStatusColor = (status) => {
     switch ((status || '').toLowerCase()) {
-      case 'waiting_for_owner':
-        return '#B26A00';
-      case 'owner_accepted':
-        return '#2E7D32';
-      case 'in_progress':
-        return '#1565C0';
-      case 'completed':
-        return '#2E7D32';
-      case 'cancelled':
-        return '#C62828';
-      case 'pending':
-        return '#7B1FA2';
-      case 'approved':
-        return '#2E7D32';
-      case 'rejected':
-        return '#C62828';
-      default:
-        return '#555';
+      case 'waiting_for_owner': return '#B26A00';
+      case 'owner_accepted':    return '#2E7D32';
+      case 'in_progress':       return '#1565C0';
+      case 'completed':         return '#2E7D32';
+      case 'cancelled':         return '#C62828';
+      case 'pending':           return '#7B1FA2';
+      case 'approved':          return '#2E7D32';
+      case 'rejected':          return '#C62828';
+      default:                  return '#555';
     }
   };
 
   const getStatusIcon = (status) => {
     switch ((status || '').toLowerCase()) {
-      case 'waiting_for_owner':
-        return 'time';
-      case 'owner_accepted':
-        return 'checkmark-circle';
-      case 'in_progress':
-        return 'play-circle';
-      case 'completed':
-        return 'checkmark-done-circle';
-      case 'cancelled':
-        return 'close-circle';
-      case 'pending':
-        return 'hourglass';
-      case 'approved':
-        return 'checkmark-circle';
-      case 'rejected':
-        return 'close-circle';
-      default:
-        return 'help-circle';
+      case 'waiting_for_owner': return 'time';
+      case 'owner_accepted':    return 'checkmark-circle';
+      case 'in_progress':       return 'play-circle';
+      case 'completed':         return 'checkmark-done-circle';
+      case 'cancelled':         return 'close-circle';
+      case 'pending':           return 'hourglass';
+      case 'approved':          return 'checkmark-circle';
+      case 'rejected':          return 'close-circle';
+      default:                  return 'help-circle';
     }
   };
 
@@ -182,13 +163,10 @@ export default function OwnerBookScreen({ navigation }) {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const formatTime = (timeString) => {
-    if (!timeString) return 'N/A';
-    return timeString;
-  };
+  const formatTime = (timeString) => (timeString ? timeString : 'N/A');
 
   const renderEventCard = (event) => (
-    <View key={event.id} style={[styles.bookingCard, styles.specialEventCard /* keeps #FF5722 */]}>
+    <View key={event.id} style={[styles.bookingCard, styles.specialEventCard]}>
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
           <Text style={styles.bookingReference}>Event #{String(event.id).substring(0, 8)}</Text>
@@ -280,6 +258,7 @@ export default function OwnerBookScreen({ navigation }) {
           ? 'There are currently no special events waiting for owners. Check back later!'
           : "You haven't accepted any special events yet. Start by accepting available events!"}
       </Text>
+      {/* Keep this empty-state refresh */}
       <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
         <Text style={styles.refreshButtonText}>Refresh</Text>
       </TouchableOpacity>
@@ -313,7 +292,6 @@ export default function OwnerBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Custom Header with Chat + Notification */}
       <TARTRACKHeader
         onMessagePress={() => navigation.navigate('Chat')}
         onNotificationPress={() => navigation.navigate('Notification')}
@@ -328,31 +306,32 @@ export default function OwnerBookScreen({ navigation }) {
             {user?.name || user?.user_metadata?.name || user?.email || 'Owner'}
             {'\u2019'}s {activeTab === 'available' ? 'available' : 'accepted'} events
           </Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
+
+          {/* header refresh button removed */}
+          <View style={styles.headerButtons} />
         </View>
 
         {renderTabBar()}
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading {activeTab === 'available' ? 'available' : 'history'} events...</Text>
+            <Text style={styles.loadingText}>
+              Loading {activeTab === 'available' ? 'available' : 'history'} events...
+            </Text>
           </View>
         ) : (
           <ScrollView
             style={styles.scrollView}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             showsVerticalScrollIndicator={false}
+            // 🟢 Pull-to-refresh restored
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           >
             {currentEvents.length > 0 ? currentEvents.map(renderEventCard) : renderEmptyState()}
           </ScrollView>
         )}
       </View>
 
-      {/* Accept Event – modern bottom-sheet modal to match driver screen */}
+      {/* Accept Event – bottom-sheet modal */}
       <Modal
         visible={showAcceptModal}
         transparent
@@ -485,7 +464,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
-  // Keep special left border color EXACTLY as before:
   specialEventCard: { borderLeftWidth: 4, borderLeftColor: '#FF5722' },
 
   bookingHeader: {
@@ -518,7 +496,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     backgroundColor: '#F7F7F7',
-    gap: 6,
   },
   statusText: { fontSize: 12, fontWeight: '800' },
 
@@ -550,7 +527,7 @@ const styles = StyleSheet.create({
   emptyStateTitle: { fontSize: 18, fontWeight: '800', color: '#222', marginTop: 12, marginBottom: 6 },
   emptyStateSubtitle: { fontSize: 13, color: '#777', textAlign: 'center', marginBottom: 18, paddingHorizontal: 20 },
 
-  /* Header small button */
+  /* Header small button style (used only in empty-state) */
   refreshButton: {
     backgroundColor: MAROON,
     paddingHorizontal: 14,
@@ -559,7 +536,7 @@ const styles = StyleSheet.create({
   },
   refreshButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 
-  /* === Bottom-sheet Modal (like DriverBookScreen) === */
+  /* Bottom-sheet Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

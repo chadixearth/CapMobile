@@ -17,21 +17,7 @@ export default function DriverTabs({ setRole }) {
   const navigation = useNavigation();
   const auth = useAuth();
 
-  React.useEffect(() => {
-    if (!auth.loading) {
-      if (!auth.isAuthenticated) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Welcome' }],
-        });
-      } else if (auth.role !== 'driver') {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
-      }
-    }
-  }, [auth.loading, auth.isAuthenticated, auth.role, navigation]);
+  // Authentication and role state transitions are handled by RootNavigator
 
   // Show loading or redirect if not authenticated or wrong role
   if (auth.loading || !auth.isAuthenticated || auth.role !== 'driver') {

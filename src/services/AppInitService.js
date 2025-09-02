@@ -1,5 +1,6 @@
 import { preloadMapData } from './map/fetchMap';
 import mapCacheService from './map/mapCacheService';
+import ApiInitService from './ApiInitService';
 
 /**
  * App Initialization Service

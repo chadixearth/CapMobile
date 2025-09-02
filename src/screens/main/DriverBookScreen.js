@@ -20,14 +20,13 @@ import {
   getAvailableBookingsForDrivers,
   driverAcceptBooking,
   getDriverBookings,
-  driverCompleteBooking,
 } from '../../services/tourpackage/acceptBooking';
 import { driverStartBooking, driverCancelBooking } from '../../services/tourpackage/acceptBooking';
 import {
   completeBookingWithVerification,
-  hasVerificationPhoto,
 } from '../../services/tourpackage/bookingVerification';
 import VerificationPhotoModal from '../../components/VerificationPhotoModal';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import {
   getAvailableCustomTourRequestsForDrivers,
   driverAcceptCustomTourRequest,
@@ -56,6 +55,8 @@ export default function DriverBookScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('available'); // 'available' | 'ongoing' | 'history'
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [bookingToVerify, setBookingToVerify] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [bookingToCancel, setBookingToCancel] = useState(null);
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -164,7 +165,7 @@ export default function DriverBookScreen({ navigation }) {
             tour.accepted_driver ||
             tour.taken_by ||
             tour.claimed_by;
-          return status === 'waiting_for_driver' && !assignedDriverId;
+        return status === 'waiting_for_driver' && !assignedDriverId;
         });
         setAvailableCustomTours(filtered);
       } else {
@@ -232,6 +233,7 @@ export default function DriverBookScreen({ navigation }) {
     setRefreshing(false);
   };
 
+  // kept (unused now) to avoid touching logic elsewhere
   const refreshHistory = async () => {
     if (user) {
       await fetchDriverBookings(user.id);
@@ -257,7 +259,6 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(booking.id, 'in_progress');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // Tour package: call backend start endpoint (only allowed on or after scheduled date)
         result = await driverStartBooking(booking.id, user.id);
       }
       if (result && result.success !== false) {
@@ -277,41 +278,39 @@ export default function DriverBookScreen({ navigation }) {
 
   const handleCancelBooking = async (booking) => {
     if (!booking || !user) return;
-    Alert.alert(
-      'Cancel Booking',
-      'Are you sure you want to cancel this accepted booking? This may affect your metrics.',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setAcceptingBooking(true);
-              let result;
-              if (booking.request_type === 'custom_tour') {
-                result = await updateCustomTourStatus(booking.id, 'cancelled');
-                result = { success: !!(result && result.success), ...result };
-              } else {
-                result = await driverCancelBooking(booking.id, user.id, 'Driver cancelled');
-              }
-              if (result && result.success) {
-                Alert.alert('Cancelled', 'The booking has been cancelled.', [
-                  { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
-                ]);
-              } else {
-                Alert.alert('Error', result?.error || 'Failed to cancel booking');
-              }
-            } catch (error) {
-              console.error('Error cancelling booking:', error);
-              Alert.alert('Error', `Failed to cancel booking: ${error.message}`);
-            } finally {
-              setAcceptingBooking(false);
-            }
-          }
-        }
-      ]
-    );
+    setBookingToCancel(booking);
+    setShowCancelModal(true);
+  };
+
+  const confirmCancelBooking = async () => {
+    if (!bookingToCancel || !user) return;
+    
+    try {
+      setAcceptingBooking(true);
+      let result;
+      if (bookingToCancel.request_type === 'custom_tour') {
+        result = await updateCustomTourStatus(bookingToCancel.id, 'cancelled');
+        result = { success: !!(result && result.success), ...result };
+      } else {
+        result = await driverCancelBooking(bookingToCancel.id, user.id, 'Driver cancelled');
+      }
+      
+      setShowCancelModal(false);
+      setBookingToCancel(null);
+      
+      if (result && result.success) {
+        Alert.alert('Cancelled', 'The booking has been cancelled.', [
+          { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
+        ]);
+      } else {
+        Alert.alert('Error', result?.error || 'Failed to cancel booking');
+      }
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+      Alert.alert('Error', `Failed to cancel booking: ${error.message}`);
+    } finally {
+      setAcceptingBooking(false);
+    }
   };
 
   const canStartToday = (booking) => {
@@ -390,10 +389,9 @@ export default function DriverBookScreen({ navigation }) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
       } else {
-        // Use the new verification-aware completion
+        // Use verification-aware completion
         result = await completeBookingWithVerification(selectedBooking.id, user.id);
-        
-        // Check if verification is required
+
         if (result.verification_required) {
           setShowCompleteModal(false);
           setBookingToVerify(selectedBooking);
@@ -435,9 +433,12 @@ export default function DriverBookScreen({ navigation }) {
     setBookingToVerify(null);
     fetchUserAndBookings();
     Alert.alert(
-      'Photo Uploaded',
-      'Verification photo uploaded successfully. You can now complete the booking.',
-      [{ text: 'OK' }]
+      'Trip Completed!',
+      'Verification photo uploaded successfully. Your booking is now complete and earnings have been processed.',
+      [{
+        text: 'View Earnings',
+        onPress: () => navigation.navigate(Routes.DRIVER_EARNINGS)
+      }]
     );
   };
 
@@ -693,6 +694,7 @@ export default function DriverBookScreen({ navigation }) {
           ? 'You have no ongoing bookings. Accepted bookings appear here until you complete them.'
           : "You haven't accepted any bookings yet. Start by accepting available bookings!"}
       </Text>
+      {/* Empty-state refresh (kept) */}
       <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
         <Text style={styles.refreshButtonText}>Refresh</Text>
       </TouchableOpacity>
@@ -769,16 +771,7 @@ export default function DriverBookScreen({ navigation }) {
             {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}
             {'\u2019'}s {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'completed'} bookings
           </Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
-            {activeTab === 'history' && (
-              <TouchableOpacity style={[styles.refreshButton, { marginLeft: 8 }]} onPress={refreshHistory}>
-                <Text style={styles.refreshButtonText}>Debug History</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          {/* Manual header refresh buttons removed as requested */}
         </View>
 
         {renderTabBar()}
@@ -990,6 +983,28 @@ export default function DriverBookScreen({ navigation }) {
         driverId={user?.id}
         onSuccess={handleVerificationSuccess}
       />
+
+      {/* Cancel Booking Confirmation Modal */}
+      <ConfirmationModal
+        visible={showCancelModal}
+        title="Cancel Booking"
+        message="Are you sure you want to cancel this accepted booking? This may affect your metrics."
+        confirmText="Yes, Cancel"
+        cancelText="No"
+        onConfirm={confirmCancelBooking}
+        onClose={() => {
+          setShowCancelModal(false);
+          setBookingToCancel(null);
+        }}
+        iconName="warning"
+        isDestructive={true}
+        loading={acceptingBooking}
+        bookingInfo={bookingToCancel ? [
+          { label: 'Package', value: bookingToCancel.package_name || 'N/A' },
+          { label: 'Date', value: formatDate(bookingToCancel.booking_date) },
+          { label: 'Reference', value: bookingToCancel.booking_reference || 'N/A' }
+        ] : null}
+      />
     </View>
   );
 }
@@ -1003,7 +1018,6 @@ const styles = StyleSheet.create({
   header: { paddingVertical: 18, alignItems: 'center' },
   title: { fontSize: 20, fontWeight: '800', color: '#222', marginBottom: 6, letterSpacing: 0.2, textAlign: 'center' },
   subtitle: { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 10 },
-  headerButtons: { flexDirection: 'row', marginTop: 6 },
 
   /* Tabs */
   tabBar: {
@@ -1097,7 +1111,7 @@ const styles = StyleSheet.create({
   emptyStateTitle: { fontSize: 18, fontWeight: '800', color: '#222', marginTop: 12, marginBottom: 6 },
   emptyStateSubtitle: { fontSize: 13, color: '#777', textAlign: 'center', marginBottom: 18, paddingHorizontal: 20 },
 
-  /* Header small button */
+  /* Header small button (used only in empty state now) */
   refreshButton: {
     backgroundColor: '#6B2E2B',
     paddingHorizontal: 14,

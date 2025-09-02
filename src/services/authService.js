@@ -8,7 +8,7 @@ import { apiBaseUrl } from './networkConfig';
 // - Android emulator: 10.0.2.2 (maps to host machine's localhost)
 // - iOS simulator: localhost
 // If you need a custom API host, set API_BASE_URL_OVERRIDE below.
-const API_BASE_URL_OVERRIDE = 'http://192.168.101.78:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
+const API_BASE_URL_OVERRIDE = 'http://10.106.107.146:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
 
 function getDevServerHost() {
   try {
@@ -34,6 +34,13 @@ const SESSION_KEYS = {
   USER_DATA: 'user_data',
 };
 
+// Global session expiry handler
+let sessionExpiredCallback = null;
+
+export function setSessionExpiredCallback(callback) {
+  sessionExpiredCallback = callback;
+}
+
 /**
  * Helper function to make API requests with proper error handling
  */
@@ -54,6 +61,16 @@ async function apiRequest(endpoint, options = {}) {
     });
     
     clearTimeout(timeoutId);
+    
+    // Handle session expiry
+    if (response.status === 401 || response.status === 403) {
+      console.log('Session expired, triggering auto-logout');
+      await clearStoredSession();
+      if (sessionExpiredCallback) {
+        sessionExpiredCallback();
+      }
+    }
+    
     const data = await response.json();
     
     console.log(`API response status: ${response.status}`);
@@ -150,7 +167,7 @@ export async function clearLocalSession() {
  * Register a new user with email, password, and role
  * Supports roles: tourist, driver, owner (admin is web-only)
  * @param {string} email
- * @param {string} password
+ * @param {string|null} password - Required for tourists, optional for driver/owner (will be generated if null)
  * @param {string} role - Must be one of: tourist, driver, owner
  * @param {object} additionalData - Optional additional user data
  * @returns {Promise<{ success: boolean, user?: object, error?: string }>}
@@ -165,11 +182,19 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
+  // Password validation
+  if (role === 'tourist' && (!password || password.trim() === '')) {
+    return {
+      success: false,
+      error: 'Password is required for tourist registration.',
+    };
+  }
+
   const result = await apiRequest('/auth/register/', {
     method: 'POST',
     body: JSON.stringify({
       email,
-      password,
+      password: password && password.trim() !== '' ? password : null,
       role,
       additional_data: additionalData,
     }),
@@ -226,6 +251,18 @@ export async function loginUser(email, password, allowedRoles = null) {
     };
   }
 
+  // Handle suspension and other specific error cases
+  if (result.data?.suspended) {
+    return {
+      success: false,
+      suspended: true,
+      suspensionReason: result.data.suspension_reason || 'Account suspended',
+      suspensionDays: result.data.suspension_days || 0,
+      suspensionEndDate: result.data.suspension_end_date,
+      error: `Account suspended: ${result.data.suspension_reason || 'Violation of terms'}${result.data.suspension_days ? ` (${result.data.suspension_days} days remaining)` : ''}`,
+    };
+  }
+
   return {
     success: false,
     error: result.data?.error || result.error || 'Login failed',
@@ -264,21 +301,28 @@ export async function logoutUser() {
  * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
  */
 export async function getUserProfile(userId) {
-  const result = await apiRequest(`/auth/profile/?user_id=${userId}`, {
-    method: 'GET',
-  });
-
-  if (result.success && result.data.success) {
+  // Since /auth/profile/ endpoint doesn't exist, return a graceful fallback
+  // Using local session data instead of making a backend call
+  try {
+    const session = await getStoredSession();
+    
+    if (session.user && session.user.id === userId) {
+      return {
+        success: true,
+        data: session.user,
+      };
+    } else {
+      return {
+        success: false,
+        error: 'User profile not found in local session',
+      };
+    }
+  } catch (error) {
     return {
-      success: true,
-      data: result.data.data,
+      success: false,
+      error: 'Failed to get user profile from local session',
     };
   }
-
-  return {
-    success: false,
-    error: result.data?.error || result.error || 'Failed to get user profile',
-  };
 }
 
 /**
@@ -286,23 +330,44 @@ export async function getUserProfile(userId) {
  * @returns {Promise<{ isLoggedIn: boolean, user?: object }>}
  */
 export async function checkAuthStatus() {
-  const session = await getStoredSession();
-  
-  if (!session.accessToken || !session.user) {
+  try {
+    const session = await getStoredSession();
+    
+    if (!session.accessToken || !session.user) {
+      return {
+        isLoggedIn: false,
+        user: null,
+        accessToken: null,
+      };
+    }
+
+    // Basic validation - check if token and user data exist and are not empty
+    const tokenValid = session.accessToken && session.accessToken.length > 10;
+    const userValid = session.user && session.user.id;
+    
+    if (tokenValid && userValid) {
+      return {
+        isLoggedIn: true,
+        user: session.user,
+        accessToken: session.accessToken,
+      };
+    } else {
+      // Invalid session data, clear it
+      await clearStoredSession();
+      return {
+        isLoggedIn: false,
+        user: null,
+        accessToken: null,
+      };
+    }
+  } catch (error) {
+    console.error('Error checking auth status:', error);
     return {
       isLoggedIn: false,
       user: null,
       accessToken: null,
     };
   }
-
-  // TODO: Add token validation with backend if needed
-  // For now, we trust the stored session
-  return {
-    isLoggedIn: true,
-    user: session.user,
-    accessToken: session.accessToken,
-  };
 }
 
 /**
@@ -317,32 +382,48 @@ export async function validateSession() {
       return { valid: false };
     }
 
-    // Make a simple API call to validate the session
-    const result = await apiRequest('/auth/validate-session/', {
-      method: 'POST',
+    // Use the auth profile endpoint that actually exists (as shown in the Django URL list)
+    const result = await apiRequest('/auth/profile/', {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${session.accessToken}`,
       },
-      body: JSON.stringify({
-        user_id: session.user.id,
-      }),
     });
 
-    if (result.success && result.data.valid) {
+    if (result.success && result.status === 200) {
       return {
         valid: true,
-        user: result.data.user || session.user,
+        user: result.data || session.user,
       };
-    } else {
+    } else if (result.status === 401 || result.status === 403) {
       // Session is invalid, clear it
+      console.log('Session invalid - 401/403 received on auth test');
       await clearStoredSession();
       return { valid: false };
+    } else {
+      // For other errors (like 404), assume session is still valid
+      // This prevents false session expiry when endpoints aren't implemented
+      console.warn('Session validation failed with non-auth error:', result.status, result.error);
+      return {
+        valid: true,
+        user: session.user,
+      };
     }
   } catch (error) {
     console.error('Session validation failed:', error);
-    // On error, assume session is invalid and clear it
-    await clearStoredSession();
-    return { valid: false };
+    
+    // Only clear session if it's an authentication error
+    if (error.message?.includes('401') || error.message?.includes('403')) {
+      await clearStoredSession();
+      return { valid: false };
+    }
+    
+    // For network errors or other issues, assume session is still valid
+    const session = await getStoredSession();
+    return {
+      valid: session.accessToken && session.user ? true : false,
+      user: session.user,
+    };
   }
 }
 
@@ -384,11 +465,20 @@ export async function updateUserProfile(userId, profileData) {
     }),
   });
 
-  if (result.success && result.data.success) {
+  if (result.success && result.data?.success) {
     return {
       success: true,
       data: result.data.data,
       message: result.data.message,
+    };
+  }
+
+  // Handle missing endpoint gracefully
+  if (result.status === 404) {
+    console.warn('Profile update endpoint not implemented yet');
+    return {
+      success: false,
+      error: 'Profile update feature is not available yet',
     };
   }
 
@@ -464,9 +554,31 @@ export async function uploadProfilePhoto(userId, photoUri) {
     console.log('Upload response data:', data);
 
     if (response.ok && data.success) {
+      const photoUrl = data.photo_url || data.photoUrl;
+      
+      // Update local session with new photo URL
+      try {
+        const session = await getStoredSession();
+        if (session.user) {
+          const updatedUser = {
+            ...session.user,
+            profile_photo: photoUrl,
+            profile_photo_url: photoUrl
+          };
+          await storeSession({
+            access_token: session.accessToken,
+            refresh_token: session.refreshToken,
+            user: updatedUser
+          });
+          console.log('Local session updated with new photo URL');
+        }
+      } catch (sessionError) {
+        console.warn('Failed to update local session:', sessionError);
+      }
+      
       return {
         success: true,
-        photoUrl: data.photo_url || data.photoUrl,
+        photoUrl,
         message: data.message,
       };
     }

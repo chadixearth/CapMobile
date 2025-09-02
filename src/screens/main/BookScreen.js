@@ -301,7 +301,6 @@ export default function BookScreen({ navigation }) {
       } else {
         const msg = res.error || 'Failed to submit review';
         Alert.alert('Error', msg);
-        // If duplicate, mark as rated to avoid prompting again
         if (/already exists|already reviewed/i.test(msg)) {
           setRatedMap((prev) => ({
             ...prev,
@@ -351,7 +350,6 @@ export default function BookScreen({ navigation }) {
     const isExpanded = !!expandedMap[expandId];
     const toggleExpand = () => {
       setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
-      // Lazy-load verification details when expanding completed bookings
       try {
         if (!isExpanded && String((b.status || '')).toLowerCase() === 'completed' && b?.id && !verificationMap[String(b.id)]) {
           loadVerificationFor(b);
@@ -669,20 +667,18 @@ export default function BookScreen({ navigation }) {
         {/* Title + actions */}
         <View style={styles.header}>
           <Text style={styles.pageTitle}>My Bookings</Text>
-          <View style={styles.headerActions}>
-            {(user?.role === 'tourist' || (!user?.role && user)) && (
-              <TouchableOpacity style={styles.pillBtn} onPress={() => navigation.navigate('CustomRequestHistory')}>
-                <Ionicons name="time-outline" size={16} color="#fff" />
-                <Text style={styles.pillBtnText}>Custom Requests</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444' }]} onPress={fetchUserAndBookings}>
-              <Ionicons name="refresh" size={16} color="#fff" />
-              <Text style={styles.pillBtnText}>Refresh</Text>
+          {(user?.role === 'tourist' || (!user?.role && user)) && (
+            <TouchableOpacity
+              style={styles.customRequestBtn}
+              onPress={() => navigation.navigate('CustomRequestHistory')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="construct" size={16} color={MAROON} />
+              <Text style={styles.customRequestBtnText}>Custom Requests</Text>
+              <Ionicons name="chevron-forward" size={16} color={MAROON} />
             </TouchableOpacity>
-          </View>
+          )}
         </View>
-
         {/* Filters */}
         <View style={styles.filtersRow}>
           <Text style={styles.filtersLabel}>Filters</Text>
@@ -861,10 +857,39 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: '#fff', marginLeft: 6, fontSize: 13 },
 
   // top header
-  header: { paddingVertical: 12, alignItems: 'center' },
-  pageTitle: { fontSize: 24, fontWeight: 'bold', color: '#222', marginBottom: 10, marginTop: 4 },
+  header: { 
+  paddingVertical: 12, 
+  flexDirection: 'row', 
+  alignItems: 'center', 
+  justifyContent: 'space-between' 
+},
+pageTitle: { 
+  fontSize: 24, 
+  fontWeight: 'bold', 
+  color: '#222', 
+},
+
   headerActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
 
+customRequestBtn: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 1,
+  backgroundColor: '#fff',
+  borderWidth: 1,
+  borderColor: MAROON,
+  paddingHorizontal: 14,
+  paddingVertical: 8,
+  borderRadius: 999,
+},
+customRequestBtnText: {
+  color: MAROON,
+  fontSize: 13,
+  fontWeight: '700',
+  letterSpacing: 0.3,
+},
+
+  // legacy pillBtn kept for other places (modals, etc.)
   pillBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: MAROON, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   pillBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 

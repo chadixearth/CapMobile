@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, StyleSheet } from 'react-native';
-import UniversalMap from '../../components/UniversalMap';
+import LeafletMapView from '../../components/LeafletMapView';
 import BackButton from '../../components/BackButton';
 
 const TERMINALS = [
@@ -32,7 +32,7 @@ const TerminalsScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       
       <View style={styles.mapContainer}>
-        <UniversalMap
+        <LeafletMapView
           region={DEFAULT_REGION}
           markers={TERMINALS.map(t => ({
             latitude: t.latitude,
@@ -43,7 +43,8 @@ const TerminalsScreen = ({ navigation, route }) => {
             pointType: 'terminal',
             iconColor: selectedId === t.id ? '#6B2E2B' : '#00AA00',
           }))}
-          mapStyle="CARTO_VOYAGER"
+          roads={[]}
+          routes={[]}
           showSatellite={false}
         />
       </View>

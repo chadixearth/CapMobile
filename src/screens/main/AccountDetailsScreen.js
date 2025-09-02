@@ -33,15 +33,7 @@ export default function AccountDetailsScreen({ navigation }) {
   const [bioPhotos, setBioPhotos] = useState([]); // array of { uri }
   const [existingBioId, setExistingBioId] = useState(null);
 
-  // Handle authentication redirect in useEffect to avoid hooks rule violation
-  useEffect(() => {
-    if (!auth.loading && !auth.isAuthenticated) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
-    }
-  }, [auth.loading, auth.isAuthenticated, navigation]);
+  // Authentication state is handled by RootNavigator - no manual redirect needed
 
   // Fetch user data - this hook must be called unconditionally
   useEffect(() => {
@@ -173,30 +165,8 @@ export default function AccountDetailsScreen({ navigation }) {
           
           // Update local state immediately
           setPhotoUrl(result.photo_url);
-          
-          // Try to update the user profile with the new photo URL
-          try {
-            const profileUpdateData = {
-              profile_photo_url: result.photo_url
-            };
-            
-            console.log('Updating profile with photo URL:', profileUpdateData);
-            const updateResult = await updateUserProfile(currentUser.id, profileUpdateData);
-            console.log('Profile update result:', updateResult);
-            
-            if (updateResult.success) {
-              setSuccess('Profile photo updated successfully!');
-              console.log('Profile updated successfully with photo URL');
-            } else {
-              // Photo upload succeeded but profile update failed
-              console.warn('Photo uploaded but profile update failed:', updateResult.error);
-              setSuccess('Photo uploaded successfully!');
-            }
-          } catch (profileError) {
-            console.error('Profile update error:', profileError);
-            // Still show success since the photo was uploaded
-            setSuccess('Photo uploaded successfully!');
-          }
+          setSuccess('Profile photo updated successfully!');
+          console.log('Photo uploaded and local state updated');
         } else {
           console.error('Photo upload failed:', result.error);
           throw new Error(result.error || 'Failed to upload photo');

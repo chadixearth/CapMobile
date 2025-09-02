@@ -11,7 +11,6 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import { createCustomTourRequest, createSpecialEventRequest } from '../../services/specialpackage/customPackageRequest';
@@ -35,14 +34,11 @@ export default function CustomPackageRequestScreen({ navigation }) {
   const [destination, setDestination] = useState('');
   const [preferredDurationHours, setPreferredDurationHours] = useState('');
   const [preferredDate, setPreferredDate] = useState(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   
   // Special event fields
   const [eventType, setEventType] = useState('');
-  const [eventDate, setEventDate] = useState(null);
-  const [eventTime, setEventTime] = useState(null);
-  const [showEventDatePicker, setShowEventDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [eventDate, setEventDate] = useState('');
+  const [eventTime, setEventTime] = useState('');
   const [specialRequirements, setSpecialRequirements] = useState('');
   
   const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -144,7 +140,7 @@ export default function CustomPackageRequestScreen({ navigation }) {
           destination: destination.trim(),
           preferred_duration_hours: preferredDurationHours ? parseInt(preferredDurationHours) : null,
           number_of_pax: parseInt(numberOfPax),
-          preferred_date: preferredDate ? preferredDate.toISOString().split('T')[0] : null,
+          preferred_date: preferredDate ? (typeof preferredDate === 'string' ? preferredDate : preferredDate.toISOString().split('T')[0]) : null,
           special_requests: specialRequests.trim(),
           contact_number: contactNumber.trim(),
           contact_email: contactEmail.trim()
@@ -155,8 +151,8 @@ export default function CustomPackageRequestScreen({ navigation }) {
         const specialEventData = {
           customer_id: user.id,
           event_type: eventType.trim(),
-          event_date: eventDate.toISOString().split('T')[0],
-          event_time: eventTime ? eventTime.toTimeString().split(' ')[0] : null,
+          event_date: eventDate,
+          event_time: eventTime || null,
           number_of_pax: parseInt(numberOfPax),
           pickup_location: pickupLocation.trim(), // This will be mapped to event_address in the service
           special_requirements: specialRequirements.trim(),
@@ -218,29 +214,18 @@ export default function CustomPackageRequestScreen({ navigation }) {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Preferred Date</Text>
-        <TouchableOpacity 
-          style={[styles.input, styles.dateInput]}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Text style={[styles.dateText, !preferredDate && { color: '#999' }]}>
-            {preferredDate ? preferredDate.toDateString() : 'Select preferred date (optional)'}
-          </Text>
-          <Ionicons name="calendar-outline" size={20} color={MAROON} />
-        </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker
-            value={preferredDate || new Date()}
-            mode="date"
-            display="default"
-            minimumDate={new Date()}
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(false);
-              if (selectedDate) {
-                setPreferredDate(selectedDate);
-              }
-            }}
-          />
-        )}
+        <TextInput
+          style={styles.input}
+          value={preferredDate ? preferredDate.toDateString() : ''}
+          onChangeText={(value) => {
+            const date = new Date(value);
+            if (!isNaN(date.getTime())) {
+              setPreferredDate(date);
+            }
+          }}
+          placeholder="MM/DD/YYYY (optional)"
+          placeholderTextColor="#999"
+        />
       </View>
     </View>
   );
@@ -275,55 +260,24 @@ export default function CustomPackageRequestScreen({ navigation }) {
       <View style={styles.rowContainer}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
           <Text style={styles.label}>Event Date *</Text>
-          <TouchableOpacity 
-            style={[styles.input, styles.dateInput]}
-            onPress={() => setShowEventDatePicker(true)}
-          >
-            <Text style={[styles.dateText, !eventDate && { color: '#999' }]}>
-              {eventDate ? eventDate.toDateString() : 'Select date'}
-            </Text>
-            <Ionicons name="calendar-outline" size={20} color={MAROON} />
-          </TouchableOpacity>
-          {showEventDatePicker && (
-            <DateTimePicker
-              value={eventDate || new Date()}
-              mode="date"
-              display="default"
-              minimumDate={new Date()}
-              onChange={(event, selectedDate) => {
-                setShowEventDatePicker(false);
-                if (selectedDate) {
-                  setEventDate(selectedDate);
-                }
-              }}
-            />
-          )}
+          <TextInput
+            style={styles.input}
+            value={eventDate}
+            onChangeText={setEventDate}
+            placeholder="MM/DD/YYYY"
+            placeholderTextColor="#999"
+          />
         </View>
 
         <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
           <Text style={styles.label}>Event Time</Text>
-          <TouchableOpacity 
-            style={[styles.input, styles.dateInput]}
-            onPress={() => setShowTimePicker(true)}
-          >
-            <Text style={[styles.dateText, !eventTime && { color: '#999' }]}>
-              {eventTime ? eventTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Select time'}
-            </Text>
-            <Ionicons name="time-outline" size={20} color={MAROON} />
-          </TouchableOpacity>
-          {showTimePicker && (
-            <DateTimePicker
-              value={eventTime || new Date()}
-              mode="time"
-              display="default"
-              onChange={(event, selectedTime) => {
-                setShowTimePicker(false);
-                if (selectedTime) {
-                  setEventTime(selectedTime);
-                }
-              }}
-            />
-          )}
+          <TextInput
+            style={styles.input}
+            value={eventTime}
+            onChangeText={setEventTime}
+            placeholder="HH:MM"
+            placeholderTextColor="#999"
+          />
         </View>
       </View>
 

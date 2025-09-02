@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import ModalManager from '../services/ModalManager';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +25,12 @@ const SuccessModal = ({
   iconName = 'checkmark-circle',
   iconColor = '#4CAF50'
 }) => {
+  // Register with modal manager for auto-close on session expiry
+  useEffect(() => {
+    if (visible && onClose) {
+      return ModalManager.registerModal(onClose);
+    }
+  }, [visible, onClose]);
   return (
     <Modal
       visible={visible}
@@ -75,9 +82,9 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 24,
-    width: width * 0.85,
-    maxWidth: 400,
+    padding: 32,
+    width: width * 0.9,
+    maxWidth: 500,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -89,18 +96,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#333',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   message: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+    lineHeight: 24,
+    marginBottom: 28,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -110,8 +117,8 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -126,12 +133,12 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
   },
   secondaryButtonText: {
     color: '#6B2E2B',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
   },
 });

@@ -26,17 +26,32 @@ export function installFetchInterceptor() {
 
     try {
       if (response && (response.status === 401 || response.status === 403)) {
-        const now = Date.now();
-        if (!inProgress || now - lastTriggerTs > 5000) {
-          inProgress = true;
-          lastTriggerTs = now;
-          try {
-            await clearLocalSession();
-            await AsyncStorage.setItem(FLAG_KEY, '1');
-          } catch {}
-          emit(EVENTS.SESSION_EXPIRED, { status: response.status });
-          // Give UI a moment to react
-          setTimeout(() => { inProgress = false; }, 1500);
+        // Only trigger session expiry for auth-related endpoints that actually exist
+        const url = typeof input === 'string' ? input : input.url;
+        const isAuthEndpoint = url && (
+          url.includes('/auth/login') || 
+          url.includes('/auth/logout') ||
+          url.includes('/auth/register') ||
+          // Only trigger for endpoints that have Authorization header (authenticated requests)
+          (init && init.headers && init.headers.Authorization)
+        );
+        
+        if (isAuthEndpoint) {
+          const now = Date.now();
+          if (!inProgress || now - lastTriggerTs > 5000) {
+            inProgress = true;
+            lastTriggerTs = now;
+            console.log('Session expired - clearing auth data for authenticated request:', url);
+            try {
+              await clearLocalSession();
+              await AsyncStorage.setItem(FLAG_KEY, '1');
+            } catch {}
+            emit(EVENTS.SESSION_EXPIRED, { status: response.status, url });
+            // Give UI a moment to react
+            setTimeout(() => { inProgress = false; }, 1500);
+          }
+        } else {
+          console.log('401/403 on non-auth endpoint, not triggering session expiry:', url);
         }
       }
     } catch {}

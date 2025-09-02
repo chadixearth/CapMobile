@@ -6,6 +6,8 @@ import RootNavigator from './navigation/RootNavigator';
 import AppInitService from './services/AppInitService';
 import { installFetchInterceptor, wasSessionExpiredFlagSet, clearSessionExpiredFlag } from './services/fetchInterceptor';
 import { on, off, EVENTS } from './services/eventBus';
+import ErrorProvider from './components/ErrorProvider';
+import ErrorHandlingService from './services/errorHandlingService';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -62,10 +64,15 @@ export default function App() {
   // Subscribe to session expiry event
   useEffect(() => {
     const handler = () => {
+<<<<<<< HEAD
       Alert.alert('Session expired', 'Your session has expired. Please log in again.');
       if (navRef.current?.isReady?.()) {
         navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
       }
+=======
+      // Use the error handling service instead of direct Alert
+      ErrorHandlingService.handleAuthError('session_expired');
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
     };
     on(EVENTS.SESSION_EXPIRED, handler);
     return () => off(EVENTS.SESSION_EXPIRED, handler);
@@ -84,9 +91,23 @@ export default function App() {
   }
 
   return (
+<<<<<<< HEAD
     <NavigationContainer ref={navRef}>
       <RootNavigator />
     </NavigationContainer>
+=======
+    <ErrorProvider>
+      <NavigationContainer 
+        ref={navRef}
+        onReady={() => {
+          // Set navigation reference for error handling service
+          ErrorHandlingService.setNavigationRef(navRef.current);
+        }}
+      >
+        <RootNavigator />
+      </NavigationContainer>
+    </ErrorProvider>
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
   );
 }
 

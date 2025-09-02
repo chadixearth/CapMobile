@@ -1,5 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, ActivityIndicator } from 'react-native';
 import SplashScreen from '../screens/splash/SplashScreen';
 import WelcomeScreen from '../screens/welcome/WelcomeScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -12,40 +13,59 @@ import RequestBookingScreen from '../screens/main/requestBookingScreen';
 import CustomPackageRequestScreen from '../screens/main/CustomPackageRequestScreen';
 import CustomRequestHistoryScreen from '../screens/main/CustomRequestHistoryScreen';
 import DriverEarningsScreen from '../screens/main/DriverEarningsScreen';
+import PaymentScreen from '../screens/main/PaymentScreen';
+import BookingConfirmationScreen from '../screens/main/BookingConfirmationScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
 import * as Routes from '../constants/routes';
 import ChatNavigator from '../chat/navigation/ChatNavigator';
+import { useAuth } from '../hooks/useAuth';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const [role, setRole] = React.useState(null); // null, 'tourist', 'driver', or 'owner'
-  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+  const { isAuthenticated, role, loading } = useAuth();
+
+  React.useEffect(() => {
+    console.log('[RootNavigator] State:', { isAuthenticated, role, loading });
+  }, [isAuthenticated, role, loading]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#6B2E2B" />
+      </View>
+    );
+  }
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name={Routes.SPLASH}>
-        {props => <SplashScreen {...props} setRole={setRole} />}
-      </Stack.Screen>
-      <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
-      <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
-      <Stack.Screen name={Routes.LOGIN}>
-        {props => <LoginScreen {...props} setRole={setRole} setIsAuthenticated={setIsAuthenticated} />}
-      </Stack.Screen>
-      <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
-      <Stack.Screen name={Routes.MAIN}>
-        {props => (role === 'driver' ? <DriverTabs {...props} setRole={setRole} /> : role === 'owner' ? <OwnerTabs {...props} setRole={setRole} /> : <MainTabs {...props} setRole={setRole} />)}
-      </Stack.Screen>
-      <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
-      <Stack.Screen name={Routes.TARTANILLA_CARRIAGES} component={TartanillaCarriagesScreen} />
-      <Stack.Screen name={Routes.NOTIFICATION} component={NotificationScreen} />
-      <Stack.Screen name={Routes.REQUEST_BOOKING} component={RequestBookingScreen} />
-      <Stack.Screen name={Routes.CUSTOM_PACKAGE_REQUEST} component={CustomPackageRequestScreen} />
-      <Stack.Screen name={Routes.CUSTOM_REQUEST_HISTORY} component={CustomRequestHistoryScreen} />
-      <Stack.Screen name={Routes.DRIVER_EARNINGS} component={DriverEarningsScreen} />
-      <Stack.Screen name="Chat" component={ChatNavigator} />
+      {!isAuthenticated ? (
+        <>
+          <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
+          <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
+          <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
+          <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name={Routes.MAIN}>
+            {props => (role === 'driver' ? <DriverTabs {...props} /> : role === 'owner' ? <OwnerTabs {...props} /> : <MainTabs {...props} />)}
+          </Stack.Screen>
+          <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
+          <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
+          <Stack.Screen name={Routes.TARTANILLA_CARRIAGES} component={TartanillaCarriagesScreen} />
+          <Stack.Screen name={Routes.NOTIFICATION} component={NotificationScreen} />
+          <Stack.Screen name={Routes.REQUEST_BOOKING} component={RequestBookingScreen} />
+          <Stack.Screen name={Routes.CUSTOM_PACKAGE_REQUEST} component={CustomPackageRequestScreen} />
+          <Stack.Screen name={Routes.CUSTOM_REQUEST_HISTORY} component={CustomRequestHistoryScreen} />
+          <Stack.Screen name={Routes.DRIVER_EARNINGS} component={DriverEarningsScreen} />
+          <Stack.Screen name={Routes.PAYMENT} component={PaymentScreen} />
+          <Stack.Screen name={Routes.BOOKING_CONFIRMATION} component={BookingConfirmationScreen} />
+          <Stack.Screen name="Chat" component={ChatNavigator} />
+        </>
+      )}
     </Stack.Navigator>
   );
 }

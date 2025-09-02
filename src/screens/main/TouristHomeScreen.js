@@ -15,11 +15,13 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
+  RefreshControl, // ✅ added
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
-import UniversalMap from '../../components/UniversalMap';
+import LeafletMapView from '../../components/LeafletMapView';
+import { fetchMapData } from '../../services/map/fetchMap';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
@@ -48,6 +50,9 @@ export default function TouristHomeScreen({ navigation }) {
   const [networkStatus, setNetworkStatus] = useState('Unknown');
   const [dataSource, setDataSource] = useState('Unknown');
 
+  // ✅ Pull-to-refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
   // ---------- Sheet state ----------
   const SHEET_H = 540;
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -55,6 +60,10 @@ export default function TouristHomeScreen({ navigation }) {
   const [activePicker, setActivePicker] = useState('pickup'); // 'pickup' | 'destination'
   const [requesting, setRequesting] = useState(false);
   const [mapRegion, setMapRegion] = useState(CEBU_CITY_REGION);
+  const [roads, setRoads] = useState([]);
+  const [markers, setMarkers] = useState([]);
+  const [filteredPackages, setFilteredPackages] = useState([]);
+  const [sortBy, setSortBy] = useState('default'); // 'default', 'price_low', 'price_high', 'rating'
 
   useEffect(() => {
     Animated.timing(sheetY, {
@@ -82,22 +91,91 @@ export default function TouristHomeScreen({ navigation }) {
       try {
         setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
-        setTourPackages(Array.isArray(packages) ? packages : []);
-        setDataSource('Real API Data');
+        const packagesArray = Array.isArray(packages) ? packages : [];
+        setTourPackages(packagesArray);
+        setFilteredPackages(packagesArray);
+        setDataSource('API Data');
         setNetworkStatus('Connected');
       } catch (error) {
         console.error('Fetch packages error:', error);
         setTourPackages([]);
-        setDataSource('Mock Data (API Error)');
+        setDataSource('API Error');
         setNetworkStatus('Failed');
       } finally {
         setLoadingPackages(false);
       }
     };
+    
+    const loadMapData = async () => {
+      try {
+        const mapData = await fetchMapData({ cacheOnly: true });
+        if (mapData?.roads) setRoads(mapData.roads);
+        if (mapData?.points) {
+          setMarkers(mapData.points.map(point => ({
+            latitude: parseFloat(point.latitude || 0),
+            longitude: parseFloat(point.longitude || 0),
+            title: point.name || 'Point',
+            id: point.id || Math.random().toString()
+          })));
+        }
+      } catch (error) {
+        console.warn('Failed to load map data:', error);
+      }
+    };
+    
     fetchPackages();
+    loadMapData();
   }, []);
 
+  // Filter and sort packages
+  useEffect(() => {
+    let filtered = [...tourPackages];
+    
+    // Apply search filter
+    if (search.trim()) {
+      filtered = filtered.filter(pkg => 
+        pkg.package_name?.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    
+    // Apply sorting
+    switch (sortBy) {
+      case 'price_low':
+        filtered.sort((a, b) => (a.price || 0) - (b.price || 0));
+        break;
+      case 'price_high':
+        filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
+        break;
+      case 'rating':
+        filtered.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0));
+        break;
+      default:
+        // Keep original order
+        break;
+    }
+    
+    setFilteredPackages(filtered);
+  }, [tourPackages, search, sortBy]);
+
   useFocusEffect(React.useCallback(() => () => {}, []));
+
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      const packages = await tourPackageService.getAllPackages();
+      const packagesArray = Array.isArray(packages) ? packages : [];
+      setTourPackages(packagesArray);
+      setFilteredPackages(packagesArray);
+      setDataSource('Refreshed');
+      setNetworkStatus('Connected');
+    } catch (error) {
+      console.error('Refresh packages error:', error);
+      setDataSource('Refresh Failed');
+      setNetworkStatus('Failed');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const openRideSheet = async () => {
     if (Platform.OS !== 'web') {
@@ -117,10 +195,32 @@ export default function TouristHomeScreen({ navigation }) {
   const handleMapPress = (e) => {
     const { latitude, longitude } = e?.nativeEvent?.coordinate || {};
     if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
-    if (activePicker === 'pickup') {
-      setPickup({ name: 'Dropped Pin', latitude, longitude });
-    } else {
-      setDestination({ name: 'Dropped Pin', latitude, longitude });
+    
+    // Check if click is on a road highlight
+    const clickedRoad = roads.find(road => {
+      if (road.road_coordinates) {
+        const coords = JSON.parse(road.road_coordinates);
+        return coords.some(coord => {
+          const distance = Math.sqrt(
+            Math.pow(coord[0] - latitude, 2) + Math.pow(coord[1] - longitude, 2)
+          );
+          return distance < 0.001;
+        });
+      }
+      return false;
+    });
+    
+    if (clickedRoad) {
+      const coords = JSON.parse(clickedRoad.road_coordinates);
+      const roadPoint = coords[0];
+      const point = { 
+        name: clickedRoad.name || 'Road Point', 
+        latitude: roadPoint[0], 
+        longitude: roadPoint[1] 
+      };
+      
+      if (activePicker === 'pickup') setPickup(point);
+      else setDestination(point);
     }
   };
 
@@ -194,7 +294,14 @@ export default function TouristHomeScreen({ navigation }) {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        // ✅ Pull-to-refresh control
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B2E2B" />
+        }
+      >
         <Image source={require('../../../assets/tartanilla.jpg')} style={styles.featuredImage} resizeMode="cover" />
 
         <View style={styles.sectionHeader}>
@@ -219,6 +326,29 @@ export default function TouristHomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Filter Row */}
+        <View style={styles.filterRow}>
+          <Text style={styles.filterLabel}>Sort by:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[
+              { key: 'default', label: 'Default' },
+              { key: 'price_low', label: 'Price ↑' },
+              { key: 'price_high', label: 'Price ↓' },
+              { key: 'rating', label: 'Rating ↓' }
+            ].map(filter => (
+              <TouchableOpacity
+                key={filter.key}
+                style={[styles.filterBtn, sortBy === filter.key && styles.filterBtnActive]}
+                onPress={() => setSortBy(filter.key)}
+              >
+                <Text style={[styles.filterBtnText, sortBy === filter.key && styles.filterBtnTextActive]}>
+                  {filter.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         <Text
           style={[
             styles.networkStatus,
@@ -235,7 +365,7 @@ export default function TouristHomeScreen({ navigation }) {
 
         {loadingPackages ? (
           <Text style={{ textAlign: 'center', marginVertical: 16 }}>Loading packages...</Text>
-        ) : tourPackages.length === 0 ? (
+        ) : filteredPackages.length === 0 ? (
           <View style={styles.noPackagesContainer}>
             <Text style={styles.noPackagesText}>No tour packages available</Text>
             <Text style={styles.noPackagesSubtext}>
@@ -244,7 +374,7 @@ export default function TouristHomeScreen({ navigation }) {
           </View>
         ) : (
           <View style={styles.gridWrap}>
-            {tourPackages.map((pkg, index) => (
+            {filteredPackages.map((pkg, index) => (
               <TouchableOpacity
                 key={pkg.id || `${pkg.package_name}-${index}`}
                 activeOpacity={0.9}
@@ -439,15 +569,17 @@ export default function TouristHomeScreen({ navigation }) {
               <Text style={styles.quickText}>Use my location</Text>
             </TouchableOpacity>
             <Text style={styles.quickHint}>
-              Tap the map to set {activePicker === 'pickup' ? 'pickup' : 'destination'}.
+              Tap road highlights to set {activePicker === 'pickup' ? 'pickup' : 'destination'}.
             </Text>
           </View>
 
           {/* Map */}
           <View style={styles.mapWrap}>
-            <UniversalMap
+            <LeafletMapView
               style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
               region={mapRegion}
+              roads={roads}
+              markers={markers}
               onPress={handleMapPress}
               showsUserLocation
             />
@@ -545,6 +677,38 @@ const styles = StyleSheet.create({
 
   networkStatus: { fontSize: 12, fontWeight: '600' },
 
+  /* Filter Row */
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 12,
+  },
+  filterBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+    marginRight: 8,
+  },
+  filterBtnActive: {
+    backgroundColor: '#6B2E2B',
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  filterBtnTextActive: {
+    color: '#fff',
+  },
+
   /* Grid */
   gridWrap: {
     paddingHorizontal: 16,
@@ -600,7 +764,7 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 2,
     paddingHorizontal: 4,
     paddingVertical: 5,
     backgroundColor: '#E7F6EC',

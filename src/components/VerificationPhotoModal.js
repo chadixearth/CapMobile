@@ -99,20 +99,11 @@ export default function VerificationPhotoModal({
       );
 
       if (result.success) {
-        Alert.alert(
-          'Success',
-          'Verification photo uploaded successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setPhoto(null);
-                onClose();
-                if (onSuccess) onSuccess();
-              }
-            }
-          ]
-        );
+        // Automatically complete the booking after successful photo upload
+        setPhoto(null);
+        onClose();
+        if (onSuccess) onSuccess();
+        // No alert needed - the booking completion will show success message
       } else {
         Alert.alert('Error', result.error || 'Failed to upload photo');
       }
@@ -356,30 +347,36 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 12,
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
   },
   button: {
-    flex: 0.45,
-    padding: 15,
-    borderRadius: 10,
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#6B2E2B',
   },
   cancelButtonText: {
-    fontSize: 16,
-    color: '#666',
+    color: '#6B2E2B',
+    fontSize: 18,
+    fontWeight: '600',
   },
   uploadButton: {
-    backgroundColor: '#B26A00',
+    backgroundColor: '#6B2E2B',
   },
   uploadButtonText: {
-    fontSize: 16,
-    color: '#FFF',
+    color: '#fff',
+    fontSize: 18,
     fontWeight: '600',
   },
   disabledButton: {

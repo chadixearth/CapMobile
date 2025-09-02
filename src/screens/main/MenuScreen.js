@@ -19,6 +19,10 @@ import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { requestAccountDeletion } from '../../services/accountDeletionService';
+<<<<<<< HEAD
+=======
+import { useAuthData } from '../../hooks/useAuthData';
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -34,6 +38,12 @@ export default function MenuScreen({ navigation }) {
   const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const auth = useAuth();
+<<<<<<< HEAD
+=======
+  
+  // Get authenticated data
+  const { bookings, userCarriages, earnings, hasData } = useAuthData();
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
   const fetchUser = async () => {
     try {
@@ -79,7 +89,6 @@ export default function MenuScreen({ navigation }) {
     } finally {
       setLoggingOut(false);
       setLogoutVisible(false);
-      navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
     }
   };
 
@@ -118,7 +127,6 @@ export default function MenuScreen({ navigation }) {
         // Logout user immediately as required by the API
         setTimeout(async () => {
           await auth.logout();
-          navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
         }, 100);
       } else {
         alert(`Failed to request account deletion: ${result.error || 'Unknown error occurred'}`);
@@ -191,6 +199,28 @@ export default function MenuScreen({ navigation }) {
           />
           <Divider />
           <ProfileItem
+            icon={<Ionicons name="calendar-outline" size={22} color={MAROON} />}
+            label={`My Bookings ${hasData ? `(${bookings.length})` : ''}`}
+            onPress={() => navigation.navigate('BookingHistory')}
+          />
+          {(auth.user?.role === 'driver' || auth.user?.role === 'owner') && (
+            <>
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="car-outline" size={22} color={MAROON} />}
+                label={`My Carriages ${hasData ? `(${userCarriages.length})` : ''}`}
+                onPress={() => navigation.navigate('MyCarriages')}
+              />
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
+                label="Earnings"
+                onPress={() => navigation.navigate('Earnings')}
+              />
+            </>
+          )}
+          <Divider />
+          <ProfileItem
             icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
             label="Reviews"
             onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
@@ -248,6 +278,20 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
+        {/* Data Status (for debugging) */}
+        {__DEV__ && (
+          <View style={styles.debugCard}>
+            <Text style={styles.debugTitle}>API Data Status</Text>
+            <Text style={styles.debugText}>Bookings: {bookings.length} loaded</Text>
+            {(auth.user?.role === 'driver' || auth.user?.role === 'owner') && (
+              <>
+                <Text style={styles.debugText}>Carriages: {userCarriages.length} loaded</Text>
+                <Text style={styles.debugText}>Earnings: {earnings.length > 0 ? 'Loaded' : 'Empty'}</Text>
+              </>
+            )}
+          </View>
+        )}
+        
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
 
@@ -451,6 +495,27 @@ const styles = StyleSheet.create({
     color: '#9A9A9A',
     fontSize: 12,
     marginTop: 10,
+  },
+
+  debugCard: {
+    backgroundColor: '#F0F8FF',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0E8F0',
+  },
+  debugTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2E5BBA',
+    marginBottom: 6,
+  },
+  debugText: {
+    fontSize: 11,
+    color: '#5A7BA7',
+    marginBottom: 2,
   },
 
   /* Modal */

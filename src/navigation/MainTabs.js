@@ -1,35 +1,17 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import TouristHomeScreen from '../screens/main/TouristHomeScreen';
 import TerminalsScreen from '../screens/map/TerminalsScreen';
 import BookScreen from '../screens/main/BookScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
-import { useAuth } from '../hooks/useAuth';
 import * as Routes from '../constants/routes';
 
 const Tab = createBottomTabNavigator();
 
-export default function MainTabs({ setRole }) {
-  const navigation = useNavigation();
-  const auth = useAuth();
-
-  React.useEffect(() => {
-    if (!auth.loading && !auth.isAuthenticated) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
-    }
-  }, [auth.loading, auth.isAuthenticated, navigation]);
-
-  // Show loading or redirect if not authenticated
-  if (auth.loading || !auth.isAuthenticated) {
-    return null;
-  }
+export default function MainTabs() {
 
   return (
     <Tab.Navigator

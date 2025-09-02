@@ -12,6 +12,8 @@ export const CUSTOM_PACKAGE_REQUEST = 'CustomPackageRequest';
 export const CUSTOM_REQUEST_HISTORY = 'CustomRequestHistory';
 export const GOODS_SERVICES = 'GoodsServices';
 export const DRIVER_EARNINGS = 'DriverEarnings';
+export const PAYMENT = 'Payment';
+export const BOOKING_CONFIRMATION = 'BookingConfirmation';
 
 // Tab names
 export const HOME = 'Home';

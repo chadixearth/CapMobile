@@ -14,11 +14,13 @@ import {
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import SuccessModal from '../../components/SuccessModal';
-import ErrorModal from '../../components/ErrorModal';
+import * as Routes from '../../constants/routes';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/authService';
+import { useError } from '../../components/ErrorProvider';
+import ErrorHandlingService from '../../services/errorHandlingService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F7F4F2';
@@ -29,6 +31,12 @@ const TEXT = '#1F2937';
 
 const RequestBookingScreen = ({ route, navigation }) => {
   const { packageId, packageData } = route.params || {};
+  const { showError, showSuccess } = useError();
+
+  // Set navigation reference for error handling
+  React.useEffect(() => {
+    ErrorHandlingService.setNavigationRef(navigation);
+  }, [navigation]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -48,13 +56,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [showErrorModal, setShowErrorModal] = useState(false);
   const [bookingReference, setBookingReference] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  // Removed error modal states - using ErrorProvider instead
 
-  // Date/Time picker visibility
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+
 
   // Ensure pickup_time is in HH:MM:SS and valid
   const sanitizeTime = (timeStr) => {
@@ -104,8 +109,9 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error('Error loading packages:', error);
-      setErrorMessage('Failed to load tour packages');
-      setShowErrorModal(true);
+      ErrorHandlingService.handleError('Failed to load tour packages', {
+        title: 'Loading Error',
+      });
     }
   };
 
@@ -137,15 +143,19 @@ const RequestBookingScreen = ({ route, navigation }) => {
     const requiredFields = ['package_id', 'booking_date', 'number_of_pax', 'total_amount'];
     for (const field of requiredFields) {
       if (!formData[field]) {
-        setErrorMessage(`Please fill in ${field.replace('_', ' ')}`);
-        setShowErrorModal(true);
+        showError(`Please fill in ${field.replace('_', ' ')}`, {
+          title: 'Missing Information',
+          type: 'warning',
+        });
         return false;
       }
     }
 
     if (formData.number_of_pax <= 0) {
-      setErrorMessage('Number of passengers must be greater than 0');
-      setShowErrorModal(true);
+      showError('Number of passengers must be greater than 0', {
+        title: 'Invalid Passenger Count',
+        type: 'warning',
+      });
       return false;
     }
 
@@ -154,8 +164,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
       typeof formData.pickup_time === 'string' &&
       /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
     if (!timeOk) {
-      setErrorMessage('Pickup time must be in HH:MM format');
-      setShowErrorModal(true);
+      showError('Pickup time must be in HH:MM format', {
+        title: 'Invalid Time Format',
+        type: 'warning',
+      });
       return false;
     }
 
@@ -166,8 +178,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
       selectedPackageForValidation.max_pax &&
       formData.number_of_pax > selectedPackageForValidation.max_pax
     ) {
-      setErrorMessage(`Maximum passengers allowed: ${selectedPackageForValidation.max_pax}`);
-      setShowErrorModal(true);
+      showError(`Maximum passengers allowed: ${selectedPackageForValidation.max_pax}`, {
+        title: 'Passenger Limit Exceeded',
+        type: 'warning',
+      });
       return false;
     }
 
@@ -175,8 +189,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (bookingDate < today) {
-      setErrorMessage('Booking date cannot be in the past');
-      setShowErrorModal(true);
+      showError('Booking date cannot be in the past', {
+        title: 'Invalid Date',
+        type: 'warning',
+      });
       return false;
     }
 
@@ -185,22 +201,28 @@ const RequestBookingScreen = ({ route, navigation }) => {
       const cn = String(formData.contact_number).replace(/\D/g, '');
       const startsValid = cn.startsWith('09') || cn.startsWith('63');
       if (!startsValid) {
-        setErrorMessage('Contact number must start with 09 or 63');
-        setShowErrorModal(true);
+        showError('Contact number must start with 09 or 63', {
+          title: 'Invalid Contact Number',
+          type: 'warning',
+        });
         return false;
       }
       const len = cn.length;
       if (len < 10 || len > 13) {
-        setErrorMessage('Contact number length is invalid');
-        setShowErrorModal(true);
+        showError('Contact number length is invalid', {
+          title: 'Invalid Contact Number',
+          type: 'warning',
+        });
         return false;
       }
     }
 
     // Email validation
     if (formData.contact_email && !String(formData.contact_email).includes('@')) {
-      setErrorMessage('Please enter a valid email address');
-      setShowErrorModal(true);
+      showError('Please enter a valid email address', {
+        title: 'Invalid Email',
+        type: 'warning',
+      });
       return false;
     }
 
@@ -228,8 +250,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
 
       if (!userId) {
-        setErrorMessage('Please log in to create a booking');
-        setShowErrorModal(true);
+        ErrorHandlingService.handleAuthError('unauthorized', {
+          title: 'Login Required',
+          customMessage: 'Please log in to create a booking',
+        });
         return;
       }
 
@@ -250,21 +274,48 @@ const RequestBookingScreen = ({ route, navigation }) => {
       const response = await createBooking(bookingData);
 
       if (response.success) {
+        const bookingId = response.data?.id || response.data?.booking_id;
         setBookingReference(response.data?.booking_reference || 'N/A');
-        setShowSuccessModal(true);
+        
+        // Navigate to payment screen instead of showing success modal
+        if (bookingId && formData.total_amount > 0) {
+          navigation.navigate(Routes.PAYMENT, {
+            bookingId: bookingId,
+            bookingData: {
+              packageName: selectedPackage?.package_name || 'Tour Package',
+              bookingDate: formatDate(formData.booking_date),
+              numberOfPax: formData.number_of_pax,
+            },
+            amount: formData.total_amount,
+            currency: 'PHP'
+          });
+        } else {
+          // Fallback to success modal if no payment needed
+          setShowSuccessModal(true);
+        }
       } else {
-        setErrorMessage(response.error || 'Failed to create booking');
-        setShowErrorModal(true);
+        ErrorHandlingService.handleBookingError('booking_failed', {
+          customMessage: response.error || 'Failed to create booking',
+        });
       }
     } catch (error) {
       console.error('Error creating booking:', error);
+      
+      // Check for session expired error
+      if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
+        ErrorHandlingService.handleBookingError('session_expired_booking');
+        return;
+      }
+      
       const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-      setErrorMessage(
-        isAbort
-          ? 'Request timed out. Please check your connection and try again.'
-          : error.message || 'Failed to create booking'
-      );
-      setShowErrorModal(true);
+      const errorMessage = isAbort
+        ? 'Request timed out. Please check your connection and try again.'
+        : error.message || 'Failed to create booking';
+        
+      ErrorHandlingService.handleBookingError('booking_failed', {
+        customMessage: errorMessage,
+        onRetry: () => handleSubmit(), // Allow retry
+      });
     } finally {
       setLoading(false);
     }
@@ -290,21 +341,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
     return `${h}:${m}`;
   };
 
-  const onChangeDate = (event, selectedDate) => {
-    if (Platform.OS !== 'ios') setShowDatePicker(false);
-    if (!selectedDate) return; // dismissed
-    const chosen = new Date(selectedDate);
-    chosen.setHours(0, 0, 0, 0);
-    const safeDate = chosen < todayStart ? todayStart : chosen;
-    setFormData((prev) => ({ ...prev, booking_date: safeDate }));
-  };
-
-  const onChangeTime = (event, selectedTime) => {
-    if (Platform.OS !== 'ios') setShowTimePicker(false);
-    if (!selectedTime) return; // dismissed
-    const timeStr = formatTimeHM(selectedTime);
-    setFormData((prev) => ({ ...prev, pickup_time: timeStr }));
-  };
 
   // ——— UI helpers (pure presentation) ———
   const pkgImage = useMemo(() => {
@@ -389,53 +425,26 @@ const RequestBookingScreen = ({ route, navigation }) => {
           <View style={styles.row}>
             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.label}>Booking Date *</Text>
-              <TouchableOpacity
-                style={[styles.input, styles.inputButton]}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.inputButtonContent}>
-                  <Ionicons name="calendar-outline" size={16} color={MAROON} />
-                  <Text style={styles.inputButtonText}>{formatDate(formData.booking_date)}</Text>
-                </View>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={formData.booking_date instanceof Date ? formData.booking_date : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  minimumDate={todayStart}
-                  onChange={onChangeDate}
-                />
-              )}
+              <TextInput
+                style={styles.input}
+                value={formatDate(formData.booking_date)}
+                onChangeText={(value) => {
+                  const date = new Date(value);
+                  if (!isNaN(date.getTime())) {
+                    setFormData(prev => ({ ...prev, booking_date: date }));
+                  }
+                }}
+                placeholder="MM/DD/YYYY"
+              />
             </View>
             <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.label}>Pickup Time</Text>
-              <TouchableOpacity
-                style={[styles.input, styles.inputButton]}
-                onPress={() => setShowTimePicker(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.inputButtonContent}>
-                  <Ionicons name="time-outline" size={16} color={MAROON} />
-                  <Text style={styles.inputButtonText}>{formData.pickup_time}</Text>
-                </View>
-              </TouchableOpacity>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={(() => {
-                    // Build a Date using today's date and current HH:MM
-                    const [h, m] = String(formData.pickup_time || '09:00').split(':').map((x) => parseInt(x, 10) || 0);
-                    const d = new Date();
-                    d.setHours(h, m, 0, 0);
-                    return d;
-                  })()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  is24Hour={true}
-                  onChange={onChangeTime}
-                />
-              )}
+              <TextInput
+                style={styles.input}
+                value={formData.pickup_time}
+                onChangeText={(value) => handleInputChange('pickup_time', value)}
+                placeholder="09:00"
+              />
             </View>
           </View>
 
@@ -539,15 +548,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
           setShowSuccessModal(false);
           navigation.navigate('Main');
         }}
-      />
-
-      {/* Error Modal */}
-      <ErrorModal
-        visible={showErrorModal}
-        title="Booking Error"
-        message={errorMessage}
-        primaryActionText="OK"
-        onClose={() => setShowErrorModal(false)}
       />
     </KeyboardAvoidingView>
   );

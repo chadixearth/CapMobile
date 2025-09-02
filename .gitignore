@@ -1,7 +1,7 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
+package-lock.json
+yarn.lock
 
 # Expo
 .expo/
@@ -17,6 +17,11 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+<<<<<<< HEAD
+=======
+android/
+ios/
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
 
 # Metro
 .metro-health-check*
@@ -26,6 +31,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+<<<<<<< HEAD
 # macOS
 .DS_Store
 *.pem
@@ -35,3 +41,34 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+=======
+# OS
+.DS_Store
+Thumbs.db
+*.pem
+
+# env files
+.env*
+
+# typescript
+*.tsbuildinfo
+
+# logs
+*.log
+logs/
+
+# cache
+.cache/
+tmp/
+temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# misc
+*.tgz
+*.tar.gz
+>>>>>>> 069a124bff3b1c9ab25bd0bdba4bf1f39888a419
