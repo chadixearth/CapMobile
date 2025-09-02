@@ -99,20 +99,11 @@ export default function VerificationPhotoModal({
       );
 
       if (result.success) {
-        Alert.alert(
-          'Success',
-          'Verification photo uploaded successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                setPhoto(null);
-                onClose();
-                if (onSuccess) onSuccess();
-              }
-            }
-          ]
-        );
+        // Automatically complete the booking after successful photo upload
+        setPhoto(null);
+        onClose();
+        if (onSuccess) onSuccess();
+        // No alert needed - the booking completion will show success message
       } else {
         Alert.alert('Error', result.error || 'Failed to upload photo');
       }

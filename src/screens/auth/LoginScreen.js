@@ -14,8 +14,12 @@ import {
 import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
 import { loginUser } from '../../services/authService';
+import { apiBaseUrl } from '../../services/networkConfig';
+
+const API_BASE_URL = 'http://10.106.107.146:8000/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const MAROON = '#6B2E2B';
 const TEXT_GRAY = '#3A3A3A';
@@ -26,56 +30,111 @@ export default function LoginScreen({ navigation }) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');       // "Username" in UI
   const [password, setPassword] = useState('');
+
+  // Load saved credentials on mount
+  React.useEffect(() => {
+    loadSavedCredentials();
+  }, []);
+
+  const loadSavedCredentials = async () => {
+    try {
+      const savedEmail = await AsyncStorage.getItem('saved_email');
+      const savedPassword = await AsyncStorage.getItem('saved_password');
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+      }
+      if (savedPassword) {
+        setPassword(savedPassword);
+      }
+    } catch (error) {
+      console.log('No saved credentials found');
+    }
+  };
+
+  const saveCredentials = async () => {
+    try {
+      if (rememberMe) {
+        await AsyncStorage.setItem('saved_email', email);
+        await AsyncStorage.setItem('saved_password', password);
+      } else {
+        await AsyncStorage.removeItem('saved_email');
+        await AsyncStorage.removeItem('saved_password');
+      }
+    } catch (error) {
+      console.log('Failed to save credentials');
+    }
+  };
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [showDeletionWarning, setShowDeletionWarning] = useState(false);
 
   const handleLogin = async () => {
+    if (loading) return;
+    
     setError('');
     setLoading(true);
     try {
+      // Check suspension status first
+      const suspensionCheck = await fetch(`${API_BASE_URL}/auth/check-suspension/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      
+      if (suspensionCheck.ok) {
+        const suspensionData = await suspensionCheck.json();
+        if (suspensionData.suspended) {
+          let message = `Account Suspended\n\nReason: ${suspensionData.reason || 'Account suspended by admin'}`;
+          if (suspensionData.days_remaining > 0) {
+            message += `\n\nTry again in ${suspensionData.days_remaining} days`;
+          }
+          if (suspensionData.end_date) {
+            message += `\nSuspension ends: ${new Date(suspensionData.end_date).toLocaleDateString()}`;
+          }
+          Alert.alert('Account Suspended', message, [{ text: 'OK' }]);
+          setLoading(false);
+          return;
+        }
+      }
+      
       const allowedRoles = ['tourist', 'driver', 'owner'];
       const result = await loginUser(email, password, allowedRoles);
-      setLoading(false);
       
       if (result.success) {
-        // Check if account deletion was cancelled
+        await saveCredentials();
+        login(result.user);
+        
         if (result.deletion_cancelled || result.account_reactivated) {
-          // Show success alert about cancelled deletion
           Alert.alert(
             '🎉 Welcome Back!',
             'Good news! Your scheduled account deletion has been automatically cancelled. Your account is now fully active and all your data is safe.',
-            [
-              {
-                text: 'Great!',
-                onPress: async () => {
-                  await login(result.user);
-                },
-                style: 'default'
-              }
-            ],
+            [{ text: 'Great!', style: 'default' }],
             { cancelable: false }
           );
-        } else {
-          // Normal login flow
-          await login(result.user);
         }
+      } else if (result.suspended) {
+        let message = `Account Suspended\n\nReason: ${result.suspensionReason || 'Account suspended by admin'}`;
+        
+        if (result.suspensionDays > 0) {
+          message += `\n\nTry again in ${result.suspensionDays} days`;
+        }
+        
+        if (result.suspensionEndDate) {
+          message += `\nSuspension ends: ${new Date(result.suspensionEndDate).toLocaleDateString()}`;
+        }
+        
+        Alert.alert('Account Suspended', message, [{ text: 'OK' }]);
       } else {
-        // Handle suspension
-        if (result.suspended) {
-          const suspensionMessage = `Account Suspended\n\nReason: ${result.suspensionReason}\n${result.suspensionDays ? `Days remaining: ${result.suspensionDays}` : ''}${result.suspensionEndDate ? `\nSuspension ends: ${new Date(result.suspensionEndDate).toLocaleDateString()}` : ''}`;
-          Alert.alert('Account Suspended', suspensionMessage, [{ text: 'OK' }]);
-        } else if (result.account_suspended || result.deletion_scheduled) {
-          setError('Your account is scheduled for deletion. Please contact support if you need assistance.');
-        } else {
-          setError(result.error || 'Login failed.');
-        }
+        setError(result.error || 'Login failed.');
       }
     } catch (e) {
-      setLoading(false);
       setError('Network error. Please try again.');
       console.error('Login error:', e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -153,6 +212,18 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          {/* Remember Me Checkbox */}
+          <TouchableOpacity
+            style={styles.rememberMeContainer}
+            onPress={() => setRememberMe(!rememberMe)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Ionicons name="checkmark" size={16} color="#fff" />}
+            </View>
+            <Text style={styles.rememberMeText}>Remember me</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.loginBtn, loading && { opacity: 0.7 }]}
@@ -280,5 +351,27 @@ const styles = StyleSheet.create({
     color: MAROON,
     textDecorationLine: 'underline',
     fontWeight: '600',
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: MAROON,
+    borderRadius: 4,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: MAROON,
+  },
+  rememberMeText: {
+    fontSize: 14,
+    color: TEXT_GRAY,
   },
 });

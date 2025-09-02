@@ -14,7 +14,7 @@ import {
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import SuccessModal from '../../components/SuccessModal';
 import * as Routes from '../../constants/routes';
 import { supabase } from '../../services/supabase';
@@ -59,9 +59,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
   const [bookingReference, setBookingReference] = useState('');
   // Removed error modal states - using ErrorProvider instead
 
-  // Date/Time picker visibility
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+
 
   // Ensure pickup_time is in HH:MM:SS and valid
   const sanitizeTime = (timeStr) => {
@@ -343,21 +341,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
     return `${h}:${m}`;
   };
 
-  const onChangeDate = (event, selectedDate) => {
-    if (Platform.OS !== 'ios') setShowDatePicker(false);
-    if (!selectedDate) return; // dismissed
-    const chosen = new Date(selectedDate);
-    chosen.setHours(0, 0, 0, 0);
-    const safeDate = chosen < todayStart ? todayStart : chosen;
-    setFormData((prev) => ({ ...prev, booking_date: safeDate }));
-  };
 
-  const onChangeTime = (event, selectedTime) => {
-    if (Platform.OS !== 'ios') setShowTimePicker(false);
-    if (!selectedTime) return; // dismissed
-    const timeStr = formatTimeHM(selectedTime);
-    setFormData((prev) => ({ ...prev, pickup_time: timeStr }));
-  };
 
   // ——— UI helpers (pure presentation) ———
   const pkgImage = useMemo(() => {
@@ -442,53 +426,26 @@ const RequestBookingScreen = ({ route, navigation }) => {
           <View style={styles.row}>
             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.label}>Booking Date *</Text>
-              <TouchableOpacity
-                style={[styles.input, styles.inputButton]}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.inputButtonContent}>
-                  <Ionicons name="calendar-outline" size={16} color={MAROON} />
-                  <Text style={styles.inputButtonText}>{formatDate(formData.booking_date)}</Text>
-                </View>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={formData.booking_date instanceof Date ? formData.booking_date : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  minimumDate={todayStart}
-                  onChange={onChangeDate}
-                />
-              )}
+              <TextInput
+                style={styles.input}
+                value={formatDate(formData.booking_date)}
+                onChangeText={(value) => {
+                  const date = new Date(value);
+                  if (!isNaN(date.getTime())) {
+                    setFormData(prev => ({ ...prev, booking_date: date }));
+                  }
+                }}
+                placeholder="MM/DD/YYYY"
+              />
             </View>
             <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.label}>Pickup Time</Text>
-              <TouchableOpacity
-                style={[styles.input, styles.inputButton]}
-                onPress={() => setShowTimePicker(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.inputButtonContent}>
-                  <Ionicons name="time-outline" size={16} color={MAROON} />
-                  <Text style={styles.inputButtonText}>{formData.pickup_time}</Text>
-                </View>
-              </TouchableOpacity>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={(() => {
-                    // Build a Date using today's date and current HH:MM
-                    const [h, m] = String(formData.pickup_time || '09:00').split(':').map((x) => parseInt(x, 10) || 0);
-                    const d = new Date();
-                    d.setHours(h, m, 0, 0);
-                    return d;
-                  })()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  is24Hour={true}
-                  onChange={onChangeTime}
-                />
-              )}
+              <TextInput
+                style={styles.input}
+                value={formData.pickup_time}
+                onChangeText={(value) => handleInputChange('pickup_time', value)}
+                placeholder="09:00"
+              />
             </View>
           </View>
 

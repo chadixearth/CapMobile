@@ -27,9 +27,8 @@ const Stack = createNativeStackNavigator();
 export default function RootNavigator() {
   const { isAuthenticated, role, loading } = useAuth();
 
-  // Force re-render when authentication state changes
   React.useEffect(() => {
-    console.log('[RootNavigator] State changed:', { isAuthenticated, role, loading });
+    console.log('[RootNavigator] State:', { isAuthenticated, role, loading });
   }, [isAuthenticated, role, loading]);
 
   if (loading) {
@@ -44,8 +43,8 @@ export default function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
         <>
-          <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
           <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
+          <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
           <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
         </>

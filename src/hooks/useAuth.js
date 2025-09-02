@@ -13,6 +13,7 @@ export const useAuth = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState(null);
+  const [forceUpdate, setForceUpdate] = useState(0);
 
   // Check authentication status
   const checkAuth = useCallback(async (validateWithBackend = false) => {
@@ -26,6 +27,7 @@ export const useAuth = () => {
         setIsAuthenticated(false);
         setUser(null);
         setRole(null);
+        setLoading(false);
         return;
       }
       
@@ -70,45 +72,35 @@ export const useAuth = () => {
 
   // Logout function
   const logout = useCallback(async () => {
-    try {
-      await logoutUser();
-      await supabase.auth.signOut();
-      
-      // Clear authenticated API data
-      AuthApiLoader.clearCache();
-      
-      setIsAuthenticated(false);
-      setUser(null);
-      setRole(null);
-      return { success: true };
-    } catch (error) {
-      console.error('Logout failed:', error);
-      // Still clear local state and API data even if API call fails
-      AuthApiLoader.clearCache();
-      setIsAuthenticated(false);
-      setUser(null);
-      setRole(null);
-      return { success: true, error: error.message };
-    }
+    console.log('[useAuth] Starting logout process');
+    
+    // Clear state immediately
+    setIsAuthenticated(false);
+    setUser(null);
+    setRole(null);
+    setLoading(false);
+    
+    // Clear cache
+    AuthApiLoader.clearCache();
+    
+    // Backend cleanup (non-blocking)
+    logoutUser().catch(() => {});
+    supabase.auth.signOut().catch(() => {});
+    
+    console.log('[useAuth] Logout complete');
+    return { success: true };
   }, []);
 
   // Login function (updates local state and loads authenticated APIs)
-  const login = useCallback(async (userData) => {
+  const login = useCallback((userData) => {
     console.log('[useAuth] Setting authentication state for user:', userData.id);
-    setIsAuthenticated(true);
+    
     setUser(userData);
     setRole(userData.role || 'tourist');
+    setIsAuthenticated(true);
     setLoading(false);
     
-    // Load authenticated APIs in background
-    if (userData.id) {
-      try {
-        await AuthApiLoader.loadUserData(userData.id);
-        console.log('[useAuth] User data loaded after login');
-      } catch (error) {
-        console.warn('[useAuth] Failed to load user data:', error);
-      }
-    }
+    console.log('[useAuth] State updated - authenticated:', true, 'role:', userData.role || 'tourist');
   }, []);
 
   // Initialize auth state on hook mount

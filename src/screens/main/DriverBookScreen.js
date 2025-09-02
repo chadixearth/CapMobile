@@ -433,8 +433,8 @@ export default function DriverBookScreen({ navigation }) {
     setBookingToVerify(null);
     fetchUserAndBookings();
     Alert.alert(
-      'Booking Completed',
-      'Verification photo uploaded and booking completed successfully!',
+      'Trip Completed!',
+      'Verification photo uploaded successfully. Your booking is now complete and earnings have been processed.',
       [{
         text: 'View Earnings',
         onPress: () => navigation.navigate(Routes.DRIVER_EARNINGS)

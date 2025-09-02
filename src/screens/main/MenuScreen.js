@@ -83,7 +83,6 @@ export default function MenuScreen({ navigation }) {
     } finally {
       setLoggingOut(false);
       setLogoutVisible(false);
-      navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
     }
   };
 
@@ -122,7 +121,6 @@ export default function MenuScreen({ navigation }) {
         // Logout user immediately as required by the API
         setTimeout(async () => {
           await auth.logout();
-          navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
         }, 100);
       } else {
         alert(`Failed to request account deletion: ${result.error || 'Unknown error occurred'}`);

@@ -52,7 +52,11 @@ class PaymentService {
         this._log('PayMongo config initialized successfully');
       }
     } catch (error) {
-      this._log('Failed to initialize PayMongo config:', error);
+      if (error.response?.status === 404) {
+        this._log('PayMongo config endpoint not available, using fallback mode');
+      } else {
+        this._log('Failed to initialize PayMongo config:', error);
+      }
     }
   }
 

@@ -89,18 +89,25 @@ export default function GoodsServicesScreen() {
                 const userData = res.data;
                 const name = userData.name || 
                            userData.full_name ||
-                           [userData.first_name, userData.last_name].filter(Boolean).join(' ').trim() ||
-                           userData.email?.split('@')[0] || '';
-                return { id, name, email: userData.email || '' };
+                           [userData.first_name, userData.middle_name, userData.last_name].filter(Boolean).join(' ').trim() ||
+                           userData.email?.split('@')[0] || 
+                           `${userData.role || 'User'}`;
+                return { 
+                  id, 
+                  name, 
+                  email: userData.email || '', 
+                  role: userData.role || 'user',
+                  phone: userData.phone || ''
+                };
               }
             } catch {}
-            return { id, name: '', email: '' };
+            return { id, name: `User ${id.slice(0, 8)}`, email: '', role: 'user', phone: '' };
           })
         );
 
         const mapUpdate = { ...authorMap };
         for (const r of results) {
-          mapUpdate[r.id] = { name: r.name, email: r.email };
+          mapUpdate[r.id] = { name: r.name, email: r.email, role: r.role, phone: r.phone };
         }
         setAuthorMap(mapUpdate);
       } catch {}
@@ -137,43 +144,60 @@ export default function GoodsServicesScreen() {
   const renderItem = ({ item }) => {
     const sampleReviews = reviews.slice(0, 3);
 
+    const authorFromMap = authorMap[item.author_id] || {};
+    
     const displayName = (() => {
       // Try direct name fields first
       if (item.author_name && item.author_name.trim()) return item.author_name.trim();
       
-      // Try first/last name combination
+      // Try first/middle/last name combination
       const first = item.author_first_name || item.first_name || '';
+      const middle = item.author_middle_name || item.middle_name || '';
       const last = item.author_last_name || item.last_name || '';
-      const combined = [first, last].filter(Boolean).join(' ').trim();
+      const combined = [first, middle, last].filter(Boolean).join(' ').trim();
       if (combined) return combined;
       
       // Try from author map (fetched user profile)
-      const authorFromMap = authorMap[item.author_id];
-      if (authorFromMap?.name && authorFromMap.name.trim()) return authorFromMap.name.trim();
+      if (authorFromMap?.name && authorFromMap.name.trim() && !authorFromMap.name.includes('User')) {
+        return authorFromMap.name.trim();
+      }
       
-      // Try email as fallback
+      // Try full email as fallback (not just part before @)
       const email = item.author_email || item.email || authorFromMap?.email || '';
-      if (email) return email.split('@')[0]; // Use part before @ as name
+      if (email && email.includes('@')) return email;
       
-      // Final fallback to role
-      return String(item.author_role || 'Driver').toUpperCase();
+      // Final fallback to role with ID
+      const role = item.author_role || authorFromMap?.role || 'User';
+      return `${role} ${item.author_id?.slice(0, 8) || ''}`;
     })();
+    
+    const userRole = item.author_role || authorFromMap?.role || 'user';
+    const userEmail = item.author_email || authorFromMap?.email || '';
+    const userPhone = authorFromMap?.phone || '';
 
     return (
       <View style={styles.card}>
-        {/* Header: Avatar + Name + Role + Time */}
+        {/* Header: Avatar + Name + Role + Contact Info */}
         <View style={styles.headerRow}>
-          <View style={styles.avatar} />
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+          </View>
           <View style={styles.headerTextWrap}>
             <Text style={styles.author} numberOfLines={1}>{displayName}</Text>
             <View style={styles.metaWrap}>
-              {!!item.author_role && (
+              {!!userRole && (
                 <View style={styles.pill}>
-                  <Text style={styles.pillText}>{String(item.author_role).toUpperCase()}</Text>
+                  <Text style={styles.pillText}>{String(userRole).toUpperCase()}</Text>
                 </View>
               )}
-              <Text style={styles.timeText} numberOfLines={1}>{getPostedOrUpdated(item)}</Text>
+              {!!userEmail && (
+                <Text style={styles.contactText} numberOfLines={1}>📧 {userEmail}</Text>
+              )}
+              {!!userPhone && (
+                <Text style={styles.contactText} numberOfLines={1}>📱 {userPhone}</Text>
+              )}
             </View>
+            <Text style={styles.timeText} numberOfLines={1}>{getPostedOrUpdated(item)}</Text>
           </View>
         </View>
 
@@ -287,7 +311,22 @@ const styles = StyleSheet.create({
 
   // Header
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EEE', marginRight: 12 },
+  avatar: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22, 
+    backgroundColor: COLORS.pillBg, 
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.pillBorder,
+  },
+  avatarText: {
+    color: COLORS.pillText,
+    fontWeight: '700',
+    fontSize: 18,
+  },
   headerTextWrap: { flex: 1, minWidth: 0 },
   author: { fontWeight: '700', color: COLORS.text, fontSize: 16 },
   metaWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' },
@@ -300,7 +339,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   pillText: { color: COLORS.pillText, fontWeight: '700', fontSize: 10, letterSpacing: 0.3 },
-  timeText: { fontSize: 12, color: COLORS.sub, flexShrink: 1 },
+  timeText: { fontSize: 12, color: COLORS.sub, flexShrink: 1, marginTop: 4 },
+  contactText: { fontSize: 11, color: COLORS.sub, flexShrink: 1 },
 
   // Content text
   title: { color: COLORS.text, fontWeight: '700', fontSize: 16, marginBottom: 6, lineHeight: 22 },
