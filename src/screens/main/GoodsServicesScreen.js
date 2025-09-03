@@ -90,7 +90,7 @@ export default function GoodsServicesScreen() {
                 const name = userData.name || 
                            userData.full_name ||
                            [userData.first_name, userData.middle_name, userData.last_name].filter(Boolean).join(' ').trim() ||
-                           userData.email?.split('@')[0] || 
+                           userData.email || 
                            `${userData.role || 'User'}`;
                 return { 
                   id, 
@@ -101,7 +101,7 @@ export default function GoodsServicesScreen() {
                 };
               }
             } catch {}
-            return { id, name: `User ${id.slice(0, 8)}`, email: '', role: 'user', phone: '' };
+            return { id, name: '', email: '', role: 'user', phone: '' };
           })
         );
 
@@ -162,11 +162,10 @@ export default function GoodsServicesScreen() {
         return authorFromMap.name.trim();
       }
       
-      // Try full email as fallback (not just part before @)
+      // Try full email as fallback
       const email = item.author_email || item.email || authorFromMap?.email || '';
-      if (email && email.includes('@')) return email;
+      if (email) return email;
       
-      // Final fallback to role with ID
       const role = item.author_role || authorFromMap?.role || 'User';
       return `${role} ${item.author_id?.slice(0, 8) || ''}`;
     })();

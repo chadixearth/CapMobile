@@ -28,7 +28,16 @@ export default function RootNavigator() {
   const { isAuthenticated, role, loading } = useAuth();
 
   React.useEffect(() => {
-    console.log('[RootNavigator] State:', { isAuthenticated, role, loading });
+    console.log('[RootNavigator] State changed:', { isAuthenticated, role, loading });
+  }, [isAuthenticated, role, loading]);
+
+  console.log('[RootNavigator] Current render state:', { isAuthenticated, role, loading });
+
+  // Force re-render when auth state changes
+  React.useEffect(() => {
+    if (!loading) {
+      console.log('[RootNavigator] Auth state settled:', { isAuthenticated, role });
+    }
   }, [isAuthenticated, role, loading]);
 
   if (loading) {
@@ -43,8 +52,8 @@ export default function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
         <>
-          <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
           <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
+          <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
           <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
         </>

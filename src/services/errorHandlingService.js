@@ -59,7 +59,7 @@ class ErrorHandlingService {
           if (autoNavigateToLogin && this.navigationRef) {
             this.navigationRef.reset({
               index: 0,
-              routes: [{ name: 'Login' }],
+              routes: [{ name: 'Welcome' }],
             });
           }
         },
@@ -75,7 +75,7 @@ class ErrorHandlingService {
               if (autoNavigateToLogin && this.navigationRef) {
                 this.navigationRef.reset({
                   index: 0,
-                  routes: [{ name: 'Login' }],
+                  routes: [{ name: 'Welcome' }],
                 });
               }
             },

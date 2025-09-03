@@ -47,7 +47,8 @@ class ApiInitService {
       // Check if user is actually authenticated
       const authStatus = await checkAuthStatus();
       if (!authStatus.isLoggedIn) {
-        throw new Error('User not authenticated');
+        console.warn('[ApiInit] User not authenticated, skipping authenticated data load');
+        return { success: false, error: 'User not authenticated' };
       }
 
       const results = await Promise.allSettled([
@@ -81,7 +82,9 @@ class ApiInitService {
       };
     } catch (error) {
       console.error('[ApiInit] Failed to load authenticated data:', error);
-      throw error;
+      return { success: false, error: error.message };
+    } finally {
+      this.loadingPromises.authenticated = null;
     }
   }
 

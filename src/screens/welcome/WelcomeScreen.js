@@ -11,6 +11,7 @@ const WelcomeScreen = ({ navigation }) => {
     navigation.navigate(Routes.REGISTRATION);
   };
   const handleLogin = () => {
+    console.log('[WelcomeScreen] Navigating to Login');
     navigation.navigate(Routes.LOGIN);
   };
   const handleRoleSelect = (role) => {

@@ -8,7 +8,7 @@ import { apiBaseUrl } from './networkConfig';
 // - Android emulator: 10.0.2.2 (maps to host machine's localhost)
 // - iOS simulator: localhost
 // If you need a custom API host, set API_BASE_URL_OVERRIDE below.
-const API_BASE_URL_OVERRIDE = 'http://192.168.101.78:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
+const API_BASE_URL_OVERRIDE = 'http://10.106.107.146:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
 
 function getDevServerHost() {
   try {
@@ -46,7 +46,8 @@ export function setSessionExpiredCallback(callback) {
  */
 async function apiRequest(endpoint, options = {}) {
   try {
-    console.log(`Making API request to: ${API_BASE_URL}${endpoint}`);
+    console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
+    console.log(`[authService] Request options:`, { method: options.method, body: options.body });
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
@@ -224,6 +225,8 @@ export async function registerUser(email, password, role, additionalData = {}) {
  * @returns {Promise<{ success: boolean, user?: object, session?: object, error?: string }>}
  */
 export async function loginUser(email, password, allowedRoles = null) {
+  console.log('[authService] loginUser called with:', { email, allowedRoles });
+  
   const result = await apiRequest('/auth/login/', {
     method: 'POST',
     body: JSON.stringify({
@@ -232,6 +235,8 @@ export async function loginUser(email, password, allowedRoles = null) {
       allowed_roles: allowedRoles,
     }),
   });
+  
+  console.log('[authService] API result:', result);
 
   if (result.success && result.data.success) {
     // Store session data

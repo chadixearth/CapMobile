@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { checkAuthStatus, logoutUser, validateSession, setSessionExpiredCallback } from '../services/authService';
 import { supabase } from '../services/supabase';
 import AuthApiLoader from '../services/AuthApiLoader';
@@ -8,33 +8,65 @@ import ModalManager from '../services/ModalManager';
  * Custom hook for authentication state management
  * Provides centralized auth state, user info, and auth actions
  */
+// Global auth state to ensure all components get updates
+let globalAuthState = {
+  isAuthenticated: false,
+  user: null,
+  role: null,
+  loading: true,
+  initialized: false
+};
+
+let authListeners = new Set();
+
+const notifyAuthListeners = () => {
+  authListeners.forEach(listener => listener(globalAuthState));
+};
+
 export const useAuth = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState(null);
+  const [authState, setAuthState] = useState(globalAuthState);
   const [forceUpdate, setForceUpdate] = useState(0);
+
+  React.useEffect(() => {
+    const listener = (newState) => {
+      setAuthState({...newState});
+    };
+    authListeners.add(listener);
+    return () => authListeners.delete(listener);
+  }, []);
+
+  const { isAuthenticated, user, loading, role } = authState;
+
+  const updateGlobalAuthState = (updates) => {
+    globalAuthState = { ...globalAuthState, ...updates };
+    notifyAuthListeners();
+  };
 
   // Check authentication status
   const checkAuth = useCallback(async (validateWithBackend = false) => {
     try {
-      setLoading(true);
+      updateGlobalAuthState({ loading: true });
       
       // Always do local check first
       const authStatus = await checkAuthStatus();
       
       if (!authStatus.isLoggedIn || !authStatus.user) {
-        setIsAuthenticated(false);
-        setUser(null);
-        setRole(null);
-        setLoading(false);
+        updateGlobalAuthState({
+          isAuthenticated: false,
+          user: null,
+          role: null,
+          loading: false
+        });
         return;
       }
       
       // If local check passes, set the auth state
-      setIsAuthenticated(true);
-      setUser(authStatus.user);
-      setRole(authStatus.user.role || 'tourist');
+      updateGlobalAuthState({
+        isAuthenticated: true,
+        user: authStatus.user,
+        role: authStatus.user.role || 'tourist',
+        loading: false
+      });
       
       // Only validate with backend if explicitly requested AND we have a strong reason
       // Be more conservative about backend validation to prevent false session expiry
@@ -46,13 +78,17 @@ export const useAuth = () => {
             // Backend validation failed, clear auth state and auto-logout
             console.log('Session expired, auto-logging out');
             await logoutUser();
-            setIsAuthenticated(false);
-            setUser(null);
-            setRole(null);
+            updateGlobalAuthState({
+              isAuthenticated: false,
+              user: null,
+              role: null
+            });
           } else if (validationResult.user) {
             // Update user data from backend if available
-            setUser(validationResult.user);
-            setRole(validationResult.user.role || 'tourist');
+            updateGlobalAuthState({
+              user: validationResult.user,
+              role: validationResult.user.role || 'tourist'
+            });
           }
         } catch (error) {
           console.warn('Backend validation failed, keeping local session:', error);
@@ -62,26 +98,65 @@ export const useAuth = () => {
       }
     } catch (error) {
       console.error('Auth check failed:', error);
-      setIsAuthenticated(false);
-      setUser(null);
-      setRole(null);
+      updateGlobalAuthState({
+        isAuthenticated: false,
+        user: null,
+        role: null,
+        loading: false
+      });
     } finally {
-      setLoading(false);
+      updateGlobalAuthState({ loading: false });
     }
   }, []);
 
   // Logout function
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (navigationRef = null) => {
     console.log('[useAuth] Starting logout process');
     
     // Clear state immediately
-    setIsAuthenticated(false);
-    setUser(null);
-    setRole(null);
-    setLoading(false);
+    updateGlobalAuthState({
+      isAuthenticated: false,
+      user: null,
+      role: null,
+      loading: false
+    });
     
-    // Clear cache
+    // Clear caches
     AuthApiLoader.clearCache();
+    
+    // Clear authenticated data
+    try {
+      const AppInitService = (await import('../services/AppInitService')).default;
+      AppInitService.clearAuthenticatedData();
+    } catch (error) {
+      console.warn('[useAuth] Failed to clear authenticated data:', error);
+    }
+    
+    // Force navigation to Welcome
+    const navRef = navigationRef || global.navigationRef;
+    if (navRef && navRef.isReady()) {
+      try {
+        console.log('[useAuth] Attempting navigation to Welcome');
+        navRef.reset({
+          index: 0,
+          routes: [{ name: 'Welcome' }],
+        });
+        console.log('[useAuth] Successfully navigated to Welcome screen');
+      } catch (error) {
+        console.warn('[useAuth] Failed to navigate to Welcome:', error);
+      }
+    } else {
+      console.warn('[useAuth] Navigation ref not available or not ready');
+      // Force state update to trigger RootNavigator re-render
+      setTimeout(() => {
+        console.log('[useAuth] Forcing auth state update after logout');
+        updateGlobalAuthState({
+          isAuthenticated: false,
+          user: null,
+          role: null
+        });
+      }, 50);
+    }
     
     // Backend cleanup (non-blocking)
     logoutUser().catch(() => {});
@@ -92,28 +167,51 @@ export const useAuth = () => {
   }, []);
 
   // Login function (updates local state and loads authenticated APIs)
-  const login = useCallback((userData) => {
+  const login = useCallback(async (userData) => {
     console.log('[useAuth] Setting authentication state for user:', userData.id);
     
-    setUser(userData);
-    setRole(userData.role || 'tourist');
-    setIsAuthenticated(true);
-    setLoading(false);
+    updateGlobalAuthState({
+      user: userData,
+      role: userData.role || 'tourist',
+      isAuthenticated: true,
+      loading: false
+    });
+    
+    // Load authenticated data in background
+    try {
+      const AppInitService = (await import('../services/AppInitService')).default;
+      AppInitService.loadAuthenticatedData(userData.id).catch(error => {
+        console.warn('[useAuth] Failed to load authenticated data:', error);
+      });
+    } catch (error) {
+      console.warn('[useAuth] Failed to import AppInitService:', error);
+    }
     
     console.log('[useAuth] State updated - authenticated:', true, 'role:', userData.role || 'tourist');
+    
+    // Force navigation update
+    setTimeout(() => {
+      console.log('[useAuth] Final auth state:', { isAuthenticated: true, role: userData.role || 'tourist' });
+    }, 100);
   }, []);
 
   // Initialize auth state on hook mount
   useEffect(() => {
-    checkAuth();
+    // Only check auth on initial mount, not on every render
+    if (!globalAuthState.initialized) {
+      globalAuthState.initialized = true;
+      checkAuth();
+    }
     
     // Set up global session expiry handler
     setSessionExpiredCallback(() => {
       console.log('[useAuth] Session expired, auto-logging out');
       ModalManager.closeAllModals();
-      setIsAuthenticated(false);
-      setUser(null);
-      setRole(null);
+      updateGlobalAuthState({
+        isAuthenticated: false,
+        user: null,
+        role: null
+      });
     });
   }, []); // Remove checkAuth from dependencies to avoid infinite loop
 

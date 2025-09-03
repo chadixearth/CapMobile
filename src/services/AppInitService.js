@@ -57,12 +57,21 @@ class AppInitService {
         results.errors.push({ type: 'cache', error: error.message });
       }
 
-      // Step 3: Clean up old cache if needed
+      // Step 3: Initialize public API data
+      try {
+        console.log('[AppInit] Loading public API data...');
+        await ApiInitService.loadPublicData();
+        console.log('[AppInit] Public API data loaded');
+      } catch (error) {
+        console.error('[AppInit] Failed to load public API data:', error);
+        results.errors.push({ type: 'api', error: error.message });
+      }
+
+      // Step 4: Clean up old cache if needed
       try {
         const storageInfo = await mapCacheService.getStorageSize();
         if (storageInfo && parseFloat(storageInfo.totalSizeMB) > 50) {
           console.log('[AppInit] Cache size exceeds 50MB, cleaning old tiles...');
-          // Implement selective cleanup logic here
         }
       } catch (error) {
         console.error('[AppInit] Failed to check storage size:', error);
@@ -93,6 +102,27 @@ class AppInitService {
   reset() {
     this.isInitialized = false;
     this.initPromise = null;
+    ApiInitService.reset();
+  }
+
+  /**
+   * Load authenticated data after login
+   */
+  async loadAuthenticatedData(userId) {
+    try {
+      console.log('[AppInit] Loading authenticated data for user:', userId);
+      return await ApiInitService.loadAuthenticatedData(userId);
+    } catch (error) {
+      console.error('[AppInit] Failed to load authenticated data:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Clear authenticated data on logout
+   */
+  clearAuthenticatedData() {
+    ApiInitService.clearAuthenticatedData();
   }
 }
 

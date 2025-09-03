@@ -27,6 +27,7 @@ const LINE_GRAY = '#A9A9A9';
 const BG = '#F5F5F5';
 
 export default function LoginScreen({ navigation }) {
+  console.log('[LoginScreen] Component mounted');
   const { login } = useAuth();
   const [email, setEmail] = useState('');       // "Username" in UI
   const [password, setPassword] = useState('');
@@ -76,36 +77,35 @@ export default function LoginScreen({ navigation }) {
     
     setError('');
     setLoading(true);
+    
+    console.log('[LoginScreen] Starting login for:', email);
+    
     try {
-      // Check suspension status first
-      const suspensionCheck = await fetch(`${API_BASE_URL}/auth/check-suspension/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
+      const allowedRoles = ['tourist', 'driver', 'owner'];
+      console.log('[LoginScreen] Calling loginUser with:', { email, allowedRoles });
+      const result = await loginUser(email, password, allowedRoles);
+      console.log('[LoginScreen] Login result:', result);
       
-      if (suspensionCheck.ok) {
-        const suspensionData = await suspensionCheck.json();
-        if (suspensionData.suspended) {
-          let message = `Account Suspended\n\nReason: ${suspensionData.reason || 'Account suspended by admin'}`;
-          if (suspensionData.days_remaining > 0) {
-            message += `\n\nTry again in ${suspensionData.days_remaining} days`;
-          }
-          if (suspensionData.end_date) {
-            message += `\nSuspension ends: ${new Date(suspensionData.end_date).toLocaleDateString()}`;
-          }
-          Alert.alert('Account Suspended', message, [{ text: 'OK' }]);
+      if (result.success) {
+        // Check if user is suspended
+        if (result.user?.profile?.status === 'Suspended') {
+          const suspendedUntil = result.user.profile.suspended_until;
+          const reason = result.user.profile.suspension_reason || 'Account suspended';
+          const endDate = suspendedUntil ? new Date(suspendedUntil).toLocaleDateString() : 'Unknown';
+          
+          Alert.alert(
+            'Account Suspended',
+            `Your account is suspended.\n\nReason: ${reason}\nSuspension ends: ${endDate}`,
+            [{ text: 'OK' }]
+          );
           setLoading(false);
           return;
         }
-      }
-      
-      const allowedRoles = ['tourist', 'driver', 'owner'];
-      const result = await loginUser(email, password, allowedRoles);
-      
-      if (result.success) {
+        
         await saveCredentials();
-        login(result.user);
+        console.log('[LoginScreen] Calling login function...');
+        await login(result.user);
+        console.log('[LoginScreen] Login function completed');
         
         if (result.deletion_cancelled || result.account_reactivated) {
           Alert.alert(
@@ -115,25 +115,15 @@ export default function LoginScreen({ navigation }) {
             { cancelable: false }
           );
         }
-      } else if (result.suspended) {
-        let message = `Account Suspended\n\nReason: ${result.suspensionReason || 'Account suspended by admin'}`;
-        
-        if (result.suspensionDays > 0) {
-          message += `\n\nTry again in ${result.suspensionDays} days`;
-        }
-        
-        if (result.suspensionEndDate) {
-          message += `\nSuspension ends: ${new Date(result.suspensionEndDate).toLocaleDateString()}`;
-        }
-        
-        Alert.alert('Account Suspended', message, [{ text: 'OK' }]);
       } else {
+        console.log('[LoginScreen] Login failed:', result.error);
         setError(result.error || 'Login failed.');
       }
     } catch (e) {
+      console.error('[LoginScreen] Login error:', e);
       setError('Network error. Please try again.');
-      console.error('Login error:', e);
     } finally {
+      console.log('[LoginScreen] Setting loading to false');
       setLoading(false);
     }
   };

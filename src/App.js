@@ -34,7 +34,11 @@ export default function App() {
           // Navigation will go to Welcome once RootNavigator loads auth state,
           // but we also try to reset here just in case
           if (navRef.current?.isReady?.()) {
-            navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+            try {
+              navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+            } catch (error) {
+              console.warn('Navigation reset failed:', error);
+            }
           }
         }, 600);
       }
@@ -90,6 +94,8 @@ export default function App() {
         onReady={() => {
           // Set navigation reference for error handling service
           ErrorHandlingService.setNavigationRef(navRef.current);
+          // Make navigation ref globally available for logout
+          global.navigationRef = navRef.current;
         }}
       >
         <RootNavigator />
