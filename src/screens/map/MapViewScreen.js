@@ -11,7 +11,8 @@ const DEFAULT_REGION = {
   longitudeDelta: 0.15,
 };
 
-const MapViewScreen = ({ navigation }) => {
+const MapViewScreen = ({ navigation, route }) => {
+  const { mode, onLocationSelect } = route?.params || {};
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -155,7 +156,7 @@ const MapViewScreen = ({ navigation }) => {
     
     // Process points
     if (data.points && data.points.length > 0) {
-      const processedMarkers = data.points.map(point => ({
+      let processedMarkers = data.points.map(point => ({
         latitude: parseFloat(point.latitude || 0),
         longitude: parseFloat(point.longitude || 0),
         title: point.name || 'Unknown Point',
@@ -165,6 +166,12 @@ const MapViewScreen = ({ navigation }) => {
         id: point.id || Math.random().toString(),
         isActive: point.is_active !== false
       }));
+      
+      // Filter markers based on selection mode
+      if (mode === 'selectPickup') {
+        processedMarkers = processedMarkers.filter(marker => marker.pointType === 'pickup');
+      }
+      
       setMarkers(processedMarkers);
     }
     
@@ -240,6 +247,54 @@ const MapViewScreen = ({ navigation }) => {
     }
   }, []);
   
+  const handleMarkerPress = (marker) => {
+    if (mode === 'selectPickup' && onLocationSelect) {
+      Alert.alert(
+        'Confirm Selection',
+        `Select ${marker.title} as pickup location?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Select',
+            onPress: () => {
+              onLocationSelect({
+                name: marker.title,
+                latitude: marker.latitude,
+                longitude: marker.longitude,
+                pointType: marker.pointType
+              });
+              navigation.goBack();
+            }
+          }
+        ]
+      );
+    }
+  };
+
+  const handleMapPress = (location) => {
+    if (mode === 'selectDrop' && onLocationSelect) {
+      Alert.alert(
+        'Confirm Selection',
+        `Select this location as drop point?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Select',
+            onPress: () => {
+              onLocationSelect({
+                name: 'Custom Drop Location',
+                latitude: location.latitude,
+                longitude: location.longitude,
+                pointType: 'dropoff'
+              });
+              navigation.goBack();
+            }
+          }
+        ]
+      );
+    }
+  };
+
   const handleClearCache = async () => {
     Alert.alert(
       'Clear Cache',
@@ -298,8 +353,22 @@ const MapViewScreen = ({ navigation }) => {
             roads={roads}
             routes={routes}
             showSatellite={showSatellite}
+            onMarkerPress={mode === 'selectPickup' ? handleMarkerPress : undefined}
+            onMapPress={mode === 'selectDrop' ? handleMapPress : undefined}
           />
         </View>
+        
+        {/* Terminal Selection Mode */}
+        {mode && (
+          <View style={styles.selectionHeader}>
+            <Text style={styles.selectionTitle}>
+              {mode === 'selectPickup' ? 'Select Pickup Terminal' : 'Select Drop Location'}
+            </Text>
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <Text style={styles.cancelButton}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
@@ -646,6 +715,30 @@ const styles = StyleSheet.create({
   },
   settingsIcon: {
     fontSize: 20,
+  },
+  
+  // Selection mode styles
+  selectionHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  selectionTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
   },
   
   // Loading and error states

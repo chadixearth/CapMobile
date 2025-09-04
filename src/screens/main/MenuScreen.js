@@ -211,6 +211,12 @@ export default function MenuScreen({ navigation }) {
                 label="Earnings"
                 onPress={() => navigation.navigate('Earnings')}
               />
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="map-outline" size={22} color={MAROON} />}
+                label="My Tour Packages"
+                onPress={() => navigation.navigate('MyTourPackages')}
+              />
             </>
           )}
           <Divider />

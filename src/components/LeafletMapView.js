@@ -8,6 +8,8 @@ const LeafletMapView = ({
   roads = [], 
   routes = [],
   showSatellite = false,
+  onMarkerPress,
+  onMapPress,
   style 
 }) => {
   const webViewRef = useRef(null);
@@ -214,6 +216,23 @@ const LeafletMapView = ({
                 icon: getMarkerIcon(marker.color, marker.type)
               }).addTo(map);
               
+              // Add click handler for marker selection
+              leafletMarker.on('click', function(e) {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'markerClick',
+                    marker: {
+                      latitude: marker.lat,
+                      longitude: marker.lng,
+                      title: marker.title,
+                      description: marker.description,
+                      pointType: marker.type,
+                      iconColor: marker.color
+                    }
+                  }));
+                }
+              });
+              
               if (marker.title || marker.description) {
                 var popupContent = '<div>';
                 if (marker.title) {
@@ -259,8 +278,8 @@ const LeafletMapView = ({
             if (window.ReactNativeWebView) {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'mapClick',
-                lat: e.latlng.lat,
-                lng: e.latlng.lng
+                latitude: e.latlng.lat,
+                longitude: e.latlng.lng
               }));
             }
           });
@@ -275,8 +294,10 @@ const LeafletMapView = ({
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'mapReady') {
         console.log('Leaflet map is ready');
-      } else if (data.type === 'mapClick') {
-        console.log('Map clicked at:', data.lat, data.lng);
+      } else if (data.type === 'mapClick' && onMapPress) {
+        onMapPress({ latitude: data.latitude, longitude: data.longitude });
+      } else if (data.type === 'markerClick' && onMarkerPress) {
+        onMarkerPress(data.marker);
       }
     } catch (error) {
       console.error('Error handling WebView message:', error);

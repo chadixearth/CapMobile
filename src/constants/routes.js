@@ -24,3 +24,4 @@ export const EARNINGS = 'Earnings';
 export const BOOKINGS = 'Bookings';
 export const EVENTS = 'Events';
 export const MENU = 'Menu';
+export const REVIEWS = 'Reviews';

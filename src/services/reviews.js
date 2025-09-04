@@ -103,3 +103,19 @@ export async function getDriverReviews({ driver_id, limit = 20 } = {}) {
   return { success: false, error: res.data?.error || 'Failed to fetch driver reviews' };
 }
 
+export async function getUserReviews({ user_id, type = 'received', limit = 50 } = {}) {
+  if (!user_id) return { success: false, error: 'user_id is required' };
+  
+  try {
+    if (type === 'received') {
+      // Get reviews received by this user (as driver/owner)
+      return await getDriverReviews({ driver_id: user_id, limit });
+    } else {
+      // Get reviews given by this user
+      return await listReviews({ reviewer_id: user_id, limit, include_stats: true });
+    }
+  } catch (error) {
+    return { success: false, error: error.message || 'Failed to fetch user reviews' };
+  }
+}
+

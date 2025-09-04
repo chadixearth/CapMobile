@@ -15,6 +15,9 @@ import CustomRequestHistoryScreen from '../screens/main/CustomRequestHistoryScre
 import DriverEarningsScreen from '../screens/main/DriverEarningsScreen';
 import PaymentScreen from '../screens/main/PaymentScreen';
 import BookingConfirmationScreen from '../screens/main/BookingConfirmationScreen';
+import ReviewsScreen from '../screens/main/ReviewsScreen';
+import MyTourPackagesScreen from '../screens/main/MyTourPackagesScreen';
+import CreateTourPackageScreen from '../screens/main/CreateTourPackageScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
@@ -72,6 +75,10 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.DRIVER_EARNINGS} component={DriverEarningsScreen} />
           <Stack.Screen name={Routes.PAYMENT} component={PaymentScreen} />
           <Stack.Screen name={Routes.BOOKING_CONFIRMATION} component={BookingConfirmationScreen} />
+          <Stack.Screen name={Routes.REVIEWS} component={ReviewsScreen} />
+          <Stack.Screen name="MyTourPackages" component={MyTourPackagesScreen} />
+          <Stack.Screen name="CreateTourPackage" component={CreateTourPackageScreen} />
+          <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
         </>
       )}
