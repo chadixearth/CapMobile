@@ -11,7 +11,8 @@ function getDevServerHost() {
   }
 }
 const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`; 
-import { getAccessToken } from '../authService';
+import { getAccessToken, getCurrentUser } from '../authService';
+import { syncUserToBackend } from '../userSync';
 
 export async function createBooking(bookingData) {
   // Defensive: enforce server-expected types and field names
@@ -87,22 +88,42 @@ export async function createBooking(bookingData) {
     }
   };
 
-  // Retry up to 2 times on transient errors
+  // Retry up to 3 times on transient errors
   let currentPayload = { ...payload };
-  for (let i = 0; i < 2; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     try {
       return await attempt(currentPayload);
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
       const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');
       const isStatusCheck = /23514|status_check|bookings_status_check/i.test(err?.message || '');
+      const isUserNotFound = /Tourist.*does not exist|Customer.*does not exist/i.test(err?.message || '');
+      
       if (isStatusCheck && currentPayload.status === 'waiting_for_driver') {
         // Fallback to a conservative initial status if backend disallows waiting_for_driver at creation
         currentPayload = { ...currentPayload, status: 'pending' };
         console.warn('Backend rejected initial status; retrying with status=pending');
         continue;
       }
-      if (i < 1 && (isAbort || isNet)) {
+      
+      if (isUserNotFound && i === 0) {
+        // Try to sync user to backend
+        try {
+          const user = await getCurrentUser();
+          if (user) {
+            console.log('Attempting to sync user to backend...');
+            const syncResult = await syncUserToBackend(user);
+            if (syncResult.success) {
+              console.log('User synced successfully, retrying booking creation');
+              continue;
+            }
+          }
+        } catch (syncError) {
+          console.error('Failed to sync user:', syncError);
+        }
+      }
+      
+      if (i < 2 && (isAbort || isNet)) {
         await new Promise(res => setTimeout(res, 800));
         continue;
       }

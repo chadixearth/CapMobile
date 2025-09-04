@@ -39,10 +39,9 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
     
     console.log('Fetching available bookings for drivers from:', url);
     
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
       },
       signal: controller.signal,
     });
@@ -86,12 +85,10 @@ export async function driverAcceptBooking(bookingId, driverData) {
     
     console.log('Accepting booking:', bookingId, 'for driver:', driverData);
     
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(driverData),
       signal: controller.signal,
@@ -141,10 +138,9 @@ export async function getDriverBookings(driverId, filters = {}) {
     console.log('Driver ID:', driverId);
     console.log('API Base URL:', API_BASE_URL);
     
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
       },
       signal: controller.signal,
     });
@@ -186,12 +182,10 @@ export async function updateBookingStatus(bookingId, status) {
     
     console.log('Updating booking status:', bookingId, 'to:', status);
     
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ status }),
       signal: controller.signal,
@@ -228,12 +222,10 @@ export async function driverCompleteBooking(bookingId, driverId) {
     // Backend exposes: /api/tour-booking/complete/{booking_id}/
     const url = `${API_BASE_URL}complete/${bookingId}/`;
 
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ driver_id: driverId }),
       signal: controller.signal,
@@ -274,12 +266,10 @@ export async function driverStartBooking(bookingId, driverId) {
 
     const url = `${API_BASE_URL}start/${bookingId}/`;
 
-    const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ driver_id: driverId }),
       signal: controller.signal,

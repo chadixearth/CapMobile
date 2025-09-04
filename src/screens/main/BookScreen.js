@@ -19,6 +19,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { getCustomerCustomRequests } from '../../services/specialpackage/customPackageRequest';
 import { createPackageReview, createDriverReview } from '../../services/reviews';
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
+import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
 
 const MAROON = '#6B2E2B';
 
@@ -48,6 +49,11 @@ export default function BookScreen({ navigation }) {
   const [ratingModal, setRatingModal] = useState({ visible: false, type: 'package', booking: null });
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
+
+  // cancellation state
+  const [cancelModal, setCancelModal] = useState({ visible: false, booking: null, policy: null });
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (!auth.loading && !auth.isAuthenticated) {
@@ -199,6 +205,12 @@ export default function BookScreen({ navigation }) {
   const getDriverId = (b) => b?.driver_id || b?.assigned_driver_id || b?.driver?.id || b?.assigned_driver?.id || null;
   const getPackageId = (b) => b?.package_id || b?.package?.id || b?.tour_package_id || null;
 
+  // Check if booking can be cancelled
+  const canCancelBooking = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    return status === 'pending' || status === 'confirmed' || status === 'driver_assigned' || status === 'waiting_for_driver';
+  };
+
   const buildStars = (rating) => {
     if (rating == null) return null;
     const full = Math.floor(rating);
@@ -314,6 +326,78 @@ export default function BookScreen({ navigation }) {
       }
     } catch (e) {
       Alert.alert('Error', e?.message || 'Failed to submit review');
+    }
+  };
+
+  // Cancellation handlers
+  const handleCancelBooking = async (booking) => {
+    if (!booking || !user) return;
+    
+    try {
+      // Check cancellation policy first
+      const policyResult = await getCancellationPolicy(booking.id, user.id);
+      
+      if (policyResult.success) {
+        setCancelModal({ 
+          visible: true, 
+          booking: booking, 
+          policy: policyResult.data 
+        });
+        setCancelReason('');
+      } else {
+        // Fallback to local calculation if API fails
+        const totalAmount = getTotalAmount(booking) || 0;
+        const bookingDate = getBookingDateValue(booking);
+        
+        if (totalAmount && bookingDate) {
+          const localPolicy = calculateCancellationFee(bookingDate, totalAmount);
+          setCancelModal({ 
+            visible: true, 
+            booking: booking, 
+            policy: localPolicy 
+          });
+          setCancelReason('');
+        } else {
+          Alert.alert('Error', 'Unable to check cancellation policy. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking cancellation policy:', error);
+      Alert.alert('Error', 'Failed to check cancellation policy.');
+    }
+  };
+
+  const confirmCancelBooking = async () => {
+    if (!cancelModal.booking || !user) return;
+    
+    try {
+      setCancelling(true);
+      
+      const result = await cancelBooking(
+        cancelModal.booking.id, 
+        user.id, 
+        cancelReason
+      );
+      
+      if (result.success) {
+        setCancelModal({ visible: false, booking: null, policy: null });
+        
+        const refundAmount = result.refund_info?.refund_amount || cancelModal.policy?.refund_amount || 0;
+        const processingTime = result.refund_info?.processing_time || '3-5 business days';
+        
+        Alert.alert(
+          'Booking Cancelled',
+          `Your booking has been cancelled successfully.${refundAmount > 0 ? `\n\nRefund of ₱${refundAmount.toFixed(2)} will be processed within ${processingTime}.` : ''}`,
+          [{ text: 'OK', onPress: () => fetchUserAndBookings() }]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to cancel booking');
+      }
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+      Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -442,6 +526,22 @@ export default function BookScreen({ navigation }) {
               value={formatCurrency(total)}
               valueStyle={{ fontWeight: '700', color: '#2E7D32' }}
             />
+
+            {canCancelBooking(b) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Actions</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.cancelBtn]}
+                    onPress={() => handleCancelBooking(b)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="close-circle-outline" size={16} color="#C62828" />
+                    <Text style={[styles.actionBtnText, { color: '#C62828' }]} numberOfLines={1}>Cancel Booking</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             {String((b.status || '')).toLowerCase() === 'completed' && (
               <View style={styles.section}>
@@ -779,6 +879,83 @@ export default function BookScreen({ navigation }) {
           </View>
         </Modal>
 
+        {/* Cancellation modal */}
+        <Modal
+          visible={cancelModal.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !cancelling && setCancelModal({ visible: false, booking: null, policy: null })}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Cancel Booking</Text>
+                <TouchableOpacity 
+                  onPress={() => !cancelling && setCancelModal({ visible: false, booking: null, policy: null })}
+                  disabled={cancelling}
+                >
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <View style={{ padding: 16 }}>
+                {cancelModal.policy && (
+                  <View style={styles.policyCard}>
+                    <Text style={styles.policyTitle}>Cancellation Policy</Text>
+                    <Text style={styles.policyMessage}>{cancelModal.policy.policy_message}</Text>
+                    
+                    <View style={styles.policyDetails}>
+                      <View style={styles.policyRow}>
+                        <Text style={styles.policyLabel}>Original Amount:</Text>
+                        <Text style={styles.policyValue}>₱{(cancelModal.policy.total_amount || 0).toFixed(2)}</Text>
+                      </View>
+                      
+                      {cancelModal.policy.cancellation_fee > 0 && (
+                        <View style={styles.policyRow}>
+                          <Text style={styles.policyLabel}>Cancellation Fee:</Text>
+                          <Text style={[styles.policyValue, { color: '#C62828' }]}>-₱{(cancelModal.policy.cancellation_fee || 0).toFixed(2)}</Text>
+                        </View>
+                      )}
+                      
+                      <View style={[styles.policyRow, styles.policyRowTotal]}>
+                        <Text style={styles.policyLabelTotal}>Refund Amount:</Text>
+                        <Text style={styles.policyValueTotal}>₱{(cancelModal.policy.refund_amount || 0).toFixed(2)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+                
+                <Text style={styles.reasonLabel}>Reason for cancellation (optional):</Text>
+                <TextInput
+                  style={styles.modalTextarea}
+                  placeholder="Please let us know why you're cancelling..."
+                  placeholderTextColor="#999"
+                  value={cancelReason}
+                  onChangeText={setCancelReason}
+                  multiline
+                  editable={!cancelling}
+                />
+                
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                  <TouchableOpacity 
+                    style={[styles.pillBtn, { backgroundColor: '#666', flex: 1 }]} 
+                    onPress={() => setCancelModal({ visible: false, booking: null, policy: null })}
+                    disabled={cancelling}
+                  >
+                    <Text style={styles.pillBtnText}>Keep Booking</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.pillBtn, { backgroundColor: '#C62828', flex: 1 }]} 
+                    onPress={confirmCancelBooking}
+                    disabled={cancelling}
+                  >
+                    <Text style={styles.pillBtnText}>{cancelling ? 'Cancelling...' : 'Cancel Booking'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {/* Verification viewer */}
         <Modal
           visible={viewer.visible}
@@ -926,7 +1103,21 @@ customRequestBtnText: {
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#eee', borderRadius: 999 },
   actionBtnText: { color: MAROON, fontSize: 12, fontWeight: '700' },
   actionBtnDisabled: { opacity: 0.5 },
+  cancelBtn: { borderColor: '#FFCDD2' },
   smallNote: { fontSize: 12, color: '#9aa0a6', marginTop: 6 },
+
+  // cancellation policy styles
+  policyCard: { backgroundColor: '#FFF3E0', borderRadius: 8, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#FFE0B2' },
+  policyTitle: { fontSize: 14, fontWeight: '700', color: '#E65100', marginBottom: 8 },
+  policyMessage: { fontSize: 13, color: '#BF360C', marginBottom: 12, lineHeight: 18 },
+  policyDetails: { gap: 6 },
+  policyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  policyRowTotal: { borderTopWidth: 1, borderTopColor: '#FFE0B2', paddingTop: 8, marginTop: 4 },
+  policyLabel: { fontSize: 13, color: '#666' },
+  policyValue: { fontSize: 13, color: '#333', fontWeight: '600' },
+  policyLabelTotal: { fontSize: 14, color: '#333', fontWeight: '700' },
+  policyValueTotal: { fontSize: 14, color: '#2E7D32', fontWeight: '700' },
+  reasonLabel: { fontSize: 13, color: '#333', marginBottom: 8, fontWeight: '600' },
 
   // card
   card: {

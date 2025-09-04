@@ -20,6 +20,7 @@ import {
   getAvailableBookingsForDrivers,
   driverAcceptBooking,
   getDriverBookings,
+  updateBookingStatus,
 } from '../../services/tourpackage/acceptBooking';
 import { driverStartBooking, driverCancelBooking } from '../../services/tourpackage/acceptBooking';
 import {
@@ -119,13 +120,19 @@ export default function DriverBookScreen({ navigation }) {
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
-      Alert.alert('Error', `Failed to load bookings: ${error.message}`);
+      // Don't show alert for 500 errors, just set empty arrays
+      if (error.message?.includes('500')) {
+        setAvailableBookings([]);
+        setDriverBookings([]);
+      } else {
+        Alert.alert('Error', `Failed to load bookings: ${error.message}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchAvailableBookings = async (driverId) => {
+  const fetchAvailableBookings = async (driverId, retryCount = 0) => {
     try {
       const bookingsData = await getAvailableBookingsForDrivers(driverId);
       let processedBookings = [];
@@ -143,7 +150,12 @@ export default function DriverBookScreen({ navigation }) {
       setAvailableBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
-      setAvailableBookings([]);
+      // Retry once for 500 errors, then silently fail
+      if (error.message?.includes('500') && retryCount < 1) {
+        setTimeout(() => fetchAvailableBookings(driverId, retryCount + 1), 2000);
+      } else {
+        setAvailableBookings([]);
+      }
     }
   };
 
@@ -205,7 +217,7 @@ export default function DriverBookScreen({ navigation }) {
     }
   };
 
-  const fetchDriverBookings = async (driverId) => {
+  const fetchDriverBookings = async (driverId, retryCount = 0) => {
     try {
       const bookingsData = await getDriverBookings(driverId);
       let processedBookings = [];
@@ -223,7 +235,12 @@ export default function DriverBookScreen({ navigation }) {
       setDriverBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
-      setDriverBookings([]);
+      // Retry once for 500 errors, then silently fail
+      if (error.message?.includes('500') && retryCount < 1) {
+        setTimeout(() => fetchDriverBookings(driverId, retryCount + 1), 2000);
+      } else {
+        setDriverBookings([]);
+      }
     }
   };
 
@@ -289,7 +306,7 @@ export default function DriverBookScreen({ navigation }) {
       setAcceptingBooking(true);
       let result;
       if (bookingToCancel.request_type === 'custom_tour') {
-        result = await updateCustomTourStatus(bookingToCancel.id, 'cancelled');
+        result = await updateCustomTourStatus(bookingToCancel.id, 'waiting_for_driver');
         result = { success: !!(result && result.success), ...result };
       } else {
         result = await driverCancelBooking(bookingToCancel.id, user.id, 'Driver cancelled');
@@ -299,8 +316,14 @@ export default function DriverBookScreen({ navigation }) {
       setBookingToCancel(null);
       
       if (result && result.success) {
-        Alert.alert('Cancelled', 'The booking has been cancelled.', [
-          { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
+        Alert.alert('Cancelled', 'The booking has been made available to other drivers.', [
+          { 
+            text: 'OK', 
+            onPress: () => { 
+              // Add delay before refresh to allow backend to process
+              setTimeout(() => fetchUserAndBookings(), 1000);
+            } 
+          },
         ]);
       } else {
         Alert.alert('Error', result?.error || 'Failed to cancel booking');
@@ -447,8 +470,10 @@ export default function DriverBookScreen({ navigation }) {
       case 'waiting_for_driver':
         return '#B26A00';
       case 'driver_assigned':
+      case 'accepted':
         return '#2E7D32';
       case 'in_progress':
+      case 'ongoing':
         return '#1565C0';
       case 'completed':
         return '#2E7D32';
@@ -470,8 +495,10 @@ export default function DriverBookScreen({ navigation }) {
       case 'waiting_for_driver':
         return 'time';
       case 'driver_assigned':
+      case 'accepted':
         return 'checkmark-circle';
       case 'in_progress':
+      case 'ongoing':
         return 'car';
       case 'completed':
         return 'checkmark-done-circle';
@@ -553,18 +580,25 @@ export default function DriverBookScreen({ navigation }) {
       </View>
 
       {booking.status === 'waiting_for_driver' && activeTab === 'available' && (
-        <TouchableOpacity style={styles.acceptButton} onPress={() => handleAcceptBooking(booking)}>
-          <Ionicons name="checkmark-circle" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Accept Booking</Text>
-        </TouchableOpacity>
+        booking.cancelled_by_driver_id === user?.id ? (
+          <View style={[styles.acceptButton, styles.disabledButton]}>
+            <Ionicons name="block" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Cannot Accept (Previously Cancelled)</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.acceptButton} onPress={() => handleAcceptBooking(booking)}>
+            <Ionicons name="checkmark-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Accept Booking</Text>
+          </TouchableOpacity>
+        )
       )}
-      {activeTab === 'ongoing' && booking.status === 'in_progress' && (
+      {activeTab === 'ongoing' && (booking.status === 'in_progress' || booking.status === 'ongoing') && (
         <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
           <Ionicons name="checkmark-done" size={18} color="#fff" />
           <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
-      {activeTab === 'ongoing' && booking.status === 'driver_assigned' && (
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
         <>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
@@ -665,10 +699,17 @@ export default function DriverBookScreen({ navigation }) {
       </View>
 
       {tour.status === 'waiting_for_driver' && activeTab === 'available' && (
-        <TouchableOpacity style={[styles.acceptButton, styles.customTourAcceptButton]} onPress={() => handleAcceptBooking(tour)}>
-          <Ionicons name="checkmark-circle" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Accept Tour</Text>
-        </TouchableOpacity>
+        tour.cancelled_by_driver_id === user?.id ? (
+          <View style={[styles.acceptButton, styles.customTourAcceptButton, styles.disabledButton]}>
+            <Ionicons name="block" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Cannot Accept (Previously Cancelled)</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={[styles.acceptButton, styles.customTourAcceptButton]} onPress={() => handleAcceptBooking(tour)}>
+            <Ionicons name="checkmark-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Accept Tour</Text>
+          </TouchableOpacity>
+        )
       )}
     </View>
   );
@@ -731,7 +772,8 @@ export default function DriverBookScreen({ navigation }) {
 
   const ongoingBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();
-    return status === 'driver_assigned' || status === 'in_progress';
+    // Include all statuses that represent ongoing trips
+    return status === 'driver_assigned' || status === 'in_progress' || status === 'accepted' || status === 'ongoing';
   });
   const historyBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();

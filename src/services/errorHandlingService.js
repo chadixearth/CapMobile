@@ -1,4 +1,5 @@
 import { Alert } from 'react-native';
+import * as Routes from '../constants/routes';
 
 /**
  * Centralized error handling service for the mobile app
@@ -59,7 +60,7 @@ class ErrorHandlingService {
           if (autoNavigateToLogin && this.navigationRef) {
             this.navigationRef.reset({
               index: 0,
-              routes: [{ name: 'Welcome' }],
+              routes: [{ name: Routes.WELCOME }],
             });
           }
         },
@@ -75,7 +76,7 @@ class ErrorHandlingService {
               if (autoNavigateToLogin && this.navigationRef) {
                 this.navigationRef.reset({
                   index: 0,
-                  routes: [{ name: 'Welcome' }],
+                  routes: [{ name: Routes.WELCOME }],
                 });
               }
             },
