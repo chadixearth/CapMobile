@@ -11,6 +11,7 @@ import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { uploadGoodsServicesMedia } from '../../services/goodsServices';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import AccountDeletionHandler from '../../components/AccountDeletionHandler';
 
 export default function AccountDetailsScreen({ navigation }) {
   // All hooks must be called at the top level, before any conditional returns
@@ -536,10 +537,37 @@ export default function AccountDetailsScreen({ navigation }) {
         {success ? <Text style={styles.success}>{success}</Text> : null}
         <Button title={loading ? 'Saving...' : 'Save Changes'} onPress={handleSave} />
 
+        {/* Account Deletion Section */}
+        <View style={styles.dangerZone}>
+          <Text style={styles.dangerTitle}>Danger Zone</Text>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={async () => {
+              const currentUser = await getCurrentUser();
+              if (currentUser) {
+                AccountDeletionHandler.requestDeletion(
+                  currentUser.id,
+                  'User requested account deletion',
+                  () => {
+                    // Navigate to login screen after logout
+                    auth.logout();
+                  }
+                );
+              }
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#DC3545" />
+            <Text style={styles.deleteButtonText}>Delete Account</Text>
+          </TouchableOpacity>
+          <Text style={styles.deleteWarning}>
+            This will schedule your account for deletion in 7 days. You can cancel by logging in again within 7 days.
+          </Text>
+        </View>
+
         {/* Bio for Drivers/Owners */}
         {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
           <View style={styles.postContainer}>
-            <Text style={styles.postTitle}>Your Bio (Goods & Services)</Text>
+            <Text style={styles.postTitle}>Configuring the goods & services</Text>
             {/* Combined composer like Facebook */}
             <View style={styles.bioComposer}>
               <TextInput
@@ -631,4 +659,44 @@ const styles = StyleSheet.create({
   photoItem: { position: 'relative', marginRight: 8 },
   photoThumbnail: { width: 60, height: 60, borderRadius: 8, backgroundColor: '#F8F9FA' },
   removePhoto: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FFFFFF', borderRadius: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
+  
+  // Danger Zone Styles
+  dangerZone: {
+    marginTop: 32,
+    backgroundColor: '#FFF5F5',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FED7D7',
+  },
+  dangerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#DC3545',
+    marginBottom: 16,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#DC3545',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  deleteButtonText: {
+    color: '#DC3545',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  deleteWarning: {
+    fontSize: 12,
+    color: '#6C757D',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
 });

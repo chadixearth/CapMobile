@@ -59,13 +59,15 @@ export default function GoodsServicesScreen() {
   const fetchRecentReviews = useCallback(async () => {
     setLoadingReviews(true);
     try {
-      const res = await listReviews({ limit: 20, include_stats: false });
+      // Fetch all reviews to match with drivers
+      const res = await listReviews({ limit: 100, include_stats: true });
       if (res.success) {
         const arr = Array.isArray(res.data) ? res.data : [];
+        console.log('Fetched reviews:', arr.length);
         setReviews(arr);
       }
-    } catch (_) {
-      // ignore errors, leave reviews empty
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
     } finally {
       setLoadingReviews(false);
     }
@@ -87,6 +89,8 @@ export default function GoodsServicesScreen() {
         );
         if (missingIds.length === 0) return;
 
+        console.log('Fetching author profiles for:', missingIds.length, 'users');
+
         const results = await Promise.all(
           missingIds.map(async (id) => {
             try {
@@ -106,7 +110,9 @@ export default function GoodsServicesScreen() {
                   phone: userData.phone || ''
                 };
               }
-            } catch {}
+            } catch (error) {
+              console.warn('Failed to fetch profile for user:', id, error.message);
+            }
             return { id, name: '', email: '', role: 'user', phone: '' };
           })
         );
@@ -115,8 +121,11 @@ export default function GoodsServicesScreen() {
         for (const r of results) {
           mapUpdate[r.id] = { name: r.name, email: r.email, role: r.role, phone: r.phone };
         }
+        console.log('Author map updated with:', Object.keys(mapUpdate).length, 'profiles');
         setAuthorMap(mapUpdate);
-      } catch {}
+      } catch (error) {
+        console.error('Error resolving author profiles:', error);
+      }
     };
     run();
   }, [posts]);
@@ -135,10 +144,15 @@ export default function GoodsServicesScreen() {
     setRefreshing(false);
   }, [fetchPosts, fetchRecentReviews]);
 
-  // Enhanced media grid with better layout
+  // Enhanced media grid with better layout and error handling
   const renderMediaGrid = (mediaArr) => {
     if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
-    const images = mediaArr.filter((m) => m?.url).slice(0, 4);
+    
+    // Filter valid images and ensure URLs are accessible
+    const images = mediaArr
+      .filter((m) => m && typeof m === 'object' && m.url && typeof m.url === 'string')
+      .slice(0, 6); // Show up to 6 images
+    
     if (images.length === 0) return null;
     
     const getImageStyle = (index, total) => {
@@ -152,6 +166,7 @@ export default function GoodsServicesScreen() {
     
     return (
       <View style={styles.mediaContainer}>
+        <Text style={styles.mediaLabel}>Photos ({images.length})</Text>
         <View style={styles.mediaGrid}>
           {images.map((m, idx) => (
             <TouchableOpacity key={idx} activeOpacity={0.8}>
@@ -159,10 +174,18 @@ export default function GoodsServicesScreen() {
                 source={{ uri: m.url }} 
                 style={getImageStyle(idx, images.length)}
                 resizeMode="cover"
+                onError={(error) => {
+                  console.log('Image load error:', error.nativeEvent.error);
+                }}
               />
               {images.length > 4 && idx === 3 && (
                 <View style={styles.moreOverlay}>
                   <Text style={styles.moreText}>+{images.length - 4}</Text>
+                </View>
+              )}
+              {m.caption && (
+                <View style={styles.captionOverlay}>
+                  <Text style={styles.captionText} numberOfLines={1}>{m.caption}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -173,7 +196,16 @@ export default function GoodsServicesScreen() {
   };
 
   const renderItem = ({ item }) => {
-    const sampleReviews = reviews.slice(0, 3);
+    // Get reviews specific to this driver/owner
+    const driverReviews = reviews.filter(review => 
+      review.driver_id === item.author_id || 
+      review.package_owner_id === item.author_id
+    );
+    
+    // Calculate average rating for this driver
+    const avgRating = driverReviews.length > 0 
+      ? driverReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / driverReviews.length
+      : 0;
 
     const authorFromMap = authorMap[item.author_id] || {};
     
@@ -234,16 +266,28 @@ export default function GoodsServicesScreen() {
             </View>
             <View style={styles.contactRow}>
               {userEmail && (
-                <View style={styles.contactChip}>
+                <TouchableOpacity 
+                  style={styles.contactChip}
+                  onPress={() => {
+                    // Could implement email functionality here
+                    console.log('Email:', userEmail);
+                  }}
+                >
                   <Ionicons name="mail" size={12} color={COLORS.primary} />
                   <Text style={styles.contactText} numberOfLines={1}>{userEmail}</Text>
-                </View>
+                </TouchableOpacity>
               )}
               {userPhone && (
-                <View style={styles.contactChip}>
+                <TouchableOpacity 
+                  style={styles.contactChip}
+                  onPress={() => {
+                    // Could implement call functionality here
+                    console.log('Phone:', userPhone);
+                  }}
+                >
                   <Ionicons name="call" size={12} color={COLORS.primary} />
                   <Text style={styles.contactText} numberOfLines={1}>{userPhone}</Text>
-                </View>
+                </TouchableOpacity>
               )}
             </View>
             <Text style={styles.timeText}>{getPostedOrUpdated(item)}</Text>
@@ -252,21 +296,37 @@ export default function GoodsServicesScreen() {
 
         {/* Content */}
         {item.title && <Text style={styles.title}>{item.title}</Text>}
-        {item.description && <Text style={styles.description}>{item.description}</Text>}
+        {item.description && (
+          <View style={styles.bioSection}>
+            <Text style={styles.bioLabel}>About {displayName}:</Text>
+            <Text style={styles.description}>{item.description}</Text>
+          </View>
+        )}
+
+        {/* Driver Rating */}
+        {avgRating > 0 && (
+          <View style={styles.ratingSection}>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={16} color="#FFB800" />
+              <Text style={styles.ratingValue}>{avgRating.toFixed(1)}</Text>
+              <Text style={styles.ratingCount}>({driverReviews.length} review{driverReviews.length !== 1 ? 's' : ''})</Text>
+            </View>
+          </View>
+        )}
 
         {renderMediaGrid(item.media)}
 
-        {/* Compact Reviews */}
-        {sampleReviews.length > 0 && (
+        {/* Driver-specific Reviews */}
+        {driverReviews.length > 0 && (
           <View style={styles.reviewsSection}>
             <View style={styles.sectionHeader}>
               <Ionicons name="star" size={14} color="#FFB800" />
-              <Text style={styles.sectionTitle}>Reviews ({sampleReviews.length})</Text>
+              <Text style={styles.sectionTitle}>Customer Reviews ({driverReviews.length})</Text>
             </View>
-            {sampleReviews.slice(0, 2).map((rv, idx) => (
+            {driverReviews.slice(0, 3).map((rv, idx) => (
               <View key={rv.id || idx} style={styles.reviewItem}>
                 <View style={styles.reviewRow}>
-                  <Text style={styles.reviewReviewer}>{rv.reviewer_name || 'Tourist'}</Text>
+                  <Text style={styles.reviewReviewer}>{rv.reviewer_name || rv.tourist_name || 'Customer'}</Text>
                   {Number.isFinite(Number(rv.rating)) && (
                     <Text style={styles.ratingText}>★ {Number(rv.rating).toFixed(1)}</Text>
                   )}
@@ -274,8 +334,14 @@ export default function GoodsServicesScreen() {
                 {rv.comment && (
                   <Text style={styles.reviewText} numberOfLines={2}>{rv.comment}</Text>
                 )}
+                {rv.created_at && (
+                  <Text style={styles.reviewDate}>{formatDateTime(rv.created_at)}</Text>
+                )}
               </View>
             ))}
+            {driverReviews.length > 3 && (
+              <Text style={styles.moreReviews}>+{driverReviews.length - 3} more reviews</Text>
+            )}
           </View>
         )}
       </View>
@@ -291,7 +357,14 @@ export default function GoodsServicesScreen() {
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>No posts yet.</Text> : null}
+        ListEmptyComponent={!loading ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="business-outline" size={48} color={COLORS.sub} />
+            <Text style={styles.empty}>No goods & services posts yet.</Text>
+            <Text style={styles.emptySubtext}>Drivers and owners can create posts to showcase their services.</Text>
+          </View>
+        ) : null}
+        showsVerticalScrollIndicator={false}
       />
 
       {/* ✅ Keep the refresh button (no custom request button) */}
@@ -331,7 +404,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   listContent: { padding: 16, paddingBottom: 24 },
   error: { color: 'red', padding: 16 },
-  empty: { textAlign: 'center', color: COLORS.sub, marginTop: 28 },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  empty: { 
+    textAlign: 'center', 
+    color: COLORS.text, 
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    textAlign: 'center',
+    color: COLORS.sub,
+    fontSize: 14,
+    marginTop: 8,
+    lineHeight: 20,
+  },
   muted: { color: COLORS.sub, fontSize: 12 },
 
   // Footer refresh button stays
@@ -459,16 +551,50 @@ const styles = StyleSheet.create({
     marginBottom: 8, 
     lineHeight: 24 
   },
+  bioSection: {
+    marginBottom: 12,
+  },
+  bioLabel: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginBottom: 6,
+  },
   description: { 
     color: COLORS.text, 
     lineHeight: 22, 
     fontSize: 15, 
     marginBottom: 4 
   },
+  
+  // Rating section
+  ratingSection: {
+    marginBottom: 12,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ratingValue: {
+    color: COLORS.text,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  ratingCount: {
+    color: COLORS.sub,
+    fontSize: 14,
+  },
 
   // Enhanced media grid
   mediaContainer: {
     marginVertical: 12,
+  },
+  mediaLabel: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginBottom: 8,
   },
   mediaGrid: {
     flexDirection: 'row',
@@ -515,6 +641,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  captionOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  captionText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '500',
+  },
 
   // Compact reviews
   reviewsSection: {
@@ -557,5 +697,17 @@ const styles = StyleSheet.create({
     color: COLORS.sub, 
     fontSize: 12, 
     lineHeight: 16,
+  },
+  reviewDate: {
+    color: COLORS.sub,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  moreReviews: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

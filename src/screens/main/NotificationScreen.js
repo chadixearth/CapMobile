@@ -2,9 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Badge } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import NotificationService from '../../services/notificationService';
-import LocationService from '../../services/locationService';
 import { useAuth } from '../../hooks/useAuth';
 
 const MAROON = '#6B2E2B';
@@ -18,13 +16,8 @@ export default function NotificationScreen({ navigation }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuth();
   const appState = useRef(AppState.currentState);
-  const notificationListener = useRef();
-  const responseListener = useRef();
-
   useEffect(() => {
     loadNotifications();
-    setupNotificationListeners();
-    startLocationTrackingIfDriver();
 
     // Handle app state changes
     const subscription = AppState.addEventListener('change', nextAppState => {
@@ -37,44 +30,10 @@ export default function NotificationScreen({ navigation }) {
 
     return () => {
       subscription?.remove();
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
-      LocationService.stopTracking();
     };
   }, []);
 
-  const setupNotificationListeners = () => {
-    // Listen for notifications while app is running
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
-      loadNotifications(); // Refresh the list
-    });
 
-    // Listen for notification taps
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification tapped:', response);
-      const data = response.notification.request.content.data;
-      if (data.type === 'booking') {
-        // Navigate to booking details or driver screen
-        navigation.navigate('DriverBooking');
-      }
-    });
-  };
-
-  const startLocationTrackingIfDriver = async () => {
-    if (user?.role === 'driver' || user?.role === 'driver-owner') {
-      const success = await LocationService.startTracking(user.id, (location) => {
-        console.log('Location updated:', location);
-      });
-      if (success) {
-        console.log('Location tracking started for driver');
-      }
-    }
-  };
 
   const loadNotifications = async () => {
     if (!user?.id) return;

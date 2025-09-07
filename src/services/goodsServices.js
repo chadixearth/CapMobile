@@ -19,6 +19,7 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    console.log(`[goodsServices] Making request to: ${API_BASE_URL}${path}`);
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers: {
@@ -30,8 +31,10 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
     });
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await response.json() : await response.text();
+    console.log(`[goodsServices] Response status: ${response.status}, data:`, data);
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
+    console.error(`[goodsServices] Request error:`, error);
     if (error.name === 'AbortError') {
       return { ok: false, status: 0, data: { success: false, error: 'Request timeout' } };
     }
@@ -61,10 +64,7 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
   if (author_id) params.append('author_id', author_id);
   if (author_role) params.append('author_role', author_role);
   const qs = params.toString();
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${qs ? `?${qs}` : ''}`,
-    `/goods-services-posts/${qs ? `?${qs}` : ''}`,
-  ], { method: 'GET' });
+  const res = await request(`/goods-services-profiles/${qs ? `?${qs}` : ''}`, { method: 'GET' });
   if (res.ok) {
     // The optimized list may return {results: [...]} or a raw array
     const items = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
@@ -75,10 +75,7 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
 
 export async function createGoodsServicesPost(authorId, description, media = []) {
   const payload = JSON.stringify({ author_id: authorId, description, media });
-  const res = await requestWithFallback([
-    '/goods-services-profiles/',
-    '/goods-services-posts/',
-  ], { method: 'POST', body: payload, timeoutMs: 30000 });
+  const res = await request('/goods-services-profiles/', { method: 'POST', body: payload, timeoutMs: 30000 });
   if (res.ok) {
     return { success: true, data: res.data };
   }
@@ -91,19 +88,13 @@ export async function updateGoodsServicesPost(postId, { author_id, description, 
   if (description !== undefined) body.description = description;
   if (is_active !== undefined) body.is_active = is_active;
   if (media !== undefined) body.media = media;
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${postId}/`,
-    `/goods-services-posts/${postId}/`,
-  ], { method: 'PUT', body: JSON.stringify(body) });
+  const res = await request(`/goods-services-profiles/${postId}/`, { method: 'PUT', body: JSON.stringify(body) });
   if (res.ok) return { success: true, data: res.data };
   return { success: false, error: res.data?.error || 'Failed to update post' };
 }
 
 export async function deleteGoodsServicesPost(postId, authorId) {
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${postId}/`,
-    `/goods-services-posts/${postId}/`,
-  ], { method: 'DELETE', body: JSON.stringify({ author_id: authorId }) });
+  const res = await request(`/goods-services-profiles/${postId}/`, { method: 'DELETE', body: JSON.stringify({ author_id: authorId }) });
   if (res.ok) return { success: true };
   return { success: false, error: res.data?.error || 'Failed to delete post' };
 }

@@ -2,9 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, NativeModules } from 'react-native';
 import { apiBaseUrl } from './networkConfig';
 
-// API Configuration
-const API_BASE_URL_OVERRIDE = 'http://192.168.8.165:8000/api';
-const API_BASE_URL = API_BASE_URL_OVERRIDE || apiBaseUrl();
+// API Configuration - Use the network config
+const API_BASE_URL = apiBaseUrl();
 
 // Session keys for AsyncStorage
 const SESSION_KEYS = {
@@ -36,12 +35,19 @@ async function apiRequest(endpoint, options = {}) {
       ...options.headers,
     };
     
-    if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+    // Only add auth token for non-auth endpoints
+    const isAuthEndpoint = endpoint.includes('/auth/login') || 
+                          endpoint.includes('/auth/register') || 
+                          endpoint.includes('/auth/logout');
+    
+    if (!isAuthEndpoint) {
       const token = await getAccessToken();
       if (token) {
         headers.Authorization = `Bearer ${token}`;
         console.log(`[authService] Added auth token to request`);
       }
+    } else {
+      console.log(`[authService] Skipping auth token for auth endpoint: ${endpoint}`);
     }
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -83,7 +89,7 @@ async function apiRequest(endpoint, options = {}) {
     if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND') || error.message.includes('Network request failed')) {
       return {
         success: false,
-        error: `Cannot connect to server at ${API_BASE_URL}. Please check:\n1. Backend server is running\n2. Device is on same network\n3. IP address is correct` 
+        error: `Cannot connect to server at ${API_BASE_URL}. Please check:\n1. Backend server is running\n2. Device is on same network\n3. IP address is correct\n4. Try updating IP in networkConfig.js` 
       };
     }
     
@@ -177,8 +183,12 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
-  const result = await apiRequest('/auth/register/', {
+  // Make direct fetch request to avoid token issues
+  const result = await fetch(`${API_BASE_URL}/auth/register/`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       email,
       password: password && password.trim() !== '' ? password : null,
@@ -186,20 +196,27 @@ export async function registerUser(email, password, role, additionalData = {}) {
       additional_data: additionalData,
     }),
   });
+  
+  const data = await result.json();
+  const apiResult = {
+    success: result.ok,
+    data,
+    status: result.status,
+  };
 
-  if (result.success && result.data.success) {
+  if (apiResult.success && apiResult.data.success) {
     return {
       success: true,
-      user: result.data.user,
-      message: result.data.message,
-      status: result.data.status, // Could be 'pending_approval' for driver/owner
-      registration_id: result.data.registration_id, // For pending registrations
+      user: apiResult.data.user,
+      message: apiResult.data.message,
+      status: apiResult.data.status, // Could be 'pending_approval' for driver/owner
+      registration_id: apiResult.data.registration_id, // For pending registrations
     };
   }
 
   return {
     success: false,
-    error: result.data?.error || result.error || 'Registration failed',
+    error: apiResult.data?.error || 'Registration failed',
   };
 }
 
@@ -213,8 +230,16 @@ export async function registerUser(email, password, role, additionalData = {}) {
 export async function loginUser(email, password, allowedRoles = null) {
   console.log('[authService] loginUser called with:', { email, allowedRoles });
   
-  const result = await apiRequest('/auth/login/', {
+  // Clear any existing session before login attempt
+  await clearStoredSession();
+  console.log('[authService] Cleared existing session before login');
+  
+  // Make direct fetch request to avoid token issues
+  const result = await fetch(`${API_BASE_URL}/auth/login/`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       email,
       password,
@@ -222,43 +247,68 @@ export async function loginUser(email, password, allowedRoles = null) {
     }),
   });
   
-  console.log('[authService] API result:', result);
+  const data = await result.json();
+  const apiResult = {
+    success: result.ok,
+    data,
+    status: result.status,
+  };
+  
+  console.log('[authService] API result:', apiResult);
 
-  if (result.success && result.data.success) {
+  if (apiResult.success && apiResult.data.success) {
     // Store session data with proper token handling
     const sessionData = {
-      access_token: result.data.session?.access_token || result.data.jwt?.token,
-      refresh_token: result.data.session?.refresh_token || result.data.jwt?.refresh_token,
-      user: result.data.user,
+      access_token: apiResult.data.session?.access_token || apiResult.data.jwt?.token,
+      refresh_token: apiResult.data.session?.refresh_token || apiResult.data.jwt?.refresh_token,
+      user: apiResult.data.user,
     };
     await storeSession(sessionData);
     console.log('[authService] Session stored with token:', sessionData.access_token ? 'YES' : 'NO');
 
+    // Log deletion cancellation if it occurred
+    if (apiResult.data.deletion_cancelled) {
+      console.log('[authService] Account deletion was automatically cancelled on login');
+    }
+
     return {
       success: true,
-      user: result.data.user,
-      session: result.data.session,
-      message: result.data.message,
-      deletion_cancelled: result.data.deletion_cancelled,
-      account_reactivated: result.data.account_reactivated,
+      user: apiResult.data.user,
+      session: apiResult.data.session,
+      message: apiResult.data.message,
+      deletion_cancelled: apiResult.data.deletion_cancelled,
+      account_reactivated: apiResult.data.account_reactivated,
+      deletion_info: apiResult.data.deletion_info,
+    };
+  }
+
+  // Handle account scheduled for deletion
+  if (apiResult.data?.scheduled_for_deletion) {
+    return {
+      success: false,
+      scheduled_for_deletion: true,
+      deletion_info: apiResult.data.deletion_info,
+      days_remaining: apiResult.data.days_remaining,
+      scheduled_deletion_at: apiResult.data.scheduled_deletion_at,
+      error: apiResult.data.error || 'Account is scheduled for deletion',
     };
   }
 
   // Handle suspension and other specific error cases
-  if (result.data?.suspended) {
+  if (apiResult.data?.suspended) {
     return {
       success: false,
       suspended: true,
-      suspensionReason: result.data.suspension_reason || 'Account suspended',
-      suspensionDays: result.data.suspension_days || 0,
-      suspensionEndDate: result.data.suspension_end_date,
-      error: `Account suspended: ${result.data.suspension_reason || 'Violation of terms'}${result.data.suspension_days ? ` (${result.data.suspension_days} days remaining)` : ''}`,
+      suspensionReason: apiResult.data.suspension_reason || 'Account suspended',
+      suspensionDays: apiResult.data.suspension_days || 0,
+      suspensionEndDate: apiResult.data.suspension_end_date,
+      error: `Account suspended: ${apiResult.data.suspension_reason || 'Violation of terms'}${apiResult.data.suspension_days ? ` (${apiResult.data.suspension_days} days remaining)` : ''}`,
     };
   }
 
   return {
     success: false,
-    error: result.data?.error || result.error || 'Login failed',
+    error: apiResult.data?.error || 'Login failed',
   };
 }
 
@@ -452,28 +502,49 @@ export async function getAccessToken() {
 export async function updateUserProfile(userId, profileData) {
   try {
     console.log('[authService] Updating user profile:', { userId, profileData });
+    console.log('[authService] API URL:', `${API_BASE_URL}/auth/profile/update/`);
+    
+    // Clean profile data - remove empty values
+    const cleanedData = {};
+    Object.keys(profileData).forEach(key => {
+      const value = profileData[key];
+      if (value !== null && value !== undefined && value !== '') {
+        cleanedData[key] = value;
+      }
+    });
+    
+    console.log('[authService] Cleaned profile data:', cleanedData);
+    
+    const requestBody = {
+      user_id: userId,
+      profile_data: cleanedData
+    };
+    
+    console.log('[authService] Request body:', requestBody);
     
     const result = await apiRequest(`/auth/profile/update/`, {
       method: 'PUT',
-      body: JSON.stringify({
-        user_id: userId,
-        profile_data: profileData
-      }),
+      body: JSON.stringify(requestBody),
     });
     
-    console.log(`[authService] API response data:`, result.data);
+    console.log(`[authService] API response:`, {
+      success: result.success,
+      status: result.status,
+      data: result.data
+    });
     
     if (result.success && result.data && result.data.success) {
       // Update local session with new data
       try {
         const session = await getStoredSession();
         if (session.user) {
-          const updatedUser = { ...session.user, ...profileData };
+          const updatedUser = { ...session.user, ...cleanedData };
           await storeSession({
             access_token: session.accessToken,
             refresh_token: session.refreshToken,
             user: updatedUser
           });
+          console.log('[authService] Local session updated successfully');
         }
       } catch (sessionError) {
         console.warn('Failed to update local session:', sessionError);
@@ -489,12 +560,13 @@ export async function updateUserProfile(userId, profileData) {
     console.log(`[authService] Profile update failed:`, {
       resultSuccess: result.success,
       dataSuccess: result.data?.success,
-      error: result.data?.error || result.error
+      error: result.data?.error || result.error,
+      status: result.status
     });
     
     return {
       success: false,
-      error: result.data?.error || result.error || 'Failed to update profile'
+      error: result.data?.error || result.error || `Failed to update profile (Status: ${result.status})`
     };
   } catch (error) {
     console.error('updateUserProfile error:', error);
