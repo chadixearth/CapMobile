@@ -171,7 +171,7 @@ export default function GoodsServicesScreen() {
     })();
     
     const userRole = item.author_role || authorFromMap?.role || 'user';
-    const userEmail = item.author_email || authorFromMap?.email || '';
+    const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
 
     return (
@@ -189,6 +189,9 @@ export default function GoodsServicesScreen() {
                   <Text style={styles.pillText}>{String(userRole).toUpperCase()}</Text>
                 </View>
               )}
+            </View>
+            {/* Contact info on separate line for better visibility */}
+            <View style={styles.contactWrap}>
               {!!userEmail && (
                 <Text style={styles.contactText} numberOfLines={1}>📧 {userEmail}</Text>
               )}
@@ -329,6 +332,7 @@ const styles = StyleSheet.create({
   headerTextWrap: { flex: 1, minWidth: 0 },
   author: { fontWeight: '700', color: COLORS.text, fontSize: 16 },
   metaWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' },
+  contactWrap: { flexDirection: 'column', gap: 2, marginTop: 4 },
   pill: {
     backgroundColor: COLORS.pillBg,
     borderColor: COLORS.pillBorder,
@@ -339,7 +343,7 @@ const styles = StyleSheet.create({
   },
   pillText: { color: COLORS.pillText, fontWeight: '700', fontSize: 10, letterSpacing: 0.3 },
   timeText: { fontSize: 12, color: COLORS.sub, flexShrink: 1, marginTop: 4 },
-  contactText: { fontSize: 11, color: COLORS.sub, flexShrink: 1 },
+  contactText: { fontSize: 12, color: '#2563EB', fontWeight: '500', flexShrink: 1 },
 
   // Content text
   title: { color: COLORS.text, fontWeight: '700', fontSize: 16, marginBottom: 6, lineHeight: 22 },

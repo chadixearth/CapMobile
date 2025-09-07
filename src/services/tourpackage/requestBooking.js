@@ -13,6 +13,7 @@ function getDevServerHost() {
 const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`; 
 import { getAccessToken, getCurrentUser } from '../authService';
 import { syncUserToBackend } from '../userSync';
+import NotificationService from '../notificationService';
 
 export async function createBooking(bookingData) {
   // Defensive: enforce server-expected types and field names
@@ -92,7 +93,22 @@ export async function createBooking(bookingData) {
   let currentPayload = { ...payload };
   for (let i = 0; i < 3; i += 1) {
     try {
-      return await attempt(currentPayload);
+      const result = await attempt(currentPayload);
+      
+      // Notify all drivers of new booking
+      if (result && result.success) {
+        try {
+          await NotificationService.notifyDriversOfNewBooking({
+            tourist_name: bookingData.tourist_name,
+            package_name: bookingData.package_name,
+            ...result.data
+          });
+        } catch (notifError) {
+          console.warn('Failed to notify drivers:', notifError);
+        }
+      }
+      
+      return result;
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
       const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');

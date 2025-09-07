@@ -2,7 +2,7 @@ import { Platform, NativeModules } from 'react-native';
 
 // Set this to your backend host IP or hostname
 // The user requested 10.201.88.148
-export const API_HOST_OVERRIDE = '192.168.158.63';
+export const API_HOST_OVERRIDE = '192.168.8.165';
 
 export function resolveApiHost() {
   try {

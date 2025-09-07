@@ -11,6 +11,7 @@ import {
   Platform,
   ImageBackground,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +58,8 @@ const RequestBookingScreen = ({ route, navigation }) => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [bookingReference, setBookingReference] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   // Removed error modal states - using ErrorProvider instead
 
 
@@ -341,6 +344,21 @@ const RequestBookingScreen = ({ route, navigation }) => {
     return `${h}:${m}`;
   };
 
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setFormData(prev => ({ ...prev, booking_date: selectedDate }));
+    }
+  };
+
+  const onTimeChange = (event, selectedTime) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (selectedTime) {
+      const timeString = formatTimeHM(selectedTime);
+      setFormData(prev => ({ ...prev, pickup_time: timeString }));
+    }
+  };
+
 
   // ——— UI helpers (pure presentation) ———
   const pkgImage = useMemo(() => {
@@ -425,28 +443,52 @@ const RequestBookingScreen = ({ route, navigation }) => {
           <View style={styles.row}>
             <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.label}>Booking Date *</Text>
-              <TextInput
-                style={styles.input}
-                value={formatDate(formData.booking_date)}
-                onChangeText={(value) => {
-                  const date = new Date(value);
-                  if (!isNaN(date.getTime())) {
-                    setFormData(prev => ({ ...prev, booking_date: date }));
-                  }
-                }}
-                placeholder="MM/DD/YYYY"
-              />
+              <TouchableOpacity
+                style={[styles.input, styles.inputButton]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <View style={styles.inputButtonContent}>
+                  <Ionicons name="calendar-outline" size={16} color={MAROON} />
+                  <Text style={styles.inputButtonText}>
+                    {formatDate(formData.booking_date)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
             <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.label}>Pickup Time</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.pickup_time}
-                onChangeText={(value) => handleInputChange('pickup_time', value)}
-                placeholder="09:00"
-              />
+              <TouchableOpacity
+                style={[styles.input, styles.inputButton]}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <View style={styles.inputButtonContent}>
+                  <Ionicons name="time-outline" size={16} color={MAROON} />
+                  <Text style={styles.inputButtonText}>
+                    {formData.pickup_time}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={formData.booking_date}
+              mode="date"
+              display="default"
+              onChange={onDateChange}
+              minimumDate={new Date()}
+            />
+          )}
+
+          {showTimePicker && (
+            <DateTimePicker
+              value={new Date(`2000-01-01T${formData.pickup_time}:00`)}
+              mode="time"
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
 
           {/* Contact Number */}
           <View style={styles.inputGroup}>

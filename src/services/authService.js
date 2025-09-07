@@ -3,28 +3,7 @@ import { Platform, NativeModules } from 'react-native';
 import { apiBaseUrl } from './networkConfig';
 
 // API Configuration
-// For physical device: We auto-detect the Metro bundler host and use that IP.
-// Fallbacks:
-// - Android emulator: 10.0.2.2 (maps to host machine's localhost)
-// - iOS simulator: localhost
-// If you need a custom API host, set API_BASE_URL_OVERRIDE below.
-const API_BASE_URL_OVERRIDE = 'http://192.168.158.63:8000/api'; // e.g., 'http://192.168.1.8:8000/api'
-
-function getDevServerHost() {
-  try {
-    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
-    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
-    return match ? match[1] : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-const RESOLVED_HOST =
-  API_BASE_URL_OVERRIDE?.replace(/^https?:\/\//, '')?.replace(/:\d+.*$/, '') ||
-  getDevServerHost() ||
-  (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
-
+const API_BASE_URL_OVERRIDE = 'http://192.168.8.165:8000/api';
 const API_BASE_URL = API_BASE_URL_OVERRIDE || apiBaseUrl();
 
 // Session keys for AsyncStorage
@@ -47,24 +26,36 @@ export function setSessionExpiredCallback(callback) {
 async function apiRequest(endpoint, options = {}) {
   try {
     console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
-    console.log(`[authService] Request options:`, { method: options.method, body: options.body });
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    // Get auth token for all requests except login/register
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    
+    if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+      const token = await getAccessToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+        console.log(`[authService] Added auth token to request`);
+      }
+    }
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       signal: controller.signal,
     });
     
     clearTimeout(timeoutId);
     
-    // Handle session expiry
-    if (response.status === 401 || response.status === 403) {
+    // Only handle session expiry for actual auth failures, not missing endpoints
+    if ((response.status === 401 || response.status === 403) && 
+        !endpoint.includes('/auth/') && 
+        data?.error?.includes('token') || data?.error?.includes('session') || data?.error?.includes('unauthorized')) {
       console.log('Session expired, triggering auto-logout');
       await clearStoredSession();
       if (sessionExpiredCallback) {
@@ -90,14 +81,14 @@ async function apiRequest(endpoint, options = {}) {
     });
     
     if (error.name === 'AbortError') {
-      return { success: false, error: 'Request timeout. Please try again.' };
+      return { success: false, error: 'Connection timeout. Check if backend server is running on http://192.168.158.63:8000' };
     }
     
     // Check for specific network errors
-    if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND')) {
+    if (error.message.includes('getaddrinfo failed') || error.message.includes('ENOTFOUND') || error.message.includes('Network request failed')) {
       return {
         success: false,
-        error: `Cannot connect to server. Please check:\n1. API server is running on ${API_BASE_URL}\n2. Your device is on the same network\n3. Firewall allows port 8000` 
+        error: `Cannot connect to server at ${API_BASE_URL}. Please check:\n1. Backend server is running\n2. Device is on same network\n3. IP address is correct` 
       };
     }
     
@@ -239,12 +230,14 @@ export async function loginUser(email, password, allowedRoles = null) {
   console.log('[authService] API result:', result);
 
   if (result.success && result.data.success) {
-    // Store session data
-    await storeSession({
-      access_token: result.data.session?.access_token,
-      refresh_token: result.data.session?.refresh_token,
+    // Store session data with proper token handling
+    const sessionData = {
+      access_token: result.data.session?.access_token || result.data.jwt?.token,
+      refresh_token: result.data.session?.refresh_token || result.data.jwt?.refresh_token,
       user: result.data.user,
-    });
+    };
+    await storeSession(sessionData);
+    console.log('[authService] Session stored with token:', sessionData.access_token ? 'YES' : 'NO');
 
     return {
       success: true,
@@ -493,7 +486,7 @@ export async function updateUserProfile(userId, profileData) {
   };
 }
 
-/**j
+/**
  * Upload profile photo
  * @param {string} userId
  * @param {string} photoUri - URI of the photo to upload
@@ -605,8 +598,6 @@ export async function uploadProfilePhoto(userId, photoUri) {
     };
   }
 }
-
-
 
 /**
  * Legacy function for backward compatibility

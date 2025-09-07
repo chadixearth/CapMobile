@@ -242,14 +242,18 @@ export default function BookScreen({ navigation }) {
   // ---------- verification & reviews helpers
   const loadVerificationFor = async (booking) => {
     try {
+      console.log('Loading verification for booking:', booking.id);
       const res = await getVerificationStatus(booking.id, user?.id);
+      console.log('Verification response:', res);
       const available = !!(res?.data?.verification_available);
       const url = res?.data?.verification_photo_url || null;
+      console.log('Verification available:', available, 'URL:', url);
       setVerificationMap((prev) => ({
         ...prev,
         [String(booking.id)]: { checked: true, available, url },
       }));
     } catch (e) {
+      console.error('Error loading verification:', e);
       setVerificationMap((prev) => ({
         ...prev,
         [String(booking.id)]: { checked: true, available: false, url: null },
@@ -435,7 +439,8 @@ export default function BookScreen({ navigation }) {
     const toggleExpand = () => {
       setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
       try {
-        if (!isExpanded && String((b.status || '')).toLowerCase() === 'completed' && b?.id && !verificationMap[String(b.id)]) {
+        if (!isExpanded && b?.id && !verificationMap[String(b.id)]) {
+          console.log('Loading verification for booking status:', b.status);
           loadVerificationFor(b);
         }
       } catch {}

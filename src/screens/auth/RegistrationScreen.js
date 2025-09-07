@@ -200,19 +200,22 @@ const RegistrationScreen = ({ navigation, route }) => {
       console.error('Registration error:', e);
     }
   };
-  const ModernInput = ({ label, ...props }) => (
+  const ModernInput = React.memo(({ label, ...props }) => (
     <View style={styles.inputContainer}>
       {label && <Text style={styles.inputLabel}>{label}</Text>}
       <TextInput
         {...props}
         style={[styles.modernInput, props.style]}
         placeholderTextColor={colors.textSecondary}
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
       />
     </View>
-  );
+  ));
 
   // Render helper for section with icon
-  const SectionHeader = ({ icon, title, subtitle }) => (
+  const SectionHeader = React.memo(({ icon, title, subtitle }) => (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionIconContainer}>
         <Ionicons name={icon} size={20} color={colors.primary} />
@@ -222,7 +225,7 @@ const RegistrationScreen = ({ navigation, route }) => {
         {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
       </View>
     </View>
-  );
+  ));
 
   return (
     <KeyboardAvoidingView
@@ -232,8 +235,9 @@ const RegistrationScreen = ({ navigation, route }) => {
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={false}
       >
         {/* Header with back button */}
         <View style={styles.header}>
@@ -661,15 +665,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 22,
   },
   
   // Input Styles
@@ -677,24 +681,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 6,
+    marginBottom: 10,
     marginLeft: 4,
   },
   modernInput: {
     backgroundColor: colors.card,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 16,
-    fontSize: 16,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    fontSize: 18,
     color: colors.text,
     ...card,
     shadowOpacity: 0.03,
     shadowRadius: 4,
+    minHeight: 60,
   },
   
   // Question/Toggle Styles
@@ -707,10 +712,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
   },
   questionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.md,
+    lineHeight: 26,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -722,20 +728,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 16,
+    paddingVertical: 18,
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
+    minHeight: 60,
   },
   toggleSelected: {
     backgroundColor: `${colors.primary}10`,
     borderColor: colors.primary,
   },
   toggleText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   toggleTextSelected: {
@@ -760,15 +767,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   termsMainText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: 6,
+    lineHeight: 24,
   },
   termsSubtext: {
-    fontSize: 13,
+    fontSize: 16,
     color: colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 22,
   },
   termsLink: {
     color: colors.primary,
@@ -779,8 +787,8 @@ const styles = StyleSheet.create({
   // Register Button
   registerButton: {
     backgroundColor: colors.primary,
-    borderRadius: 16,
-    paddingVertical: 18,
+    borderRadius: 20,
+    paddingVertical: 22,
     marginTop: spacing.lg,
     marginBottom: spacing.lg,
     ...card,
@@ -789,6 +797,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
+    minHeight: 70,
   },
   registerButtonDisabled: {
     backgroundColor: colors.textSecondary,
@@ -805,8 +814,8 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '360deg' }],
   },
   registerButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
   },
