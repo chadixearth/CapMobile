@@ -267,17 +267,26 @@ export default function AccountDetailsScreen({ navigation }) {
       // If there are selected photos, upload them first
       let media = [];
       if (bioPhotos.length > 0) {
-        const uploadRes = await uploadGoodsServicesMedia(currentUser.id, bioPhotos);
-        if (!uploadRes.success) {
-          setBioMessage(uploadRes.error || 'Failed to upload media');
+        try {
+          console.log('Uploading bio photos:', bioPhotos.length);
+          const uploadRes = await uploadGoodsServicesMedia(currentUser.id, bioPhotos);
+          console.log('Upload result:', uploadRes);
+          if (!uploadRes.success) {
+            setBioMessage(uploadRes.error || 'Failed to upload photos');
+            return;
+          }
+          media = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
+          console.log('Media prepared:', media);
+        } catch (uploadError) {
+          console.error('Photo upload error:', uploadError);
+          setBioMessage('Failed to upload photos. Please try again.');
           return;
         }
-        media = uploadRes.urls.map((url) => ({ url, type: 'image' }));
       }
 
       const result = await upsertGoodsServicesProfile(currentUser.id, bioDescription.trim(), media);
       if (result.success) {
-        setBioMessage('Bio saved!');
+        setBioMessage('Bio saved successfully!');
         if (media.length > 0) setBioPhotos([]);
         // If backend returned id, store it; otherwise keep previous
         const returned = result.data?.data || result.data;
@@ -289,6 +298,7 @@ export default function AccountDetailsScreen({ navigation }) {
         setBioMessage(result.error || 'Failed to save bio');
       }
     } catch (e) {
+      console.error('Bio save error:', e);
       setBioMessage(e.message || 'Failed to save bio');
     } finally {
       setSavingBio(false);
@@ -544,17 +554,22 @@ export default function AccountDetailsScreen({ navigation }) {
               <View style={styles.bioToolbar}>
                 {/* Add photos button */}
                 <TouchableOpacity
-                  style={styles.iconButton}
+                  style={[styles.iconButton, { backgroundColor: bioPhotos.length > 0 ? '#E3F2FD' : '#F8F9FA' }]}
                   onPress={async () => {
                     try {
                       const uploader = new MobilePhotoUpload();
-                      const images = await uploader.pickMultipleImages(5);
+                      const images = await uploader.pickMultipleImages(5 - bioPhotos.length);
                       if (images && images.length > 0) {
+                        console.log('Selected images for bio:', images);
                         setBioPhotos((prev) => [...prev, ...images]);
                         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
                       }
-                    } catch (e) {}
+                    } catch (e) {
+                      console.error('Error picking images for bio:', e);
+                      setBioMessage('Failed to select images. Please try again.');
+                    }
                   }}
+                  disabled={bioPhotos.length >= 5 || savingBio}
                 >
                   <Ionicons name="add-circle-outline" size={22} color="#6B2E2B" />
                 </TouchableOpacity>
@@ -565,9 +580,24 @@ export default function AccountDetailsScreen({ navigation }) {
                 <View style={{ flex: 1 }} />
                 <Button title={savingBio ? 'Saving...' : (existingBioId ? 'Update' : 'Add')} onPress={handleSaveBio} />
               </View>
-              {bioPhotos.length > 0 ? (
-                <Text style={{ color: '#555', marginTop: 6 }}>{bioPhotos.length} photo(s) selected</Text>
-              ) : null}
+              {bioPhotos.length > 0 && (
+                <View style={styles.photoPreview}>
+                  <Text style={styles.photoCount}>{bioPhotos.length} photo(s) selected</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
+                    {bioPhotos.map((photo, index) => (
+                      <View key={index} style={styles.photoItem}>
+                        <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+                        <TouchableOpacity 
+                          style={styles.removePhoto}
+                          onPress={() => setBioPhotos(prev => prev.filter((_, i) => i !== index))}
+                        >
+                          <Ionicons name="close-circle" size={20} color="#DC3545" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
             {bioMessage ? <Text style={bioMessage.includes('!') ? styles.success : styles.error}>{bioMessage}</Text> : null}
           </View>
@@ -578,21 +608,27 @@ export default function AccountDetailsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA', paddingTop: 40 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: '#6B2E2B', marginTop: 10 },
-  title: { fontSize: 24, fontWeight: 'bold', alignSelf: 'center', marginTop: 48, marginBottom: 16, color: '#222' },
-  avatarContainer: { alignItems: 'center', marginBottom: 12 },
-  avatar: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, borderColor: '#6B2E2B', marginBottom: 8 },
-  uploadingOverlay: { position: 'absolute', top: 0, left: 0, width: 96, height: 96, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 48, alignItems: 'center', justifyContent: 'center' },
-  changePhotoText: { color: '#6B2E2B', fontSize: 12, marginBottom: 8 },
-  form: { paddingHorizontal: 18, paddingBottom: 32 },
-  error: { color: 'red', marginBottom: 8, textAlign: 'center' },
-  success: { color: 'green', marginBottom: 8, textAlign: 'center' },
-  postContainer: { marginTop: 24 },
-  postTitle: { fontSize: 16, fontWeight: 'bold', color: '#222', marginBottom: 8 },
-  bioComposer: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#bbb', padding: 10 },
-  bioInput: { minHeight: 80, maxHeight: 200, textAlignVertical: 'top', color: '#222', fontSize: 16 },
-  bioToolbar: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  iconButton: { paddingHorizontal: 8, paddingVertical: 6 },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' },
+  loadingText: { fontSize: 16, color: '#6B2E2B', marginTop: 10, fontWeight: '500' },
+  title: { fontSize: 28, fontWeight: '700', alignSelf: 'center', marginTop: 60, marginBottom: 24, color: '#1A1A1A' },
+  avatarContainer: { alignItems: 'center', marginBottom: 24, paddingHorizontal: 20 },
+  avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, borderColor: '#6B2E2B', marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  uploadingOverlay: { position: 'absolute', top: 0, left: 0, width: 120, height: 120, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' },
+  changePhotoText: { color: '#6B2E2B', fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  form: { paddingHorizontal: 20, paddingBottom: 40 },
+  error: { color: '#DC3545', marginBottom: 12, textAlign: 'center', fontSize: 14, fontWeight: '500', backgroundColor: '#F8D7DA', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#F5C6CB' },
+  success: { color: '#155724', marginBottom: 12, textAlign: 'center', fontSize: 14, fontWeight: '500', backgroundColor: '#D4EDDA', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#C3E6CB' },
+  postContainer: { marginTop: 32, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  postTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 16 },
+  bioComposer: { backgroundColor: '#F8F9FA', borderRadius: 12, borderWidth: 1, borderColor: '#E9ECEF', padding: 16 },
+  bioInput: { minHeight: 100, maxHeight: 200, textAlignVertical: 'top', color: '#1A1A1A', fontSize: 16, lineHeight: 22 },
+  bioToolbar: { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E9ECEF' },
+  iconButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#F8F9FA', marginRight: 8 },
+  photoPreview: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E9ECEF' },
+  photoCount: { fontSize: 14, color: '#6C757D', marginBottom: 8, fontWeight: '500' },
+  photoScroll: { maxHeight: 80 },
+  photoItem: { position: 'relative', marginRight: 8 },
+  photoThumbnail: { width: 60, height: 60, borderRadius: 8, backgroundColor: '#F8F9FA' },
+  removePhoto: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FFFFFF', borderRadius: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
 });

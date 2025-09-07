@@ -237,7 +237,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
     setLoading(true);
     try {
-      // Get current user (prefer app auth, fallback to Supabase)
+      // Get current user for payment flow
       let userId = null;
       const currentUser = await getCurrentUser();
       if (currentUser && currentUser.id) {
@@ -253,14 +253,15 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
 
       if (!userId) {
+        setLoading(false);
         ErrorHandlingService.handleAuthError('unauthorized', {
           title: 'Login Required',
-          customMessage: 'Please log in to create a booking',
+          customMessage: 'Please log in to proceed with booking',
         });
         return;
       }
 
-      // Build a strict payload with validated types
+      // Prepare booking data for payment screen (don't create booking yet)
       const bookingData = {
         package_id: formData.package_id,
         customer_id: userId,
@@ -271,56 +272,31 @@ const RequestBookingScreen = ({ route, navigation }) => {
         special_requests: formData.special_requests || '',
         contact_number: String(formData.contact_number || ''),
         pickup_address: formData.pickup_address || '',
-        // contact_email intentionally omitted
       };
 
-      const response = await createBooking(bookingData);
-
-      if (response.success) {
-        const bookingId = response.data?.id || response.data?.booking_id;
-        setBookingReference(response.data?.booking_reference || 'N/A');
-        
-        // Navigate to payment screen instead of showing success modal
-        if (bookingId && formData.total_amount > 0) {
-          navigation.navigate(Routes.PAYMENT, {
-            bookingId: bookingId,
-            bookingData: {
-              packageName: selectedPackage?.package_name || 'Tour Package',
-              bookingDate: formatDate(formData.booking_date),
-              numberOfPax: formData.number_of_pax,
-            },
-            amount: formData.total_amount,
-            currency: 'PHP'
-          });
-        } else {
-          // Fallback to success modal if no payment needed
-          setShowSuccessModal(true);
-        }
-      } else {
-        ErrorHandlingService.handleBookingError('booking_failed', {
-          customMessage: response.error || 'Failed to create booking',
-        });
-      }
-    } catch (error) {
-      console.error('Error creating booking:', error);
-      
-      // Check for session expired error
-      if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
-        ErrorHandlingService.handleBookingError('session_expired_booking');
-        return;
-      }
-      
-      const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-      const errorMessage = isAbort
-        ? 'Request timed out. Please check your connection and try again.'
-        : error.message || 'Failed to create booking';
-        
-      ErrorHandlingService.handleBookingError('booking_failed', {
-        customMessage: errorMessage,
-        onRetry: () => handleSubmit(), // Allow retry
-      });
-    } finally {
       setLoading(false);
+      
+      // Navigate to payment screen with booking data (booking will be created after payment)
+      console.log('[RequestBooking] Navigating to payment screen');
+      navigation.replace(Routes.PAYMENT, {
+        bookingData: bookingData,
+        packageData: {
+          packageName: selectedPackage?.package_name || 'Tour Package',
+          bookingDate: formatDate(formData.booking_date),
+          numberOfPax: formData.number_of_pax,
+        },
+        amount: formData.total_amount,
+        currency: 'PHP'
+      });
+    } catch (error) {
+      console.error('Error preparing booking:', error);
+      setLoading(false);
+      
+      const errorMessage = error.message || 'Failed to prepare booking';
+      showError(errorMessage, {
+        title: 'Booking Error',
+        type: 'error',
+      });
     }
   };
 

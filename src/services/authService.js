@@ -52,20 +52,15 @@ async function apiRequest(endpoint, options = {}) {
     
     clearTimeout(timeoutId);
     
-    // Only handle session expiry for actual auth failures, not missing endpoints
-    if ((response.status === 401 || response.status === 403) && 
-        !endpoint.includes('/auth/') && 
-        data?.error?.includes('token') || data?.error?.includes('session') || data?.error?.includes('unauthorized')) {
-      console.log('Session expired, triggering auto-logout');
-      await clearStoredSession();
-      if (sessionExpiredCallback) {
-        sessionExpiredCallback();
-      }
-    }
+    // Session expiry handled by UnifiedAuth only
+    // No session handling in authService
     
     const data = await response.json();
     
     console.log(`API response status: ${response.status}`);
+    if (!response.ok) {
+      console.log(`API error response:`, data);
+    }
     
     return {
       success: response.ok,
@@ -455,35 +450,59 @@ export async function getAccessToken() {
  * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
  */
 export async function updateUserProfile(userId, profileData) {
-  const result = await apiRequest('/auth/profile/update/', {
-    method: 'PUT',
-    body: JSON.stringify({
-      user_id: userId,
-      profile_data: profileData,
-    }),
-  });
-
-  if (result.success && result.data?.success) {
-    return {
-      success: true,
-      data: result.data.data,
-      message: result.data.message,
-    };
-  }
-
-  // Handle missing endpoint gracefully
-  if (result.status === 404) {
-    console.warn('Profile update endpoint not implemented yet');
+  try {
+    console.log('[authService] Updating user profile:', { userId, profileData });
+    
+    const result = await apiRequest(`/auth/profile/update/`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        user_id: userId,
+        profile_data: profileData
+      }),
+    });
+    
+    console.log(`[authService] API response data:`, result.data);
+    
+    if (result.success && result.data && result.data.success) {
+      // Update local session with new data
+      try {
+        const session = await getStoredSession();
+        if (session.user) {
+          const updatedUser = { ...session.user, ...profileData };
+          await storeSession({
+            access_token: session.accessToken,
+            refresh_token: session.refreshToken,
+            user: updatedUser
+          });
+        }
+      } catch (sessionError) {
+        console.warn('Failed to update local session:', sessionError);
+      }
+      
+      return {
+        success: true,
+        data: result.data.data || result.data.user,
+        message: result.data.message || 'Profile updated successfully'
+      };
+    }
+    
+    console.log(`[authService] Profile update failed:`, {
+      resultSuccess: result.success,
+      dataSuccess: result.data?.success,
+      error: result.data?.error || result.error
+    });
+    
     return {
       success: false,
-      error: 'Profile update feature is not available yet',
+      error: result.data?.error || result.error || 'Failed to update profile'
+    };
+  } catch (error) {
+    console.error('updateUserProfile error:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to update profile'
     };
   }
-
-  return {
-    success: false,
-    error: result.data?.error || result.error || 'Failed to update profile',
-  };
 }
 
 /**

@@ -1,6 +1,8 @@
 import { preloadMapData } from './map/fetchMap';
 import mapCacheService from './map/mapCacheService';
 import ApiInitService from './ApiInitService';
+import NotificationService from './notificationService';
+import { getCurrentUser } from './authService';
 
 /**
  * App Initialization Service
@@ -67,7 +69,17 @@ class AppInitService {
         results.errors.push({ type: 'api', error: error.message });
       }
 
-      // Step 4: Clean up old cache if needed
+      // Step 4: Initialize notifications (skip push notifications)
+      try {
+        console.log('[AppInit] Initializing notifications...');
+        // Skip push notification registration - using polling instead
+        console.log('[AppInit] Notifications initialized');
+      } catch (error) {
+        console.error('[AppInit] Failed to initialize notifications:', error);
+        results.errors.push({ type: 'notifications', error: error.message });
+      }
+
+      // Step 5: Clean up old cache if needed
       try {
         const storageInfo = await mapCacheService.getStorageSize();
         if (storageInfo && parseFloat(storageInfo.totalSizeMB) > 50) {

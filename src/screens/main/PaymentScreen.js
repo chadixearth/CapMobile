@@ -23,7 +23,8 @@ import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
 
 const PaymentScreen = ({ route, navigation }) => {
-  const { bookingId, bookingData, amount, currency = 'PHP' } = route.params;
+  console.log('[PaymentScreen] Component loaded with params:', route.params);
+  const { bookingId, bookingData, packageData, amount, currency = 'PHP' } = route.params;
   
   const [isLoading, setIsLoading] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
@@ -65,110 +66,38 @@ const PaymentScreen = ({ route, navigation }) => {
   };
 
   const createPayment = async () => {
-    if (!bookingId) {
-      Alert.alert('Error', 'Booking ID is required');
-      return;
-    }
+    // For test payment, simulate payment process
+    Alert.alert(
+      'Test Payment',
+      `Simulate payment of ${formatCurrency(amount)} using ${selectedPaymentMethod}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Pay Now', onPress: () => simulatePayment() }
+      ]
+    );
+  };
+
+  const simulatePayment = async () => {
 
     setIsLoading(true);
     try {
-      console.log(`Creating payment for booking: ${bookingId}`);
+      console.log('Simulating payment process...');
       
-      const result = await paymentService.createMobilePayment(
-        bookingId,
-        selectedPaymentMethod
-      );
+      // Simulate payment delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Simulate successful payment
+      const result = { success: true, paymentMethod: selectedPaymentMethod };
 
       if (result.success) {
-        setPaymentData(result);
-        
-        console.log('Payment data received:', result);
-        console.log('Next action:', result.nextAction);
-        
-        // Check if this requires client-side payment processing
-        if (result.nextAction?.type === 'client_side_payment') {
-          Alert.alert(
-            'Payment Setup Complete',
-            'Payment intent created successfully. To complete the payment integration, you need to implement PayMongo React Native SDK.\n\nFor now, you can test payment confirmation using the payment_intent_id: ' + result.paymentIntentId,
-            [
-              { text: 'OK', onPress: () => {} },
-              { text: 'Test Confirm', onPress: () => confirmPayment() }
-            ]
-          );
-        } else if (result.nextAction?.redirect?.url || result.checkoutUrl) {
-          // For e-wallet payments with checkout URLs
-          console.log('Opening payment checkout URL:', result.checkoutUrl || result.nextAction.redirect.url);
-          setShowWebView(true);
-        } else {
-          console.log('No payment URL found in response:', result);
-          Alert.alert(
-            'Payment Ready',
-            `Payment has been set up successfully!\n\nPayment Method: ${result.paymentMethod}\nAmount: ₱${result.amount}\nBooking: ${result.bookingReference}\n\nYou can now test payment confirmation.`,
-            [
-              { text: 'OK', onPress: () => {} },
-              { text: 'Confirm Payment', onPress: () => confirmPayment() }
-            ]
-          );
-        }
+        console.log('Payment simulation successful');
+        await createBookingAfterPayment();
       } else {
-        // Handle different types of errors more specifically
-        if (result.error?.includes('404') || result.error?.includes('not found')) {
-          Alert.alert(
-            'Payment Feature Not Available', 
-            'The payment feature is not yet implemented on the backend. Your booking has been created successfully. Please contact support for payment assistance.',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.navigate(Routes.BOOKING_CONFIRMATION, {
-                  bookingId: bookingId,
-                  paymentId: null,
-                  status: 'payment_pending',
-                }),
-              },
-            ]
-          );
-        } else if (result.error?.includes('Network') || result.error?.includes('timeout')) {
-          Alert.alert(
-            'Network Error',
-            'Unable to connect to payment service. Please check your internet connection and try again.',
-            [
-              { text: 'Retry', onPress: createPayment },
-              { text: 'Cancel', onPress: () => navigation.goBack() },
-            ]
-          );
-        } else {
-          Alert.alert('Payment Error', result.error || 'Failed to create payment');
-        }
+        Alert.alert('Payment Failed', 'Payment simulation failed');
       }
     } catch (error) {
-      console.error('Payment creation error:', error);
-      
-      // Provide more specific error messages based on error type
-      if (error.message?.includes('Network') || error.message?.includes('fetch')) {
-        Alert.alert(
-          'Network Error',
-          'Unable to connect to the payment service. Please check your internet connection and try again.',
-          [
-            { text: 'Retry', onPress: createPayment },
-            { text: 'Cancel', onPress: () => navigation.goBack() },
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Payment Service Error', 
-          'Payment processing encountered an error. Your booking has been saved and you can complete payment later.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate(Routes.BOOKING_CONFIRMATION, {
-                bookingId: bookingId,
-                paymentId: null,
-                status: 'payment_error',
-              }),
-            },
-          ]
-        );
-      }
+      console.error('Payment simulation error:', error);
+      Alert.alert('Payment Error', 'Payment simulation failed');
     } finally {
       setIsLoading(false);
     }
@@ -255,27 +184,55 @@ const PaymentScreen = ({ route, navigation }) => {
     }
   };
 
-  const confirmPayment = async () => {
-    console.log('[PaymentService] Confirming payment:', paymentData?.paymentIntentId);
-    
-    if (!paymentData?.paymentIntentId) {
-      console.log('No payment intent ID, navigating to success anyway');
-      // Navigate to success screen even without payment intent ID
-      navigation.navigate('PaymentReceipt', {
-        paymentData: {
-          paymentId: paymentData?.sourceId || 'N/A',
-          amount: amount,
-          paymentMethod: selectedPaymentMethod,
-          paidAt: new Date().toISOString(),
-        },
-        bookingData: {
-          bookingReference: bookingId,
-          packageName: bookingData?.packageName || 'Tour Package',
-          amount: amount,
-        },
-      });
-      return;
+  const createBookingAfterPayment = async () => {
+    try {
+      console.log('[PaymentScreen] Creating booking after payment success');
+      const { createBooking } = await import('../../services/tourpackage/requestBooking');
+      
+      const response = await createBooking(bookingData);
+      
+      if (response && response.success) {
+        const createdBookingId = response.data?.id || response.data?.booking_id;
+        const bookingReference = response.data?.booking_reference || 'N/A';
+        
+        console.log('[PaymentScreen] Booking created successfully:', createdBookingId);
+        
+        Alert.alert(
+          'Payment Successful!',
+          'Your booking has been confirmed.',
+          [
+            {
+              text: 'View Receipt',
+              onPress: () => {
+                navigation.navigate('PaymentReceipt', {
+                  paymentData: {
+                    paymentId: 'TEST_PAYMENT_' + Date.now(),
+                    amount: amount,
+                    paymentMethod: selectedPaymentMethod,
+                    paidAt: new Date().toISOString(),
+                  },
+                  bookingData: {
+                    bookingReference: bookingReference,
+                    packageName: packageData?.packageName || 'Tour Package',
+                    amount: amount,
+                    bookingId: createdBookingId,
+                  },
+                });
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Booking Error', 'Payment successful but booking creation failed. Please contact support.');
+      }
+    } catch (error) {
+      console.error('[PaymentScreen] Error creating booking after payment:', error);
+      Alert.alert('Booking Error', 'Payment successful but booking creation failed. Please contact support.');
     }
+  };
+
+  const confirmPayment = async () => {
+    await createBookingAfterPayment();
 
     setIsLoading(true);
     try {
@@ -429,15 +386,15 @@ const PaymentScreen = ({ route, navigation }) => {
       <Text style={styles.sectionTitle}>Booking Details</Text>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Package:</Text>
-        <Text style={styles.detailValue}>{bookingData?.packageName || 'Tour Package'}</Text>
+        <Text style={styles.detailValue}>{packageData?.packageName || 'Tour Package'}</Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Date:</Text>
-        <Text style={styles.detailValue}>{bookingData?.bookingDate || 'N/A'}</Text>
+        <Text style={styles.detailValue}>{packageData?.bookingDate || 'N/A'}</Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Passengers:</Text>
-        <Text style={styles.detailValue}>{bookingData?.numberOfPax || 1}</Text>
+        <Text style={styles.detailValue}>{packageData?.numberOfPax || 1}</Text>
       </View>
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total Amount:</Text>

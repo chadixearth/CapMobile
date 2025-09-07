@@ -244,6 +244,17 @@ export default function BookScreen({ navigation }) {
     try {
       console.log('Loading verification for booking:', booking.id);
       const res = await getVerificationStatus(booking.id, user?.id);
+      
+      // Handle network errors gracefully
+      if (res?.network_error) {
+        console.log('Verification service unavailable - network error');
+        setVerificationMap((prev) => ({
+          ...prev,
+          [String(booking.id)]: { checked: true, available: false, url: null, network_error: true },
+        }));
+        return;
+      }
+      
       console.log('Verification response:', res);
       const available = !!(res?.data?.verification_available);
       const url = res?.data?.verification_photo_url || null;
@@ -253,7 +264,8 @@ export default function BookScreen({ navigation }) {
         [String(booking.id)]: { checked: true, available, url },
       }));
     } catch (e) {
-      console.error('Error loading verification:', e);
+      // Make verification loading non-blocking - don't show errors to user
+      console.log('Verification service unavailable for booking:', booking.id);
       setVerificationMap((prev) => ({
         ...prev,
         [String(booking.id)]: { checked: true, available: false, url: null },

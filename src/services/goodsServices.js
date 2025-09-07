@@ -129,27 +129,48 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
       return { success: true, urls: [] };
     }
 
-    const formData = new FormData();
-    if (userId) formData.append('user_id', userId);
-
-    for (const item of filesOrUris) {
-      // Accept either a React Native file object { uri, name, type } or a string URI
+    // Convert files to base64 for JSON payload
+    const photos = [];
+    for (let i = 0; i < filesOrUris.length; i++) {
+      const item = filesOrUris[i];
       if (item && typeof item === 'object' && item.uri) {
-        const name = item.name || `photo_${Date.now()}.jpg`;
-        const type = item.type || 'image/jpeg';
-        formData.append('photos', { uri: item.uri, name, type });
-      } else if (typeof item === 'string') {
-        const fallbackName = `photo_${Date.now()}.jpg`;
-        formData.append('photos', { uri: item, name: fallbackName, type: 'image/jpeg' });
+        try {
+          // Convert file to base64
+          const response = await fetch(item.uri);
+          const blob = await response.blob();
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+          
+          photos.push({
+            photo: base64,
+            filename: item.name || `photo_${Date.now()}_${i}.jpg`
+          });
+        } catch (err) {
+          console.error('Failed to convert file to base64:', err);
+          continue;
+        }
       }
     }
 
+    if (photos.length === 0) {
+      return { success: false, error: 'No valid photos to upload' };
+    }
+
+    const payload = {
+      photos,
+      bucket_type: 'tourpackage',
+      entity_id: userId
+    };
+
     const res = await fetch(`${API_BASE_URL}/upload/multiple-photos/`, {
       method: 'POST',
-      body: formData,
       headers: {
-        // Let fetch set multipart boundaries automatically
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify(payload),
     });
 
     const text = await res.text();
@@ -159,16 +180,11 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
       return { success: false, error: data?.error || data?.message || `Upload failed (${res.status})` };
     }
 
-    // Try common shapes
-    const urls = Array.isArray(data) ? data
-      : data?.urls || data?.photos || data?.data || [];
+    // Extract URLs from response
+    const uploadedPhotos = data?.data?.uploaded_photos || [];
+    const urls = uploadedPhotos.map(photo => photo.url).filter(Boolean);
 
-    // Normalize to simple array of strings
-    const normalized = Array.isArray(urls)
-      ? urls.map(u => (typeof u === 'string' ? u : (u?.url || u?.publicUrl || ''))).filter(Boolean)
-      : [];
-
-    return { success: true, urls: normalized };
+    return { success: true, urls };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to upload media' };
   }

@@ -1,8 +1,10 @@
 // screens/main/NotificationScreen.jsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Badge } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import NotificationService from '../../services/notificationService';
+import LocationService from '../../services/locationService';
 import { useAuth } from '../../hooks/useAuth';
 
 const MAROON = '#6B2E2B';
@@ -13,18 +15,75 @@ const MUTED = '#777';
 export default function NotificationScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuth();
+  const appState = useRef(AppState.currentState);
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
   useEffect(() => {
     loadNotifications();
+    setupNotificationListeners();
+    startLocationTrackingIfDriver();
+
+    // Handle app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App came to foreground, refresh notifications
+        loadNotifications();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription?.remove();
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+      LocationService.stopTracking();
+    };
   }, []);
+
+  const setupNotificationListeners = () => {
+    // Listen for notifications while app is running
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('Notification received:', notification);
+      loadNotifications(); // Refresh the list
+    });
+
+    // Listen for notification taps
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('Notification tapped:', response);
+      const data = response.notification.request.content.data;
+      if (data.type === 'booking') {
+        // Navigate to booking details or driver screen
+        navigation.navigate('DriverBooking');
+      }
+    });
+  };
+
+  const startLocationTrackingIfDriver = async () => {
+    if (user?.role === 'driver' || user?.role === 'driver-owner') {
+      const success = await LocationService.startTracking(user.id, (location) => {
+        console.log('Location updated:', location);
+      });
+      if (success) {
+        console.log('Location tracking started for driver');
+      }
+    }
+  };
 
   const loadNotifications = async () => {
     if (!user?.id) return;
     
     const result = await NotificationService.getNotifications(user.id);
     if (result.success) {
-      setNotifications(result.data || []);
+      const notifs = result.data || [];
+      setNotifications(notifs);
+      setUnreadCount(notifs.filter(n => !n.read).length);
     }
   };
 
@@ -44,9 +103,22 @@ export default function NotificationScreen({ navigation }) {
 
   const markAsRead = async (notificationId) => {
     await NotificationService.markAsRead(notificationId);
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-    );
+    setNotifications(prev => {
+      const updated = prev.map(n => n.id === notificationId ? { ...n, read: true } : n);
+      setUnreadCount(updated.filter(n => !n.read).length);
+      return updated;
+    });
+  };
+
+  const handleNotificationPress = (notification) => {
+    markAsRead(notification.id);
+    
+    // Navigate based on notification type
+    if (notification.type === 'booking' && (user?.role === 'driver' || user?.role === 'driver-owner')) {
+      navigation.navigate('DriverBook');
+    } else if (notification.type === 'booking_accepted' && user?.role === 'tourist') {
+      navigation.navigate('BookScreen');
+    }
   };
 
   return (
@@ -60,9 +132,16 @@ export default function NotificationScreen({ navigation }) {
       <View style={styles.headerBar}>
         <Text style={styles.title}>Notifications</Text>
 
-        <TouchableOpacity style={styles.markAllBtn} onPress={markAllAsRead}>
-          <Text style={styles.markAllText}>Mark all as read</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount}</Text>
+            </View>
+          )}
+          <TouchableOpacity style={styles.markAllBtn} onPress={markAllAsRead}>
+            <Text style={styles.markAllText}>Mark all as read</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -71,7 +150,7 @@ export default function NotificationScreen({ navigation }) {
         renderItem={({ item }) => (
           <NotificationItem 
             {...item} 
-            onPress={() => markAsRead(item.id)}
+            onPress={() => handleNotificationPress(item)}
           />
         )}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
@@ -92,9 +171,19 @@ export default function NotificationScreen({ navigation }) {
 function NotificationItem({ title, message, created_at, read, type, onPress }) {
   const getIcon = () => {
     switch (type) {
-      case 'booking': return 'calendar-account';
+      case 'booking': return 'car';
       case 'booking_accepted': return 'check-circle';
+      case 'payment': return 'credit-card';
       default: return 'bell';
+    }
+  };
+
+  const getIconColor = () => {
+    switch (type) {
+      case 'booking': return '#2196F3';
+      case 'booking_accepted': return '#4CAF50';
+      case 'payment': return '#FF9800';
+      default: return MAROON;
     }
   };
 
@@ -112,8 +201,8 @@ function NotificationItem({ title, message, created_at, read, type, onPress }) {
       style={[styles.itemRow, !read && styles.unreadItem]} 
       onPress={onPress}
     >
-      <View style={styles.iconCircle}>
-        <MaterialCommunityIcons name={getIcon()} size={22} color={MAROON} />
+      <View style={[styles.iconCircle, { backgroundColor: getIconColor() + '20' }]}>
+        <MaterialCommunityIcons name={getIcon()} size={22} color={getIconColor()} />
       </View>
       <View style={styles.itemContent}>
         <View style={styles.itemHeader}>
@@ -161,11 +250,30 @@ const styles = StyleSheet.create({
     color: TEXT,
     letterSpacing: 0.3,
   },
-  markAllBtn: {
+  headerActions: {
     position: 'absolute',
     right: 24,
     top: 75,
     transform: [{ translateY: -10 }],
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  badge: {
+    backgroundColor: '#ff4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  markAllBtn: {
+    padding: 4,
   },
   markAllText: { color: MAROON, fontWeight: '800', fontSize: 13 },
 

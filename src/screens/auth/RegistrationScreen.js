@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   Modal,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerUser } from '../../services/authService';
@@ -200,22 +201,35 @@ const RegistrationScreen = ({ navigation, route }) => {
       console.error('Registration error:', e);
     }
   };
-  const ModernInput = React.memo(({ label, ...props }) => (
+  const scrollRef = useRef(null);
+  const inputRefs = useRef({});
+
+  const ModernInput = ({ label, nextField, refKey, ...props }) => (
     <View style={styles.inputContainer}>
       {label && <Text style={styles.inputLabel}>{label}</Text>}
       <TextInput
         {...props}
+        ref={(ref) => { if (refKey) inputRefs.current[refKey] = ref; }}
         style={[styles.modernInput, props.style]}
         placeholderTextColor={colors.textSecondary}
         autoCorrect={false}
         autoComplete="off"
         textContentType="none"
+        returnKeyType={nextField ? 'next' : 'done'}
+        onSubmitEditing={() => {
+          if (nextField && inputRefs.current[nextField]) {
+            inputRefs.current[nextField].focus();
+          } else {
+            Keyboard.dismiss();
+          }
+        }}
+        blurOnSubmit={false}
       />
     </View>
-  ));
+  );
 
   // Render helper for section with icon
-  const SectionHeader = React.memo(({ icon, title, subtitle }) => (
+  const SectionHeader = ({ icon, title, subtitle }) => (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionIconContainer}>
         <Ionicons name={icon} size={20} color={colors.primary} />
@@ -225,19 +239,20 @@ const RegistrationScreen = ({ navigation, route }) => {
         {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
       </View>
     </View>
-  ));
+  );
 
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      keyboardVerticalOffset={0}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="always"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={false}
+        keyboardDismissMode="none"
       >
         {/* Header with back button */}
         <View style={styles.header}>
@@ -276,21 +291,29 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="First Name" 
                 placeholder="Enter your first name" 
                 value={firstName} 
-                onChangeText={setFirstName} 
+                onChangeText={setFirstName}
+                refKey="firstName"
+                nextField="lastName"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Last Name" 
                 placeholder="Enter your last name" 
                 value={lastName} 
-                onChangeText={setLastName} 
+                onChangeText={setLastName}
+                refKey="lastName"
+                nextField="email"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Email Address" 
                 placeholder="Enter your email" 
                 value={email} 
-                onChangeText={setEmail} 
+                onChangeText={setEmail}
+                refKey="email"
+                nextField="password"
                 autoCapitalize="none" 
-                keyboardType="email-address" 
+                keyboardType="email-address"
               />
               
               <SectionHeader 
@@ -302,15 +325,18 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Password" 
                 placeholder="Enter your password" 
                 value={password} 
-                onChangeText={setPassword} 
-                secureTextEntry 
+                onChangeText={setPassword}
+                refKey="password"
+                nextField="confirmPassword"
+                secureTextEntry
               />
               <ModernInput 
                 label="Confirm Password" 
                 placeholder="Re-enter your password" 
                 value={confirmPassword} 
-                onChangeText={setConfirmPassword} 
-                secureTextEntry 
+                onChangeText={setConfirmPassword}
+                refKey="confirmPassword"
+                secureTextEntry
               />
             </>
           )}
@@ -327,28 +353,38 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="First Name" 
                 placeholder="Enter your first name" 
                 value={firstName} 
-                onChangeText={setFirstName} 
+                onChangeText={setFirstName}
+                refKey="firstName"
+                nextField="lastName"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Last Name" 
                 placeholder="Enter your last name" 
                 value={lastName} 
-                onChangeText={setLastName} 
+                onChangeText={setLastName}
+                refKey="lastName"
+                nextField="email"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Email Address" 
                 placeholder="Enter your email" 
                 value={email} 
-                onChangeText={setEmail} 
+                onChangeText={setEmail}
+                refKey="email"
+                nextField="phone"
                 autoCapitalize="none" 
-                keyboardType="email-address" 
+                keyboardType="email-address"
               />
               <ModernInput 
                 label="Phone Number" 
                 placeholder="Enter your phone number" 
                 value={phone} 
-                onChangeText={setPhone} 
-                keyboardType="phone-pad" 
+                onChangeText={setPhone}
+                refKey="phone"
+                nextField={role === 'driver' ? 'license' : 'business'}
+                keyboardType="phone-pad"
               />
             </>
           )}
@@ -365,7 +401,10 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Driver's License Number" 
                 placeholder="Enter your license number" 
                 value={licenseNumber} 
-                onChangeText={setLicenseNumber} 
+                onChangeText={setLicenseNumber}
+                refKey="license"
+                nextField={ownsTartanilla ? 'ownedCount' : null}
+                autoCapitalize="characters"
               />
               
               <View style={styles.questionContainer}>
@@ -401,8 +440,10 @@ const RegistrationScreen = ({ navigation, route }) => {
                   label="Number of Tartanillas Owned" 
                   placeholder="Enter number" 
                   value={ownedCount} 
-                  onChangeText={setOwnedCount} 
-                  keyboardType="number-pad" 
+                  onChangeText={setOwnedCount}
+                  refKey="ownedCount"
+                  keyboardType="number-pad"
+                  maxLength={2}
                 />
               )}
             </>
@@ -420,7 +461,9 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Business Name" 
                 placeholder="Enter your business name" 
                 value={businessName} 
-                onChangeText={setBusinessName} 
+                onChangeText={setBusinessName}
+                refKey="business"
+                autoCapitalize="words"
               />
               
               <View style={styles.questionContainer}>
@@ -693,13 +736,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 16,
     paddingHorizontal: 20,
-    paddingVertical: 20,
-    fontSize: 18,
+    paddingVertical: 18,
+    fontSize: 16,
     color: colors.text,
     ...card,
     shadowOpacity: 0.03,
     shadowRadius: 4,
-    minHeight: 60,
+    minHeight: 56,
   },
   
   // Question/Toggle Styles

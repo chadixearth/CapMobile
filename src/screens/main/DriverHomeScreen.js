@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import {
@@ -20,6 +21,8 @@ import {
   formatCurrency,
   formatPercentage,
 } from '../../services/earningsService';
+import NotificationService from '../../services/notificationService';
+import NotificationTester from '../../components/NotificationTester';
 import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
@@ -61,6 +64,46 @@ export default function DriverHomeScreen({ navigation }) {
 
   useEffect(() => {
     fetchUserAndEarnings();
+    
+    // Start notification service for drivers
+    const initNotifications = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser && (currentUser.role === 'driver' || currentUser.role === 'driver-owner')) {
+          // Register for push notifications
+          await NotificationService.registerForPushNotifications();
+          
+          // Start polling for new booking notifications
+          NotificationService.startPolling(currentUser.id, (newNotifications) => {
+            console.log('New notifications received:', newNotifications);
+            // Update notifications state if needed
+            if (newNotifications.length > 0) {
+              const latestNotif = newNotifications[0];
+              if (latestNotif.type === 'booking') {
+                // Show immediate alert for booking notifications
+                Alert.alert(
+                  latestNotif.title,
+                  latestNotif.message,
+                  [
+                    { text: 'View', onPress: () => navigation.navigate('DriverBook') },
+                    { text: 'OK' }
+                  ]
+                );
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error initializing notifications:', error);
+      }
+    };
+    
+    initNotifications();
+    
+    // Cleanup on unmount
+    return () => {
+      NotificationService.stopPolling();
+    };
   }, []);
 
   const fetchUserAndEarnings = async () => {
@@ -316,6 +359,9 @@ export default function DriverHomeScreen({ navigation }) {
           ))}
         </View>
 
+        {/* Notification Tester for debugging */}
+        <NotificationTester />
+
         {/* Simple Analytics placeholder */}
         <View style={styles.analyticsCard}>
           <Text style={styles.analyticsTitle}>Weekly Activity</Text>
@@ -334,6 +380,7 @@ export default function DriverHomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+
 
   /* Income Card */
   incomeCard: {

@@ -21,6 +21,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import LeafletMapView from '../../components/LeafletMapView';
+
 import { fetchMapData } from '../../services/map/fetchMap';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
@@ -639,6 +640,7 @@ export default function TouristHomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+
   scrollContent: { paddingBottom: 24 },
 
   searchBar: {

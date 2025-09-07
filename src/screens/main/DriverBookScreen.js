@@ -35,6 +35,7 @@ import {
   updateCustomTourStatus,
 } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
+import NotificationService from '../../services/notificationService';
 import * as Routes from '../../constants/routes';
 
 export default function DriverBookScreen({ navigation }) {
@@ -65,6 +66,46 @@ export default function DriverBookScreen({ navigation }) {
 
   useEffect(() => {
     fetchUserAndBookings();
+    
+    // Initialize notifications for drivers
+    const initNotifications = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser && (currentUser.role === 'driver' || currentUser.role === 'driver-owner')) {
+          // Start notification polling
+          NotificationService.startPolling(currentUser.id, (newNotifications) => {
+            console.log('Driver received new notifications:', newNotifications);
+            
+            // Refresh bookings when new notifications arrive
+            if (newNotifications.length > 0) {
+              fetchUserAndBookings();
+              
+              // Show alert for booking notifications
+              const bookingNotifs = newNotifications.filter(n => n.type === 'booking');
+              if (bookingNotifs.length > 0) {
+                const latestNotif = bookingNotifs[0];
+                Alert.alert(
+                  '🚗 New Booking Available!',
+                  latestNotif.message,
+                  [
+                    { text: 'Refresh', onPress: () => fetchUserAndBookings() },
+                    { text: 'OK' }
+                  ]
+                );
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error initializing driver notifications:', error);
+      }
+    };
+    
+    initNotifications();
+    
+    return () => {
+      NotificationService.stopPolling();
+    };
   }, []);
 
   useEffect(() => {

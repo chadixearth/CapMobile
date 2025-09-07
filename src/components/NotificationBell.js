@@ -19,32 +19,60 @@ const NotificationBell = () => {
     // Subscribe to real-time notifications
     const subscription = NotificationService.subscribeToNotifications(
       user.id,
-      (payload) => {
-        const newNotification = payload.new;
-        setNotifications(prev => [newNotification, ...prev]);
-        setUnreadCount(prev => prev + 1);
+      (newNotifications) => {
+        if (Array.isArray(newNotifications)) {
+          // Handle multiple notifications
+          setNotifications(prev => {
+            const existingIds = new Set(prev.map(n => n.id));
+            const uniqueNew = newNotifications.filter(n => !existingIds.has(n.id));
+            return [...uniqueNew, ...prev];
+          });
+          setUnreadCount(prev => prev + newNotifications.filter(n => !n.read).length);
+        } else if (newNotifications) {
+          // Handle single notification
+          setNotifications(prev => {
+            const exists = prev.some(n => n.id === newNotifications.id);
+            return exists ? prev : [newNotifications, ...prev];
+          });
+          if (!newNotifications.read) {
+            setUnreadCount(prev => prev + 1);
+          }
+        }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      if (subscription && subscription.unsubscribe) {
+        subscription.unsubscribe();
+      }
+      NotificationService.stopPolling();
+    };
   }, [user?.id]);
 
   const loadNotifications = async () => {
     if (!user?.id) return;
     
-    const result = await NotificationService.getNotifications(user.id);
-    if (result.success) {
-      setNotifications(result.data);
-      setUnreadCount(result.data.filter(n => !n.read).length);
+    try {
+      const result = await NotificationService.getNotifications(user.id);
+      if (result.success && result.data) {
+        setNotifications(result.data);
+        setUnreadCount(result.data.filter(n => !n.read).length);
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error);
     }
   };
 
   const markAsRead = async (notificationId) => {
-    await NotificationService.markAsRead(notificationId);
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
+    try {
+      await NotificationService.markAsRead(notificationId);
+      setNotifications(prev => 
+        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   const renderNotification = ({ item }) => (
