@@ -104,7 +104,10 @@ class NotificationService {
           // Filter out test notifications
           const filteredData = result.data.filter(n => 
             !n.title.includes('Test Notification') && 
-            !n.message.includes('test notification to verify')
+            !n.message.includes('test notification to verify') &&
+            !n.title.includes('Test Booking Request') &&
+            !n.message.includes('Test Tourist') &&
+            !n.message.includes('Test Driver')
           );
           
           const newNotifications = this.lastNotificationCheck 
@@ -145,7 +148,10 @@ class NotificationService {
         // Filter out test notifications on initial load too
         const filteredData = (result.data || []).filter(n => 
           !n.title.includes('Test Notification') && 
-          !n.message.includes('test notification to verify')
+          !n.message.includes('test notification to verify') &&
+          !n.title.includes('Test Booking Request') &&
+          !n.message.includes('Test Tourist') &&
+          !n.message.includes('Test Driver')
         );
         callback(filteredData);
       }

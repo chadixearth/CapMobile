@@ -119,3 +119,25 @@ export async function getUserReviews({ user_id, type = 'received', limit = 50 } 
   }
 }
 
+export async function checkExistingReviews({ booking_id, reviewer_id }) {
+  if (!booking_id || !reviewer_id) return { success: false, error: 'booking_id and reviewer_id are required' };
+  
+  try {
+    const res = await request(`/reviews/check-existing/${booking_id}/?reviewer_id=${encodeURIComponent(reviewer_id)}`, { method: 'GET' });
+    
+    if (res.ok && res.data?.success) {
+      return {
+        success: true,
+        data: {
+          hasPackageReview: res.data.data.has_package_review,
+          hasDriverReview: res.data.data.has_driver_review
+        }
+      };
+    }
+    
+    return { success: false, error: res.data?.error || 'Failed to check existing reviews' };
+  } catch (error) {
+    return { success: false, error: error.message || 'Failed to check existing reviews' };
+  }
+}
+

@@ -17,7 +17,7 @@ import { getCustomerBookings } from '../../services/tourpackage/requestBooking';
 import { getCurrentUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerCustomRequests } from '../../services/specialpackage/customPackageRequest';
-import { createPackageReview, createDriverReview } from '../../services/reviews';
+import { createPackageReview, createDriverReview, checkExistingReviews } from '../../services/reviews';
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
 
@@ -110,6 +110,21 @@ export default function BookScreen({ navigation }) {
       else processedBookings = [];
 
       setBookings(processedBookings);
+
+      // Load existing reviews for completed bookings
+      try {
+        const completedBookings = processedBookings.filter(b => 
+          String((b.status || '')).toLowerCase() === 'completed'
+        );
+        
+        for (const booking of completedBookings) {
+          if (booking.id) {
+            loadExistingReviews(booking);
+          }
+        }
+      } catch (e) {
+        console.log('Failed to load existing reviews:', e);
+      }
 
       try {
         const customRes = await getCustomerCustomRequests(userId);
@@ -273,6 +288,29 @@ export default function BookScreen({ navigation }) {
     }
   };
 
+  const loadExistingReviews = async (booking) => {
+    if (!user?.id || !booking?.id) return;
+    
+    try {
+      const res = await checkExistingReviews({ 
+        booking_id: booking.id, 
+        reviewer_id: user.id 
+      });
+      
+      if (res.success) {
+        setRatedMap((prev) => ({
+          ...prev,
+          [String(booking.id)]: {
+            package: res.data.hasPackageReview,
+            driver: res.data.hasDriverReview
+          }
+        }));
+      }
+    } catch (e) {
+      console.log('Failed to check existing reviews for booking:', booking.id);
+    }
+  };
+
   const openRating = (booking, type) => {
     setRatingValue(0);
     setRatingComment('');
@@ -328,8 +366,8 @@ export default function BookScreen({ navigation }) {
         setRatingModal({ visible: false, type: 'package', booking: null });
       } else {
         const msg = res.error || 'Failed to submit review';
-        Alert.alert('Error', msg);
         if (/already exists|already reviewed/i.test(msg)) {
+          // Update the UI to reflect that review already exists
           setRatedMap((prev) => ({
             ...prev,
             [String(bk.id)]: {
@@ -338,6 +376,9 @@ export default function BookScreen({ navigation }) {
             },
           }));
           setRatingModal({ visible: false, type: 'package', booking: null });
+          Alert.alert('Already Reviewed', `You have already submitted a review for this ${ratingModal.type === 'package' ? 'package' : 'driver'}.`);
+        } else {
+          Alert.alert('Error', msg);
         }
       }
     } catch (e) {
@@ -451,9 +492,17 @@ export default function BookScreen({ navigation }) {
     const toggleExpand = () => {
       setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
       try {
-        if (!isExpanded && b?.id && !verificationMap[String(b.id)]) {
-          console.log('Loading verification for booking status:', b.status);
-          loadVerificationFor(b);
+        if (!isExpanded && b?.id) {
+          // Load verification if not already loaded
+          if (!verificationMap[String(b.id)]) {
+            console.log('Loading verification for booking status:', b.status);
+            loadVerificationFor(b);
+          }
+          // Load existing reviews if booking is completed and not already checked
+          if (String((b.status || '')).toLowerCase() === 'completed' && !ratedMap[String(b.id)]) {
+            console.log('Loading existing reviews for booking:', b.id);
+            loadExistingReviews(b);
+          }
         }
       } catch {}
     };
@@ -570,8 +619,14 @@ export default function BookScreen({ navigation }) {
                     disabled={!!ratedMap[String(b.id)]?.package}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="star-outline" size={16} color={MAROON} />
-                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Package</Text>
+                    <Ionicons 
+                      name={ratedMap[String(b.id)]?.package ? "checkmark-circle" : "star-outline"} 
+                      size={16} 
+                      color={ratedMap[String(b.id)]?.package ? "#2E7D32" : MAROON} 
+                    />
+                    <Text style={[styles.actionBtnText, ratedMap[String(b.id)]?.package && { color: '#2E7D32' }]} numberOfLines={1}>
+                      {ratedMap[String(b.id)]?.package ? 'Package Rated' : 'Rate Package'}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -580,8 +635,14 @@ export default function BookScreen({ navigation }) {
                     disabled={!getDriverId(b) || !!ratedMap[String(b.id)]?.driver}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="person-outline" size={16} color={MAROON} />
-                    <Text style={styles.actionBtnText} numberOfLines={1}>Rate Driver</Text>
+                    <Ionicons 
+                      name={ratedMap[String(b.id)]?.driver ? "checkmark-circle" : "person-outline"} 
+                      size={16} 
+                      color={ratedMap[String(b.id)]?.driver ? "#2E7D32" : MAROON} 
+                    />
+                    <Text style={[styles.actionBtnText, ratedMap[String(b.id)]?.driver && { color: '#2E7D32' }]} numberOfLines={1}>
+                      {ratedMap[String(b.id)]?.driver ? 'Driver Rated' : 'Rate Driver'}
+                    </Text>
                   </TouchableOpacity>
 
                   {verificationMap[String(b.id)]?.available && (

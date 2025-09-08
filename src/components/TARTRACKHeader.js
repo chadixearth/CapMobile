@@ -21,19 +21,39 @@ const TARTRACKHeader = ({
   useEffect(() => {
     if (!user?.id) return;
 
-    // Load unread count
+    // Load unread count with filtering
     const loadUnreadCount = async () => {
       const result = await NotificationService.getNotifications(user.id);
       if (result.success) {
-        setUnreadCount(result.data.filter(n => !n.read).length);
+        // Filter out test notifications
+        const filteredData = (result.data || []).filter(n => 
+          !n.title.includes('Test Notification') && 
+          !n.message.includes('test notification to verify') &&
+          !n.title.includes('Test Booking Request') &&
+          !n.message.includes('Test Tourist') &&
+          !n.message.includes('Test Driver')
+        );
+        setUnreadCount(filteredData.filter(n => !n.read).length);
       }
     };
     loadUnreadCount();
 
-    // Subscribe to new notifications
+    // Subscribe to new notifications and update count
     const subscription = NotificationService.subscribeToNotifications(
       user.id,
-      () => setUnreadCount(prev => prev + 1)
+      (notifications) => {
+        // Filter out test notifications
+        const filteredNotifications = notifications.filter(n => 
+          !n.title.includes('Test Notification') && 
+          !n.message.includes('test notification to verify') &&
+          !n.title.includes('Test Booking Request') &&
+          !n.message.includes('Test Tourist') &&
+          !n.message.includes('Test Driver')
+        );
+        
+        // Reload count to get accurate unread count
+        loadUnreadCount();
+      }
     );
 
     return () => subscription.unsubscribe();
