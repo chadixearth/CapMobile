@@ -22,7 +22,8 @@ import {
   formatPercentage,
 } from '../../services/earningsService';
 import NotificationService from '../../services/notificationService';
-import NotificationTester from '../../components/NotificationTester';
+import NotificationManager from '../../components/NotificationManager';
+
 import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
@@ -70,8 +71,12 @@ export default function DriverHomeScreen({ navigation }) {
       try {
         const currentUser = await getCurrentUser();
         if (currentUser && (currentUser.role === 'driver' || currentUser.role === 'driver-owner')) {
-          // Register for push notifications
-          await NotificationService.registerForPushNotifications();
+          // Register for push notifications (skip in Expo Go)
+          try {
+            await NotificationService.registerForPushNotifications();
+          } catch (error) {
+            console.log('[DriverHome] Push notifications not available');
+          }
           
           // Start polling for new booking notifications
           NotificationService.startPolling(currentUser.id, (newNotifications) => {
@@ -265,6 +270,9 @@ export default function DriverHomeScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* Global Notification Manager */}
+      <NotificationManager navigation={navigation} />
+      
       {/* Custom Header with Chat + Notification */}
       <TARTRACKHeader
         onMessagePress={() => navigation.navigate('Chat')}
@@ -359,8 +367,9 @@ export default function DriverHomeScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Notification Tester for debugging */}
-        <NotificationTester />
+
+        
+
 
         {/* Simple Analytics placeholder */}
         <View style={styles.analyticsCard}>

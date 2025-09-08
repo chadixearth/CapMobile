@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import paymentService from '../../services/paymentService';
 import { colors, spacing, card } from '../../styles/global';
 import BackButton from '../../components/BackButton';
+import NotificationService from '../../services/notificationService';
 import * as Routes from '../../constants/routes';
 
 const PaymentScreen = ({ route, navigation }) => {
@@ -197,9 +198,12 @@ const PaymentScreen = ({ route, navigation }) => {
         
         console.log('[PaymentScreen] Booking created successfully:', createdBookingId);
         
+        // Update booking status to waiting_for_driver after payment
+        await updateBookingStatusAfterPayment(createdBookingId);
+        
         Alert.alert(
           'Payment Successful!',
-          'Your booking has been confirmed.',
+          'Your booking has been confirmed and is now available for drivers.',
           [
             {
               text: 'View Receipt',
@@ -228,6 +232,32 @@ const PaymentScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error('[PaymentScreen] Error creating booking after payment:', error);
       Alert.alert('Booking Error', 'Payment successful but booking creation failed. Please contact support.');
+    }
+  };
+  
+  const updateBookingStatusAfterPayment = async (bookingId) => {
+    try {
+      const { apiBaseUrl } = await import('../../services/networkConfig');
+      const response = await fetch(`${apiBaseUrl()}/payment/complete/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          payment_status: 'paid',
+          payment_reference: 'TEST_PAYMENT_' + Date.now()
+        })
+      });
+      
+      const result = await response.json();
+      console.log('[PaymentScreen] Booking status updated:', result);
+      
+      if (result.success) {
+        console.log('[PaymentScreen] Booking is now waiting for driver');
+      }
+    } catch (error) {
+      console.error('[PaymentScreen] Error updating booking status:', error);
     }
   };
 

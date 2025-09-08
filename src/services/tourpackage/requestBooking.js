@@ -146,15 +146,24 @@ export async function createBooking(bookingData) {
       const result = await attempt(currentPayload);
       
       // Notify all drivers of new booking (non-blocking)
-      if (result && result.success) {
+      if (result && result.success && result.data) {
+        console.log('[Booking] Triggering driver notifications for booking:', result.data.id);
         NotificationService.notifyDriversOfNewBooking({
+          id: result.data.id,
           tourist_name: bookingData.customer_name || bookingData.tourist_name || 'Tourist',
-          package_name: bookingData.package_name || result.data.package_name,
-          number_of_pax: result.data.number_of_pax,
+          customer_name: bookingData.customer_name || bookingData.tourist_name || 'Tourist',
+          package_name: bookingData.package_name || result.data.package_name || 'Tour Package',
+          number_of_pax: result.data.number_of_pax || bookingData.number_of_pax || 1,
+          booking_date: result.data.booking_date,
+          pickup_time: result.data.pickup_time,
           ...result.data
+        }).then(notifResult => {
+          console.log('[Booking] Driver notification result:', notifResult);
         }).catch(error => {
-          console.warn('Driver notification failed (non-critical):', error.message);
+          console.warn('[Booking] Driver notification failed (non-critical):', error.message);
         });
+      } else {
+        console.warn('[Booking] No valid booking result to notify drivers about');
       }
       
       return result;

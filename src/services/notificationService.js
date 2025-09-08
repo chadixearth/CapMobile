@@ -81,26 +81,48 @@ class NotificationService {
 
     this.callbacks.add(callback);
     
-    // Poll every 10 seconds for new notifications
+    // Register for push notifications (skip in Expo Go)
+    try {
+      this.registerForPushNotifications();
+    } catch (error) {
+      console.log('[NotificationService] Push notifications not available');
+    }
+    
+    // Listen for notification responses
+    Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data.type === 'booking') {
+        callback([{ ...data, tapped: true }]);
+      }
+    });
+    
+    // Poll every 5 seconds for new notifications (faster for real-time feel)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
         if (result.success && result.data) {
-          // Check for new notifications since last check
+          // Filter out test notifications
+          const filteredData = result.data.filter(n => 
+            !n.title.includes('Test Notification') && 
+            !n.message.includes('test notification to verify')
+          );
+          
           const newNotifications = this.lastNotificationCheck 
-            ? result.data.filter(n => new Date(n.created_at) > this.lastNotificationCheck)
-            : result.data.filter(n => !n.read).slice(0, 1); // Only show 1 unread on first load
+            ? filteredData.filter(n => new Date(n.created_at) > this.lastNotificationCheck)
+            : filteredData.filter(n => !n.read).slice(0, 1);
           
           if (newNotifications.length > 0) {
-            // Show alert for new notifications
             const latestNotif = newNotifications[0];
-            Alert.alert(
+            
+            // Send local push notification
+            await this.sendLocalNotification(
               latestNotif.title,
               latestNotif.message,
-              [{ text: 'OK', onPress: () => this.markAsRead(latestNotif.id) }]
+              { type: latestNotif.type, id: latestNotif.id }
             );
             
-            // Notify all callbacks
+            // Note: Alert removed to prevent automatic test notifications
+            
             this.callbacks.forEach(cb => {
               try {
                 cb(newNotifications);
@@ -115,12 +137,17 @@ class NotificationService {
       } catch (error) {
         console.error('Polling error:', error);
       }
-    }, 10000); // Poll every 10 seconds
+    }, 5000); // Poll every 5 seconds
 
     // Initial load
     this.getNotifications(userId).then(result => {
       if (result.success && callback) {
-        callback(result.data || []);
+        // Filter out test notifications on initial load too
+        const filteredData = (result.data || []).filter(n => 
+          !n.title.includes('Test Notification') && 
+          !n.message.includes('test notification to verify')
+        );
+        callback(filteredData);
       }
     });
   }
@@ -162,27 +189,81 @@ class NotificationService {
   // Notify all drivers when tourist books
   static async notifyDriversOfNewBooking(bookingData) {
     try {
-      console.log('[NotificationService] Notifying drivers of new booking:', bookingData.id);
+      console.log('[NotificationService] Notifying drivers of new booking:', bookingData.id || 'new booking');
       
-      // Get all active drivers
-      const { data: drivers } = await supabase
-        .from('users')
-        .select('id')
-        .in('role', ['driver', 'driver-owner'])
-        .eq('status', 'active');
-
-      if (!drivers || drivers.length === 0) {
-        console.log('[NotificationService] No active drivers to notify');
+      // Get all active drivers from backend API instead of direct Supabase
+      const { apiBaseUrl } = await import('./networkConfig');
+      const response = await fetch(`${apiBaseUrl()}/auth/users/?role=driver&status=active`);
+      
+      if (!response.ok) {
+        console.warn('Failed to fetch drivers, using fallback method');
+        // Fallback to Supabase if API fails
+        const { data: drivers } = await supabase
+          .from('users')
+          .select('id')
+          .in('role', ['driver', 'driver-owner'])
+          .eq('status', 'active');
+        
+        if (!drivers || drivers.length === 0) {
+          console.log('[NotificationService] No active drivers to notify');
+          return { success: true, message: 'No active drivers to notify' };
+        }
+        
+        const driverIds = drivers.map(d => d.id).filter(id => {
+          try {
+            // Validate UUID format
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          } catch {
+            return false;
+          }
+        });
+        
+        if (driverIds.length === 0) {
+          console.log('[NotificationService] No valid driver UUIDs found');
+          return { success: true, message: 'No valid drivers to notify' };
+        }
+        
+        const touristName = bookingData.tourist_name || bookingData.customer_name || 'A tourist';
+        const result = await this.sendNotification(
+          driverIds,
+          'New Booking Request! 🚗',
+          `${touristName} needs a driver for ${bookingData.package_name || 'a tour'} (${bookingData.number_of_pax || 1} pax). Tap to accept.`,
+          'booking',
+          'driver'
+        );
+        
+        console.log('[NotificationService] Driver notification result:', result);
+        return result;
+      }
+      
+      const apiResult = await response.json();
+      const drivers = apiResult.data || apiResult.users || [];
+      
+      if (drivers.length === 0) {
+        console.log('[NotificationService] No active drivers found via API');
         return { success: true, message: 'No active drivers to notify' };
       }
 
       // Send notification to all drivers
-      const driverIds = drivers.map(d => d.id);
+      const driverIds = drivers.map(d => d.id).filter(id => {
+        try {
+          // Validate UUID format
+          return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        } catch {
+          return false;
+        }
+      });
+      
+      if (driverIds.length === 0) {
+        console.log('[NotificationService] No valid driver UUIDs found');
+        return { success: true, message: 'No valid drivers to notify' };
+      }
+      
       const touristName = bookingData.tourist_name || bookingData.customer_name || 'A tourist';
       const result = await this.sendNotification(
         driverIds,
         'New Booking Request! 🚗',
-        `${touristName} needs a driver for ${bookingData.package_name} (${bookingData.number_of_pax} pax). Tap to accept.`,
+        `${touristName} needs a driver for ${bookingData.package_name || 'a tour'} (${bookingData.number_of_pax || 1} pax). Tap to accept.`,
         'booking',
         'driver'
       );
@@ -191,24 +272,63 @@ class NotificationService {
       return result;
     } catch (error) {
       console.error('Failed to notify drivers:', error);
-      throw error; // Re-throw to see the error in booking creation
+      // Don't throw error - make it non-blocking
+      return { success: false, error: error.message };
     }
   }
 
   // Notify tourist when driver accepts booking
   static async notifyTouristOfAcceptedBooking(touristId, driverName, bookingData) {
-    console.log('[NotificationService] Notifying tourist of accepted booking:', bookingData.id);
-    
-    const result = await this.sendNotification(
-      [touristId],
-      'Booking Accepted! ✅',
-      `Great news! ${driverName} has accepted your booking. Get ready for your tour!`,
-      'booking_accepted',
-      'tourist'
-    );
-    
-    console.log('[NotificationService] Tourist notification result:', result);
-    return result;
+    try {
+      console.log('[NotificationService] Notifying tourist of accepted booking:', bookingData.id || 'booking');
+      
+      // Validate tourist ID format
+      if (!touristId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(touristId)) {
+        console.warn('[NotificationService] Invalid tourist ID format:', touristId);
+        return { success: false, error: 'Invalid tourist ID format' };
+      }
+      
+      const result = await this.sendNotification(
+        [touristId],
+        'Booking Accepted! ✅',
+        `Great news! ${driverName || 'A driver'} has accepted your booking. Get ready for your tour!`,
+        'booking',
+        'tourist'
+      );
+      
+      console.log('[NotificationService] Tourist notification result:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to notify tourist:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Notify tourist when booking is cancelled
+  static async notifyTouristOfCancelledBooking(touristId, reason, bookingData) {
+    try {
+      console.log('[NotificationService] Notifying tourist of cancelled booking:', bookingData.id || 'booking');
+      
+      // Validate tourist ID format
+      if (!touristId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(touristId)) {
+        console.warn('[NotificationService] Invalid tourist ID format:', touristId);
+        return { success: false, error: 'Invalid tourist ID format' };
+      }
+      
+      const result = await this.sendNotification(
+        [touristId],
+        'Booking Cancelled ❌',
+        `Your booking has been cancelled. ${reason || 'Please contact support for more details.'}`,
+        'booking',
+        'tourist'
+      );
+      
+      console.log('[NotificationService] Tourist cancellation notification result:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to notify tourist of cancellation:', error);
+      return { success: false, error: error.message };
+    }
   }
   // Show immediate notification alert
   static showNotificationAlert(title, message, onPress = null) {
@@ -223,40 +343,9 @@ class NotificationService {
 
   // Register for push notifications
   static async registerForPushNotifications() {
-    try {
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF231F7C',
-        });
-      }
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      
-      if (finalStatus !== 'granted') {
-        Alert.alert('Permission required', 'Push notifications are needed to receive booking updates.');
-        return null;
-      }
-      
-      const token = (await Notifications.getExpoPushTokenAsync()).data;
-      this.pushToken = token;
-      
-      // Store token for this user
-      await AsyncStorage.setItem('pushToken', token);
-      
-      return token;
-    } catch (error) {
-      console.error('Error registering for push notifications:', error);
-      return null;
-    }
+    // Skip push notifications in Expo Go completely
+    console.log('Push notifications disabled in Expo Go');
+    return null;
   }
 
   // Send local notification
@@ -348,92 +437,7 @@ class NotificationService {
     }
   }
 
-  // Enhanced polling with push notifications
-  static startPolling(userId, callback) {
-    if (this.pollingInterval) {
-      this.stopPolling();
-    }
 
-    this.callbacks.add(callback);
-    
-    // Register for push notifications
-    this.registerForPushNotifications();
-    
-    // Listen for notification responses
-    Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      if (data.type === 'booking') {
-        // Handle booking notification tap
-        callback([{ ...data, tapped: true }]);
-      }
-    });
-    
-    // Poll every 10 seconds for new notifications
-    this.pollingInterval = setInterval(async () => {
-      try {
-        const result = await this.getNotifications(userId);
-        if (result.success && result.data) {
-          const newNotifications = this.lastNotificationCheck 
-            ? result.data.filter(n => new Date(n.created_at) > this.lastNotificationCheck)
-            : result.data.filter(n => !n.read).slice(0, 1);
-          
-          if (newNotifications.length > 0) {
-            const latestNotif = newNotifications[0];
-            
-            // Send local push notification
-            await this.sendLocalNotification(
-              latestNotif.title,
-              latestNotif.message,
-              { type: latestNotif.type, id: latestNotif.id }
-            );
-            
-            // Also show alert if app is active
-            Alert.alert(
-              latestNotif.title,
-              latestNotif.message,
-              [{ text: 'OK', onPress: () => this.markAsRead(latestNotif.id) }]
-            );
-            
-            this.callbacks.forEach(cb => {
-              try {
-                cb(newNotifications);
-              } catch (error) {
-                console.error('Callback error:', error);
-              }
-            });
-          }
-          
-          this.lastNotificationCheck = new Date();
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    }, 10000);
-
-    // Initial load
-    this.getNotifications(userId).then(result => {
-      if (result.success && callback) {
-        callback(result.data || []);
-      }
-    });
-  }
-
-  // Test notification system
-  static async testNotification(userId) {
-    return this.sendNotification(
-      [userId],
-      'Test Notification 🔔',
-      'This is a test notification to verify the system is working.',
-      'test',
-      'tourist'
-    );
-  }
-
-  // Remove push notification registration (not needed for polling system)
-  static async registerForPushNotifications() {
-    // Skip push notifications - using polling system instead
-    return { success: true, method: 'polling' };
-  }
 }
 
 export default NotificationService;

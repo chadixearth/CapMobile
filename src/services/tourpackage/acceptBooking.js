@@ -1,6 +1,7 @@
 // API Configuration
 import apiClient from '../apiClient';
 import NotificationService from '../notificationService';
+import { getAccessToken } from '../authService';
 const API_BASE_URL = '/tour-booking';
 
 /**
@@ -51,14 +52,18 @@ export async function driverAcceptBooking(bookingId, driverData) {
     // Notify tourist that booking was accepted
     if (result.data && result.data.success && result.data.data) {
       try {
-        await NotificationService.notifyTouristOfAcceptedBooking(
+        console.log('[AcceptBooking] Triggering tourist notification for accepted booking:', result.data.data.id);
+        const notifResult = await NotificationService.notifyTouristOfAcceptedBooking(
           result.data.data.customer_id,
           driverData.driver_name || 'Driver',
           result.data.data
         );
+        console.log('[AcceptBooking] Tourist notification result:', notifResult);
       } catch (notifError) {
-        console.warn('Failed to notify tourist:', notifError);
+        console.warn('[AcceptBooking] Failed to notify tourist (non-critical):', notifError);
       }
+    } else {
+      console.warn('[AcceptBooking] No valid booking data to notify tourist about');
     }
     
     console.log('Accept booking response:', result.data);
@@ -213,42 +218,16 @@ export async function driverStartBooking(bookingId, driverId) {
  */
 export async function driverCancelBooking(bookingId, driverId, reason = 'Cancelled by driver') {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const url = `${API_BASE_URL}driver-cancel/${bookingId}/`;
-
-    const token = await getAccessToken().catch(() => null);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ driver_id: driverId, reason }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    const text = await response.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    if (!response.ok) {
-      console.error('API Error Response:', text);
-      throw new Error(data?.error || `HTTP ${response.status}`);
-    }
-
-    console.log('Driver cancel booking response:', data);
-    return data;
+    const endpoint = `${API_BASE_URL}/driver-cancel/${bookingId}/`;
+    const result = await apiClient.post(endpoint, { driver_id: driverId, reason });
+    
+    console.log('Driver cancel booking response:', result.data);
+    return result.data;
   } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Cancel booking request aborted/timeout.');
+    console.error('Error cancelling booking:', error);
+    if (error.message?.includes('timeout')) {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
-    console.error('Error cancelling booking:', error);
     throw error;
   }
 }

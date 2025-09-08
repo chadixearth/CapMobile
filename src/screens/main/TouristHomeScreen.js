@@ -28,6 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 import { supabase } from '../../services/supabase';
+import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
 
 const TERMINALS = [
@@ -283,6 +284,9 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Global Notification Manager */}
+      <NotificationManager navigation={navigation} />
+      
       <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')}
                       onMessagePress={() => navigation.navigate('Chat')} />
 

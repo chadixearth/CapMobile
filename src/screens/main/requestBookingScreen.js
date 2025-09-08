@@ -22,6 +22,7 @@ import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/authService';
 import { useError } from '../../components/ErrorProvider';
 import ErrorHandlingService from '../../services/errorHandlingService';
+import NotificationService from '../../services/notificationService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F7F4F2';

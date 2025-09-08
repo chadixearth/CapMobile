@@ -36,6 +36,7 @@ import {
 } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 import NotificationService from '../../services/notificationService';
+import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
 
 export default function DriverBookScreen({ navigation }) {
@@ -835,6 +836,9 @@ export default function DriverBookScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Global Notification Manager */}
+      <NotificationManager navigation={navigation} />
+      
       {/* Custom header with Chat + Notifications */}
       <TARTRACKHeader
         onMessagePress={() => navigation.navigate('Chat')}
