@@ -138,15 +138,78 @@ export const carriageService = {
   // Create a new carriage
   async createCarriage(payload) {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(payload),
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      console.log('Sending payload to', API_BASE_URL, ':', JSON.stringify(payload, null, 2));
+      
+      const response = await withTimeout(async (signal) => {
+        const res = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Accept': 'application/json' 
+          },
+          body: JSON.stringify(payload),
+          signal,
+        });
+        
+        // Log response status and headers for debugging
+        console.log('Response status:', res.status);
+        console.log('Response headers:', JSON.stringify([...res.headers.entries()]));
+        
+        // Get response text first to handle both success and error cases
+        const responseText = await res.text();
+        console.log('Raw response:', responseText);
+        
+        // Log the full request details for debugging
+        console.log('Request details:', {
+          url: API_BASE_URL,
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Accept': 'application/json' 
+          },
+          body: JSON.parse(JSON.stringify(payload)) // Clone the payload to avoid reference issues
+        });
+        
+        // Create a new response with the text for JSON parsing
+        const responseClone = new Response(responseText, {
+          status: res.status,
+          headers: res.headers
+        });
+        
+        if (!res.ok) {
+          let errorMessage = `HTTP error! status: ${res.status}`;
+          let errorDetails = {};
+          
+          try {
+            // Try to parse error response
+            const errorData = JSON.parse(responseText);
+            errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
+            console.error('API Error Details:', errorData);
+            
+            // If there are field-specific errors, include them
+            if (typeof errorData === 'object' && errorData !== null) {
+              errorDetails = Object.entries(errorData)
+                .filter(([key]) => key !== 'detail' && key !== 'message')
+                .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+                .join('\n');
+            }
+          } catch (e) {
+            // If not JSON, use the raw text
+            errorMessage = responseText || errorMessage;
+          }
+          
+          if (errorDetails) {
+            errorMessage += `\n\n${errorDetails}`;
+          }
+          
+          throw new Error(errorMessage);
+        }  
+        
+        return responseClone;
+      });
+      
       const data = await parseJsonSafely(response);
+      console.log('Parsed response data:', data);
       return unwrapObject(data);
     } catch (error) {
       console.error('Error creating carriage:', error);
