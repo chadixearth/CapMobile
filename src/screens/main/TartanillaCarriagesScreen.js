@@ -1,19 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  RefreshControl, 
-  TouchableOpacity, 
-  Alert, 
-  Modal, 
-  TextInput,
-  ActivityIndicator,
-  Dimensions
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { apiBaseUrl } from '../../services/networkConfig';
 import { supabase } from '../../services/supabase';
 import carriageService, { testCarriageConnection, setApiBaseUrl } from '../../services/tourpackage/fetchCarriage';
 import { useAuth } from '../../hooks/useAuth';
@@ -200,38 +189,143 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
     setAddingCarriage(true);
     try {
+      // Format the data exactly as the API expects it
       const carriageData = {
-        ...newCarriage,
-        assigned_owner_id: auth.user.id,
-        capacity: parseInt(newCarriage.capacity) || 4
+        plate_number: newCarriage.plate_number.trim(),
+        capacity: parseInt(newCarriage.capacity) || 4,
+        status: newCarriage.status || 'available',
+        eligibility: newCarriage.eligibility || 'eligible',
+        notes: newCarriage.notes || ''
       };
-
-      console.log('Sending carriage data:', carriageData);
-      const result = await carriageService.createCarriage(carriageData);
       
-      if (result) {
-        Alert.alert('Success', 'Carriage added successfully!');
-        setShowAddModal(false);
-        setNewCarriage({
-          plate_number: '',
-          capacity: '4',
-          status: 'available',
-          eligibility: 'eligible',
-          notes: ''
-        });
-        // Refresh the list
-        fetchUserAndCarriages();
-      } else {
-        Alert.alert('Error', 'Failed to add carriage');
+      // Remove any empty fields
+      Object.keys(carriageData).forEach(key => {
+        if (carriageData[key] === '' || carriageData[key] === null || carriageData[key] === undefined) {
+          delete carriageData[key];
+        }
+      });
+
+      // Set the API endpoint
+      const API_BASE_URL = `${apiBaseUrl()}/tartanilla-carriages/`;
+      console.log('API Base URL:', API_BASE_URL);
+      console.log('Current user object:', JSON.stringify(auth.user, null, 2));
+      console.log('User ID being used:', auth.user?.id);
+      
+      if (!auth.user?.id) {
+        console.error('No user ID found in auth.user:', auth);
+        throw new Error('User not properly authenticated - missing ID');
       }
+      
+      // Prepare the payload with all required fields
+      const payload = {
+        plate_number: carriageData.plate_number,
+        capacity: parseInt(carriageData.capacity) || 4,
+        status: carriageData.status,
+        eligibility: carriageData.eligibility,
+        notes: carriageData.notes,
+        assigned_owner_id: auth.user.id  // Remove toString() to send as raw UUID
+      };
+      
+      console.log('Final payload being sent:', JSON.stringify(payload, null, 2));
+      
+      console.log('Sending payload:', JSON.stringify(payload, null, 2));
+      
+      if (!payload.plate_number || !payload.assigned_owner_id) {
+        throw new Error('Missing required fields');
+      }
+      
+      // First, check if a carriage with this plate number already exists
+      const existingCarriages = await carriageService.getAllCarriages();
+      const duplicate = Array.isArray(existingCarriages) && 
+        existingCarriages.some(carriage => 
+          carriage.plate_number?.toLowerCase() === carriageData.plate_number?.toLowerCase()
+        );
+      
+      if (duplicate) {
+        Alert.alert('Error', 'A carriage with this plate number already exists');
+        setAddingCarriage(false);
+        return;
+      }
+
+      // Make the API call
+      const response = await fetch(API_BASE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const responseText = await response.text();
+      console.log('Response status:', response.status);
+      console.log('Response text:', responseText);
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = JSON.parse(responseText);
+          console.error('Error details:', errorData);
+          
+          // Handle field-specific errors
+          if (errorData.plate_number) {
+            errorMessage = `Plate number: ${Array.isArray(errorData.plate_number) ? errorData.plate_number.join(' ') : errorData.plate_number}`;
+          } else if (errorData.assigned_owner) {
+            errorMessage = `Owner error: ${Array.isArray(errorData.assigned_owner) ? errorData.assigned_owner.join(' ') : errorData.assigned_owner}`;
+          } else if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (typeof errorData === 'object') {
+            errorMessage = JSON.stringify(errorData);
+          }
+        } catch (e) {
+          console.error('Error parsing error response:', e);
+          errorMessage = responseText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const result = JSON.parse(responseText);
+      
+      if (!result) {
+        throw new Error('Failed to add carriage: No response from server');
+      }
+
+      // Reset form and close modal on success
+      setShowAddModal(false);
+      setNewCarriage({
+        plate_number: '',
+        capacity: '4',
+        status: 'available',
+        eligibility: 'eligible',
+        notes: ''
+      });
+      
+      // Show success message
+      Alert.alert('Success', 'Carriage added successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Refresh the list after a short delay to ensure the modal is closed
+            setTimeout(() => fetchUserAndCarriages(), 100);
+          }
+        }
+      ]);
     } catch (error) {
       console.error('Error adding carriage:', error);
-      let errorMessage = error.message || 'Failed to add carriage';
+      let errorMessage = 'Failed to add carriage. Please try again.';
       
-      if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://10.196.222.213:8000';
-      } else if (error.message.includes('HTTP error')) {
-        errorMessage = `Server error: ${error.message}`;
+      if (error.message.includes('plate_number')) {
+        errorMessage = 'Invalid plate number format. Please check and try again.';
+      } else if (error.message.includes('status')) {
+        errorMessage = 'Invalid status value. Please select a valid status.';
+      } else if (error.message.includes('400')) {
+        errorMessage = 'Invalid data. Please check all fields and try again.';
+      } else if (error.message.includes('Network request failed')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       Alert.alert('Error', errorMessage);
@@ -307,7 +401,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       <View key={carriage.id || carriage.plate_number} style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={styles.cardTitleContainer}>
-            <Ionicons name="car-sport" size={24} color={MAROON} style={styles.cardIcon} />
+            <Image 
+              source={require('../../../assets/carriage-icon.png')} 
+              style={[styles.cardIcon, { width: 24, height: 24, tintColor: MAROON }]} 
+              resizeMode="contain"
+            />
             <Text style={styles.cardTitle}>{carriage.plate_number}</Text>
           </View>
           <View style={[styles.statusPill, { backgroundColor: bgColor }]}>
@@ -317,7 +415,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         </View>
 
         <View style={styles.row}>
-          <Ionicons name="people-outline" size={18} color="#666" />
+          <Image 
+            source={require('../../../assets/capacity-icon.png')} 
+            style={{ width: 18, height: 18, tintColor: '#666'}} 
+            resizeMode="contain"
+          />
           <Text style={styles.rowText}>Capacity: {carriage.capacity ?? 'N/A'} persons</Text>
         </View>
 
@@ -372,7 +474,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <Text style={styles.subtitle}>
               {auth.user?.name || auth.user?.email || 'Owner'}
             </Text>
-            <Text style={styles.apiUrl}>API: {currentApiUrl}</Text>
           </View>
         </View>
 
@@ -893,6 +994,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
 
