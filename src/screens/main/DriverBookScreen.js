@@ -150,15 +150,14 @@ export default function DriverBookScreen({ navigation }) {
         userId = user.id;
       }
 
+      // Fetch data sequentially to avoid overwhelming the backend
       try {
-        await Promise.all([
-          fetchAvailableBookings(userId),
-          fetchAvailableCustomTours(userId),
-          fetchDriverBookings(userId),
-          fetchDriverCustomTours(userId),
-        ]);
+        await fetchAvailableBookings(userId);
+        await fetchAvailableCustomTours(userId);
+        await fetchDriverBookings(userId);
+        await fetchDriverCustomTours(userId);
       } catch (error) {
-        console.error('Error in Promise.all:', error);
+        console.error('Error fetching data:', error);
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
@@ -174,7 +173,7 @@ export default function DriverBookScreen({ navigation }) {
     }
   };
 
-  const fetchAvailableBookings = async (driverId, retryCount = 0) => {
+  const fetchAvailableBookings = async (driverId) => {
     try {
       const bookingsData = await getAvailableBookingsForDrivers(driverId);
       let processedBookings = [];
@@ -192,12 +191,7 @@ export default function DriverBookScreen({ navigation }) {
       setAvailableBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
-      // Retry once for 500 errors, then silently fail
-      if (error.message?.includes('500') && retryCount < 1) {
-        setTimeout(() => fetchAvailableBookings(driverId, retryCount + 1), 2000);
-      } else {
-        setAvailableBookings([]);
-      }
+      setAvailableBookings([]);
     }
   };
 
@@ -259,7 +253,7 @@ export default function DriverBookScreen({ navigation }) {
     }
   };
 
-  const fetchDriverBookings = async (driverId, retryCount = 0) => {
+  const fetchDriverBookings = async (driverId) => {
     try {
       const bookingsData = await getDriverBookings(driverId);
       let processedBookings = [];
@@ -277,12 +271,7 @@ export default function DriverBookScreen({ navigation }) {
       setDriverBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
-      // Retry once for 500 errors, then silently fail
-      if (error.message?.includes('500') && retryCount < 1) {
-        setTimeout(() => fetchDriverBookings(driverId, retryCount + 1), 2000);
-      } else {
-        setDriverBookings([]);
-      }
+      setDriverBookings([]);
     }
   };
 
@@ -427,7 +416,8 @@ export default function DriverBookScreen({ navigation }) {
                 setAvailableCustomTours((prev) => prev.filter((t) => t.id !== selectedBooking.id));
                 fetchDriverCustomTours(user.id);
               }
-              fetchUserAndBookings();
+              // Add delay to allow backend to process the acceptance
+              setTimeout(() => fetchUserAndBookings(), 2000);
             },
           },
         ]);

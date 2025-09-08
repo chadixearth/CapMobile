@@ -64,22 +64,48 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
   if (author_id) params.append('author_id', author_id);
   if (author_role) params.append('author_role', author_role);
   const qs = params.toString();
-  const res = await request(`/goods-services-profiles/${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  
+  const res = await request(`/goods-services-profiles/${qs ? `?${qs}` : ''}`, { 
+    method: 'GET',
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  });
+  
   if (res.ok) {
     // The optimized list may return {results: [...]} or a raw array
     const items = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
+    console.log('[goodsServices] Fetched items:', items.length, 'posts');
     return { success: true, data: items };
   }
   return { success: false, error: res.data?.error || 'Failed to fetch posts' };
 }
 
 export async function createGoodsServicesPost(authorId, description, media = []) {
-  const payload = JSON.stringify({ author_id: authorId, description, media });
-  const res = await request('/goods-services-profiles/', { method: 'POST', body: payload, timeoutMs: 30000 });
+  const payload = { 
+    author_id: authorId, 
+    description: description.trim(), 
+    media: Array.isArray(media) ? media : [] 
+  };
+  console.log('[goodsServices] Creating/updating post with payload:', JSON.stringify(payload, null, 2));
+  
+  const res = await request('/goods-services-profiles/', { 
+    method: 'POST', 
+    body: JSON.stringify(payload), 
+    timeoutMs: 30000,
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  });
+  
+  console.log('[goodsServices] Create/update response:', JSON.stringify(res, null, 2));
+  
   if (res.ok) {
     return { success: true, data: res.data };
   }
-  return { success: false, error: res.data?.error || 'Failed to create post' };
+  return { success: false, error: res.data?.error || res.data?.message || 'Failed to create post' };
 }
 
 export async function updateGoodsServicesPost(postId, { author_id, description, is_active, media }) {
@@ -120,8 +146,9 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
       return { success: true, urls: [] };
     }
 
-    // Convert files to base64 for JSON payload
-    const photos = [];
+    const urls = [];
+    
+    // Upload each file individually to the goods storage endpoint
     for (let i = 0; i < filesOrUris.length; i++) {
       const item = filesOrUris[i];
       if (item && typeof item === 'object' && item.uri) {
@@ -135,47 +162,38 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
             reader.readAsDataURL(blob);
           });
           
-          photos.push({
-            photo: base64,
-            filename: item.name || `photo_${Date.now()}_${i}.jpg`
+          const payload = {
+            file: base64,
+            filename: item.name || `goods_media_${Date.now()}_${i}.jpg`,
+            user_id: userId,
+            category: 'goods_services'
+          };
+
+          const uploadRes = await fetch(`${API_BASE_URL}/upload/goods-storage/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
           });
+
+          const uploadText = await uploadRes.text();
+          let uploadData;
+          try { uploadData = JSON.parse(uploadText); } catch { uploadData = { raw: uploadText }; }
+          
+          if (uploadRes.ok && uploadData.success) {
+            urls.push(uploadData.data.url);
+          } else {
+            console.error(`Failed to upload file ${i + 1}:`, uploadData.error);
+          }
         } catch (err) {
-          console.error('Failed to convert file to base64:', err);
+          console.error('Failed to process file:', err);
           continue;
         }
       }
     }
 
-    if (photos.length === 0) {
-      return { success: false, error: 'No valid photos to upload' };
-    }
-
-    const payload = {
-      photos,
-      bucket_type: 'tourpackage',
-      entity_id: userId
-    };
-
-    const res = await fetch(`${API_BASE_URL}/upload/multiple-photos/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (!res.ok) {
-      return { success: false, error: data?.error || data?.message || `Upload failed (${res.status})` };
-    }
-
-    // Extract URLs from response
-    const uploadedPhotos = data?.data?.uploaded_photos || [];
-    const urls = uploadedPhotos.map(photo => photo.url).filter(Boolean);
-
-    return { success: true, urls };
+    return { success: urls.length > 0, urls };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to upload media' };
   }

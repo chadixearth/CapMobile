@@ -23,9 +23,48 @@ class ApiClient {
   constructor() {
     this.baseURL = apiBaseUrl();
     this.timeout = 15000;
+    this.circuitBreaker = {
+      failures: 0,
+      lastFailureTime: null,
+      threshold: 5,
+      resetTimeout: 30000 // 30 seconds
+    };
+  }
+
+  isCircuitOpen() {
+    if (this.circuitBreaker.failures < this.circuitBreaker.threshold) {
+      return false;
+    }
+    
+    const now = Date.now();
+    const timeSinceLastFailure = now - this.circuitBreaker.lastFailureTime;
+    
+    if (timeSinceLastFailure > this.circuitBreaker.resetTimeout) {
+      // Reset circuit breaker
+      this.circuitBreaker.failures = 0;
+      this.circuitBreaker.lastFailureTime = null;
+      return false;
+    }
+    
+    return true;
+  }
+
+  recordFailure() {
+    this.circuitBreaker.failures++;
+    this.circuitBreaker.lastFailureTime = Date.now();
+  }
+
+  recordSuccess() {
+    this.circuitBreaker.failures = 0;
+    this.circuitBreaker.lastFailureTime = null;
   }
 
   async request(endpoint, options = {}) {
+    // Check circuit breaker
+    if (this.isCircuitOpen()) {
+      throw new Error('Service temporarily unavailable. Please try again later.');
+    }
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
@@ -75,8 +114,15 @@ class ApiClient {
         : await response.text();
 
       if (!response.ok) {
+        // Record failure for 5xx errors
+        if (response.status >= 500) {
+          this.recordFailure();
+        }
         throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
       }
+
+      // Record success
+      this.recordSuccess();
 
       return {
         success: true,
@@ -84,9 +130,17 @@ class ApiClient {
         status: response.status,
       };
     } catch (error) {
+      // Record failure for network errors and timeouts
       if (error.name === 'AbortError') {
+        this.recordFailure();
         throw new Error('Request timeout');
       }
+      
+      // Record failure for other network errors
+      if (!error.message?.includes('Session expired')) {
+        this.recordFailure();
+      }
+      
       throw error;
     }
   }

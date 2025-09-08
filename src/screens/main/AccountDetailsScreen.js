@@ -295,6 +295,20 @@ export default function AccountDetailsScreen({ navigation }) {
           const id = returned.id || returned[0]?.id;
           setExistingBioId(id);
         }
+        
+        // Refresh the bio data to confirm it was saved
+        setTimeout(async () => {
+          try {
+            const refreshResult = await getGoodsServicesProfileByAuthor(currentUser.id);
+            if (refreshResult.success && refreshResult.data) {
+              console.log('Refreshed bio data:', refreshResult.data);
+              setBioDescription(refreshResult.data.description || '');
+              if (refreshResult.data.id) setExistingBioId(refreshResult.data.id);
+            }
+          } catch (e) {
+            console.log('Failed to refresh bio data:', e);
+          }
+        }, 1000);
       } else {
         setBioMessage(result.error || 'Failed to save bio');
       }

@@ -53,6 +53,26 @@ export async function getDriverEarnings(driverId, filters = {}) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Earnings API Error Response:', errorText);
+      
+      // Return empty data instead of throwing for 500 errors
+      if (response.status >= 500) {
+        console.warn('Server error, returning empty earnings data');
+        return {
+          success: true,
+          data: {
+            earnings: [],
+            statistics: {
+              total_revenue: 0,
+              total_driver_earnings: 0,
+              total_admin_earnings: 0,
+              admin_percentage: 20,
+              driver_percentage: 80,
+              count: 0
+            }
+          }
+        };
+      }
+      
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     
@@ -109,6 +129,13 @@ export async function getAllDriverEarnings() {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('All Driver Earnings API Error Response:', errorText);
+      
+      // Return empty data for server errors
+      if (response.status >= 500) {
+        console.warn('Server error, returning empty driver earnings data');
+        return { success: true, data: [], count: 0 };
+      }
+      
       throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
     }
     

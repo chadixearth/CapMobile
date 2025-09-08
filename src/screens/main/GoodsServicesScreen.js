@@ -107,7 +107,8 @@ export default function GoodsServicesScreen() {
                   name, 
                   email: userData.email || '', 
                   role: userData.role || 'user',
-                  phone: userData.phone || ''
+                  phone: userData.phone || '',
+                  profile_photos: userData.profile_photos || userData.photos || []
                 };
               }
             } catch (error) {
@@ -146,14 +147,34 @@ export default function GoodsServicesScreen() {
 
   // Enhanced media grid with better layout and error handling
   const renderMediaGrid = (mediaArr) => {
-    if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
+    console.log('renderMediaGrid called with:', mediaArr);
+    
+    if (!Array.isArray(mediaArr) || mediaArr.length === 0) {
+      console.log('No media array or empty array');
+      return null;
+    }
     
     // Filter valid images and ensure URLs are accessible
     const images = mediaArr
-      .filter((m) => m && typeof m === 'object' && m.url && typeof m.url === 'string')
+      .filter((m) => {
+        const isValid = m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '';
+        if (!isValid) {
+          console.log('Invalid media item:', m);
+        }
+        return isValid;
+      })
+      .map((m) => ({
+        ...m,
+        url: m.url.replace(/\?$/, '') // Remove trailing ?
+      }))
       .slice(0, 6); // Show up to 6 images
     
-    if (images.length === 0) return null;
+    console.log('Filtered images:', images.length, 'valid images');
+    
+    if (images.length === 0) {
+      console.log('No valid images found');
+      return null;
+    }
     
     const getImageStyle = (index, total) => {
       if (total === 1) return [styles.mediaTile, styles.singleImage];
@@ -164,32 +185,44 @@ export default function GoodsServicesScreen() {
       return [styles.mediaTile, styles.quadImage];
     };
     
+    console.log('About to render media grid with', images.length, 'images');
+    
     return (
       <View style={styles.mediaContainer}>
         <Text style={styles.mediaLabel}>Photos ({images.length})</Text>
         <View style={styles.mediaGrid}>
-          {images.map((m, idx) => (
-            <TouchableOpacity key={idx} activeOpacity={0.8}>
-              <Image 
-                source={{ uri: m.url }} 
-                style={getImageStyle(idx, images.length)}
-                resizeMode="cover"
-                onError={(error) => {
-                  console.log('Image load error:', error.nativeEvent.error);
-                }}
-              />
-              {images.length > 4 && idx === 3 && (
-                <View style={styles.moreOverlay}>
-                  <Text style={styles.moreText}>+{images.length - 4}</Text>
-                </View>
-              )}
-              {m.caption && (
-                <View style={styles.captionOverlay}>
-                  <Text style={styles.captionText} numberOfLines={1}>{m.caption}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
+          {images.map((m, idx) => {
+            console.log(`Rendering image ${idx + 1}:`, m.url);
+            return (
+              <TouchableOpacity key={idx} activeOpacity={0.8}>
+                <Image 
+                  source={{ uri: m.url }} 
+                  style={getImageStyle(idx, images.length)}
+                  resizeMode="cover"
+                  onError={(error) => {
+                    console.log('❌ Image load error for URL:', m.url);
+                    console.log('Error details:', error.nativeEvent);
+                  }}
+                  onLoad={() => {
+                    console.log('✅ Image loaded successfully:', m.url);
+                  }}
+                  onLoadStart={() => {
+                    console.log('🔄 Image loading started:', m.url);
+                  }}
+                />
+                {images.length > 4 && idx === 3 && (
+                  <View style={styles.moreOverlay}>
+                    <Text style={styles.moreText}>+{images.length - 4}</Text>
+                  </View>
+                )}
+                {m.caption && (
+                  <View style={styles.captionOverlay}>
+                    <Text style={styles.captionText} numberOfLines={1}>{m.caption}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
     );
@@ -208,6 +241,33 @@ export default function GoodsServicesScreen() {
       : 0;
 
     const authorFromMap = authorMap[item.author_id] || {};
+    
+    // Get media from multiple possible sources
+    let mediaArray = [];
+    
+    // Handle the media field which might be an array of objects or just [Array] placeholder
+    if (item.media && Array.isArray(item.media) && item.media.length > 0) {
+      // Check if it's actual media objects or just placeholder
+      const firstItem = item.media[0];
+      if (firstItem && typeof firstItem === 'object' && firstItem.url) {
+        mediaArray = item.media;
+      }
+    }
+    
+    // Fallback to other possible fields
+    if (mediaArray.length === 0) {
+      if (Array.isArray(item.photos) && item.photos.length > 0) {
+        mediaArray = item.photos.map(url => ({ url }));
+      } else if (Array.isArray(item.images) && item.images.length > 0) {
+        mediaArray = item.images.map(url => ({ url }));
+      } else if (Array.isArray(item.profile_photos) && item.profile_photos.length > 0) {
+        mediaArray = item.profile_photos.map(url => ({ url }));
+      } else if (Array.isArray(authorFromMap.profile_photos) && authorFromMap.profile_photos.length > 0) {
+        mediaArray = authorFromMap.profile_photos.map(url => ({ url }));
+      }
+    }
+    
+    console.log('Media array for item:', item.id, mediaArray);
     
     const displayName = (() => {
       // Try direct name fields first
@@ -314,7 +374,7 @@ export default function GoodsServicesScreen() {
           </View>
         )}
 
-        {renderMediaGrid(item.media)}
+        {renderMediaGrid(mediaArray)}
 
         {/* Driver-specific Reviews */}
         {driverReviews.length > 0 && (
@@ -603,8 +663,10 @@ const styles = StyleSheet.create({
   },
   mediaTile: {
     borderRadius: 12,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#ff0000', // Red background to debug
     overflow: 'hidden',
+    minWidth: 50,
+    minHeight: 50,
   },
   singleImage: {
     width: '100%',

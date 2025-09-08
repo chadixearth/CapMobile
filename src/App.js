@@ -7,6 +7,7 @@ import AppInitService from './services/AppInitService';
 
 import ErrorProvider from './components/ErrorProvider';
 import ErrorHandlingService from './services/errorHandlingService';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -61,17 +62,19 @@ export default function App() {
 
   return (
     <ErrorProvider>
-      <NavigationContainer 
-        ref={navRef}
-        onReady={() => {
-          // Set navigation reference for error handling service
-          ErrorHandlingService.setNavigationRef(navRef.current);
-          // Make navigation ref globally available for logout
-          global.navigationRef = navRef.current;
-        }}
-      >
-        <RootNavigator />
-      </NavigationContainer>
+      <NotificationProvider>
+        <NavigationContainer 
+          ref={navRef}
+          onReady={() => {
+            // Set navigation reference for error handling service
+            ErrorHandlingService.setNavigationRef(navRef.current);
+            // Make navigation ref globally available for logout
+            global.navigationRef = navRef.current;
+          }}
+        >
+          <RootNavigator />
+        </NavigationContainer>
+      </NotificationProvider>
     </ErrorProvider>
   );
 }

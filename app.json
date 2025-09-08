@@ -1,17 +1,12 @@
 {
   "expo": {
-    "name": "temp-app",
-    "slug": "temp-app",
+    "name": "TarTrack",
+    "slug": "tartrack-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "extra": {
-      "eas": {
-        "projectId": "54d57525-8df3-4c01-a42e-3be5cc33ba27"
-      }
-    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -35,8 +30,10 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
-      ]
+        "VIBRATE",
+        "WAKE_LOCK"
+      ],
+      "package": "com.chadigause.tempapp"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -58,6 +55,11 @@
       "color": "#6B2E2B",
       "androidMode": "default",
       "androidCollapsedTitle": "TarTrack Notification"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b3c3eee0-8587-45cd-8170-992a4580d305"
+      }
     }
   }
 }

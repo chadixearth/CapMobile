@@ -1,10 +1,9 @@
 // src/components/TARTRACKHeader.js
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Image, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import NotificationService from '../services/notificationService';
-import { useAuth } from '../hooks/useAuth';
+import { useNotifications } from '../contexts/NotificationContext';
 
 const TARTRACKHeader = ({
   showBack = false,
@@ -15,49 +14,7 @@ const TARTRACKHeader = ({
   logoSource,
 }) => {
   const defaultLogo = require('../../assets/TarTrack Logo_sakto.png');
-  const [unreadCount, setUnreadCount] = useState(0);
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    // Load unread count with filtering
-    const loadUnreadCount = async () => {
-      const result = await NotificationService.getNotifications(user.id);
-      if (result.success) {
-        // Filter out test notifications
-        const filteredData = (result.data || []).filter(n => 
-          !n.title.includes('Test Notification') && 
-          !n.message.includes('test notification to verify') &&
-          !n.title.includes('Test Booking Request') &&
-          !n.message.includes('Test Tourist') &&
-          !n.message.includes('Test Driver')
-        );
-        setUnreadCount(filteredData.filter(n => !n.read).length);
-      }
-    };
-    loadUnreadCount();
-
-    // Subscribe to new notifications and update count
-    const subscription = NotificationService.subscribeToNotifications(
-      user.id,
-      (notifications) => {
-        // Filter out test notifications
-        const filteredNotifications = notifications.filter(n => 
-          !n.title.includes('Test Notification') && 
-          !n.message.includes('test notification to verify') &&
-          !n.title.includes('Test Booking Request') &&
-          !n.message.includes('Test Tourist') &&
-          !n.message.includes('Test Driver')
-        );
-        
-        // Reload count to get accurate unread count
-        loadUnreadCount();
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, [user?.id]);
+  const { unreadCount } = useNotifications();
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, containerStyle]}>

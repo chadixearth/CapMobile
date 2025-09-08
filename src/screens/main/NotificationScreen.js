@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Badge } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import NotificationService from '../../services/notificationService';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
 
 const MAROON = '#6B2E2B';
@@ -11,11 +11,11 @@ const TEXT = '#222';
 const MUTED = '#777';
 
 export default function NotificationScreen({ navigation }) {
-  const [notifications, setNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { notifications, unreadCount, loadNotifications, markAsRead, markAllAsRead } = useNotifications();
   const { user } = useAuth();
   const appState = useRef(AppState.currentState);
+  
   useEffect(() => {
     loadNotifications();
 
@@ -33,40 +33,10 @@ export default function NotificationScreen({ navigation }) {
     };
   }, []);
 
-
-
-  const loadNotifications = async () => {
-    if (!user?.id) return;
-    
-    const result = await NotificationService.getNotifications(user.id);
-    if (result.success) {
-      const notifs = result.data || [];
-      setNotifications(notifs);
-      setUnreadCount(notifs.filter(n => !n.read).length);
-    }
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await loadNotifications();
     setRefreshing(false);
-  };
-
-  const markAllAsRead = async () => {
-    const unreadNotifications = notifications.filter(n => !n.read);
-    for (const notification of unreadNotifications) {
-      await NotificationService.markAsRead(notification.id);
-    }
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
-
-  const markAsRead = async (notificationId) => {
-    await NotificationService.markAsRead(notificationId);
-    setNotifications(prev => {
-      const updated = prev.map(n => n.id === notificationId ? { ...n, read: true } : n);
-      setUnreadCount(updated.filter(n => !n.read).length);
-      return updated;
-    });
   };
 
   const handleNotificationPress = (notification) => {

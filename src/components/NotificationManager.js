@@ -21,11 +21,14 @@ const NotificationManager = ({ navigation }) => {
   const initializeNotifications = async () => {
     try {
       const currentUser = await getCurrentUser();
-      if (!currentUser) return;
+      if (!currentUser) {
+        return;
+      }
       
       setUser(currentUser);
+      console.log(`[NotificationManager] Starting notifications for: ${currentUser.email} (${currentUser.role})`);
       
-      // Register for push notifications (skip in Expo Go)
+      // Register for push notifications
       try {
         await NotificationService.registerForPushNotifications();
       } catch (error) {
@@ -35,9 +38,8 @@ const NotificationManager = ({ navigation }) => {
       // Start polling for notifications
       NotificationService.startPolling(currentUser.id, handleNewNotifications);
       
-      console.log('[NotificationManager] Initialized for user:', currentUser.email);
     } catch (error) {
-      console.error('[NotificationManager] Initialization error:', error);
+      console.error('[NotificationManager] Error:', error);
     }
   };
 
@@ -52,35 +54,28 @@ const NotificationManager = ({ navigation }) => {
   const handleNotificationByType = (notification) => {
     const { type, title, message } = notification;
     
-    switch (type) {
-      case 'booking':
-        if (user?.role === 'driver' || user?.role === 'driver-owner') {
-          // Driver receives new booking notification
-          Alert.alert(
-            '🚗 New Booking Available!',
-            message,
-            [
-              { text: 'View Bookings', onPress: () => navigation?.navigate('DriverBook') },
-              { text: 'OK' }
-            ]
-          );
-        } else if (user?.role === 'tourist') {
-          // Tourist receives booking acceptance notification
-          Alert.alert(
-            '✅ Booking Update!',
-            message,
-            [
-              { text: 'View Bookings', onPress: () => navigation?.navigate('BookingHistory') },
-              { text: 'OK' }
-            ]
-          );
-        }
-        break;
-        
-      default:
-        // Generic notification
-        Alert.alert(title, message, [{ text: 'OK' }]);
-        break;
+    if (type === 'booking') {
+      if (user?.role === 'driver' || user?.role === 'driver-owner') {
+        Alert.alert(
+          '🚗 New Booking Available!',
+          message,
+          [
+            { text: 'View Bookings', onPress: () => navigation?.navigate('DriverBook') },
+            { text: 'OK' }
+          ]
+        );
+      } else if (user?.role === 'tourist') {
+        Alert.alert(
+          '✅ Booking Update!',
+          message,
+          [
+            { text: 'View Bookings', onPress: () => navigation?.navigate('BookingHistory') },
+            { text: 'OK' }
+          ]
+        );
+      }
+    } else {
+      Alert.alert(title, message, [{ text: 'OK' }]);
     }
   };
 

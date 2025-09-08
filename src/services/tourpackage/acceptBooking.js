@@ -11,27 +11,46 @@ const API_BASE_URL = '/tour-booking';
  * @returns {Promise<Object>} Available bookings
  */
 export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
-  try {
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    queryParams.append('driver_id', driverId);
-    queryParams.append('status', filters.status || 'waiting_for_driver');
-    
-    Object.keys(filters).forEach(key => {
-      if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        queryParams.append(key, filters[key]);
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      queryParams.append('driver_id', driverId);
+      queryParams.append('status', filters.status || 'waiting_for_driver');
+      
+      Object.keys(filters).forEach(key => {
+        if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+      
+      const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
+      const result = await apiClient.get(endpoint);
+      
+      console.log('Available bookings response:', result.data);
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`Error fetching available bookings (attempt ${attempt}/${maxRetries}):`, error);
+      
+      // If it's a 500 error and we have retries left, wait and retry
+      if (error.message?.includes('500') && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
-    });
-    
-    const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
-    const result = await apiClient.get(endpoint);
-    
-    console.log('Available bookings response:', result.data);
-    return result.data;
-  } catch (error) {
-    console.error('Error fetching available bookings for drivers:', error);
-    return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
+      
+      // For non-500 errors or final attempt, break
+      break;
+    }
   }
+  
+  console.error('All retry attempts failed for available bookings');
+  return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
 }
 
 /**
@@ -81,24 +100,43 @@ export async function driverAcceptBooking(bookingId, driverData) {
  * @returns {Promise<Object>} Driver's bookings
  */
 export async function getDriverBookings(driverId, filters = {}) {
-  try {
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        queryParams.append(key, filters[key]);
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+      
+      const endpoint = `${API_BASE_URL}/driver/${driverId}/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const result = await apiClient.get(endpoint);
+      
+      console.log('Driver bookings response:', result.data);
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`Error fetching driver bookings (attempt ${attempt}/${maxRetries}):`, error);
+      
+      // If it's a 500 error and we have retries left, wait and retry
+      if (error.message?.includes('500') && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
-    });
-    
-    const endpoint = `${API_BASE_URL}/driver/${driverId}/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-    const result = await apiClient.get(endpoint);
-    
-    console.log('Driver bookings response:', result.data);
-    return result.data;
-  } catch (error) {
-    console.error('Error fetching driver bookings:', error);
-    return { success: true, data: [] };
+      
+      // For non-500 errors or final attempt, break
+      break;
+    }
   }
+  
+  console.error('All retry attempts failed for driver bookings');
+  return { success: true, data: [] };
 }
 
 /**
