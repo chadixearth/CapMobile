@@ -3,7 +3,7 @@
  * Run this with: node debug_profile_api.js
  */
 
-const API_BASE_URL = 'http://192.168.8.165:8000/api';
+const API_BASE_URL = 'http://192.168.1.9:8000/api';
 
 async function testProfileUpdateAPI() {
   console.log('=== Profile Update API Debug ===\n');
@@ -50,9 +50,9 @@ async function testProfileUpdateAPI() {
     if (error.message.includes('ECONNREFUSED') || error.message.includes('fetch')) {
       console.log('\nTroubleshooting:');
       console.log('1. Make sure Django server is running: python manage.py runserver');
-      console.log('2. Check if the IP address is correct: 192.168.8.165');
+      console.log('2. Check if the IP address is correct: 192.168.1.9');
       console.log('3. Verify both devices are on the same network');
-      console.log('4. Try accessing http://192.168.8.165:8000/api/debug/ in browser');
+      console.log('4. Try accessing http://192.168.1.9:8000/api/debug/ in browser');
     }
   }
 }
