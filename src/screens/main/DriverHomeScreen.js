@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useLayoutEffect } from 'react';
 import {
   Alert,
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Svg, Rect, Polyline, G, Line, Circle } from 'react-native-svg';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 import { getCurrentUser } from '../../services/authService';
@@ -33,7 +33,7 @@ const MUTED = '#777';
 const CARD_BG = '#FFFFFF';
 const SURFACE = '#F7F7F7';
 
-// Default fallback notifications
+/* ------------------ fallback notifications ------------------ */
 const defaultNotifications = [
   {
     id: 'welcome_1',
@@ -49,8 +49,114 @@ const defaultNotifications = [
   },
 ];
 
+/* ------------------ Mini Activity Chart ------------------ */
+function ActivityMiniChart({
+  data,
+  height = 130,
+  barColor = 'rgba(86, 28, 36, 0.14)',
+  driverColor = '#6B2E2B',
+  orgColor = '#B07C78',
+  padding = 12,
+}) {
+  const [width, setWidth] = React.useState(0);
+
+  const maxTrips = Math.max(...data.map(d => d.trips || 0), 1);
+  const maxGross = Math.max(...data.map(d => d.gross || 0), 1);
+
+  const innerW = Math.max(width - padding * 2, 0);
+  const innerH = Math.max(height - padding * 2, 0);
+  const n = data.length;
+
+  const barGap = 6;
+  const barW = n > 0 ? Math.max(innerW / n - barGap, 4) : 0;
+
+  const xFor = (i) => padding + i * (barW + barGap) + barGap / 2;
+  const yTrips = (t) => padding + (1 - (t || 0) / maxTrips) * innerH;
+  const yGross = (g) => padding + (1 - (g || 0) / maxGross) * innerH;
+
+  // polylines
+  const driverPoints = data.map((d, i) => `${xFor(i) + barW / 2},${yGross((d.gross || 0) * 0.8)}`).join(' ');
+  const orgPoints = data.map((d, i) => `${xFor(i) + barW / 2},${yGross((d.gross || 0) * 0.2)}`).join(' ');
+
+  // dots
+  const driverDots = data.map((d, i) => ({
+    cx: xFor(i) + barW / 2,
+    cy: yGross((d.gross || 0) * 0.8),
+  }));
+  const orgDots = data.map((d, i) => ({
+    cx: xFor(i) + barW / 2,
+    cy: yGross((d.gross || 0) * 0.2),
+  }));
+
+  return (
+    <View style={{ width: '100%' }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
+      {/* SVG area with fixed height */}
+      <View style={{ width: '100%', height }}>
+        {width > 0 && (
+          <Svg width={width} height={height}>
+            {/* grid */}
+            <G opacity={0.12}>
+              <Line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="#000" />
+              <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#000" />
+            </G>
+
+            {/* bars */}
+            {data.map((d, i) => {
+              const x = xFor(i);
+              const y = yTrips(d.trips || 0);
+              const h = height - padding - y;
+              return (
+                <Rect
+                  key={`bar-${i}`}
+                  x={x}
+                  y={y}
+                  width={barW}
+                  height={Math.max(h, 2)}
+                  rx={6}
+                  ry={6}
+                  fill={barColor}
+                />
+              );
+            })}
+
+            {/* driver line + dots */}
+            <Polyline points={driverPoints} fill="none" stroke={driverColor} strokeWidth={2} />
+            {driverDots.map((p, idx) => (
+              <Circle key={`dpt-${idx}`} cx={p.cx} cy={p.cy} r={3.5} fill={driverColor} stroke="#fff" strokeWidth={1} />
+            ))}
+
+            {/* org line + dots */}
+            <Polyline points={orgPoints} fill="none" stroke={orgColor} strokeWidth={2} />
+            {orgDots.map((p, idx) => (
+              <Circle key={`opt-${idx}`} cx={p.cx} cy={p.cy} r={3.5} fill={orgColor} stroke="#fff" strokeWidth={1} />
+            ))}
+          </Svg>
+        )}
+      </View>
+
+      {/* legend BELOW the SVG so it isn’t clipped */}
+      <View style={styles.legendRow}>
+        <View style={[styles.legendItem, { marginRight: 16 }]}>
+          <View style={[styles.legendBox, { backgroundColor: barColor }]} />
+          <Text style={styles.legendText}>Trips</Text>
+        </View>
+
+        <View style={[styles.legendItem, { marginRight: 16 }]}>
+          <View style={[styles.legendLine, { backgroundColor: driverColor }]} />
+          <Text style={styles.legendText}>Driver Share</Text>
+        </View>
+
+        <View style={styles.legendItem}>
+          <View style={[styles.legendLine, { backgroundColor: orgColor }]} />
+          <Text style={styles.legendText}>Org Share</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ------------------ Screen ------------------ */
 export default function DriverHomeScreen({ navigation }) {
-  // Hide the default stack header; we’ll render our custom TARTRACKHeader
   useLayoutEffect(() => {
     navigation.setOptions?.({ headerShown: false });
   }, [navigation]);
@@ -65,27 +171,20 @@ export default function DriverHomeScreen({ navigation }) {
 
   useEffect(() => {
     fetchUserAndEarnings();
-    
-    // Start notification service for drivers
+
     const initNotifications = async () => {
       try {
         const currentUser = await getCurrentUser();
         if (currentUser && (currentUser.role === 'driver' || currentUser.role === 'driver-owner')) {
-          // Register for push notifications (skip in Expo Go)
           try {
             await NotificationService.registerForPushNotifications();
-          } catch (error) {
+          } catch {
             console.log('[DriverHome] Push notifications not available');
           }
-          
-          // Start polling for new booking notifications
           NotificationService.startPolling(currentUser.id, (newNotifications) => {
-            console.log('New notifications received:', newNotifications);
-            // Update notifications state if needed
             if (newNotifications.length > 0) {
               const latestNotif = newNotifications[0];
               if (latestNotif.type === 'booking') {
-                // Show immediate alert for booking notifications
                 Alert.alert(
                   latestNotif.title,
                   latestNotif.message,
@@ -102,19 +201,14 @@ export default function DriverHomeScreen({ navigation }) {
         console.error('Error initializing notifications:', error);
       }
     };
-    
+
     initNotifications();
-    
-    // Cleanup on unmount
-    return () => {
-      NotificationService.stopPolling();
-    };
+    return () => NotificationService.stopPolling();
   }, []);
 
   const fetchUserAndEarnings = async () => {
     try {
       setLoading(true);
-
       let currentUser = await getCurrentUser();
       let userId = null;
 
@@ -149,11 +243,7 @@ export default function DriverHomeScreen({ navigation }) {
   const fetchEarningsData = async (driverId) => {
     try {
       const data = await getDriverEarningsStats(driverId, 'month');
-      if (data?.success) {
-        setEarningsData(data.data);
-      } else if (data?.error) {
-        console.error('Failed to fetch earnings data:', data.error);
-      }
+      if (data?.success) setEarningsData(data.data);
     } catch (error) {
       console.error('Error fetching earnings data:', error);
       setEarningsData({
@@ -171,20 +261,15 @@ export default function DriverHomeScreen({ navigation }) {
   const fetchPercentageChange = async (driverId) => {
     try {
       const data = await getEarningsPercentageChange(driverId, 'month');
-      if (data?.success) {
-        setPercentageChange(data.data);
-      } else {
-        setPercentageChange({ percentage_change: 0, is_increase: true });
-      }
-    } catch (error) {
-      console.error('Error fetching percentage change:', error);
+      setPercentageChange(data?.success ? data.data : { percentage_change: 0, is_increase: true });
+    } catch {
       setPercentageChange({ percentage_change: 0, is_increase: true });
     }
   };
 
   const fetchRecentNotifications = async (driverId) => {
     try {
-      let query = supabase
+      let { data, error } = await supabase
         .from('bookings')
         .select('id,total_amount,package_name,completed_at,updated_at')
         .eq('driver_id', driverId)
@@ -192,40 +277,34 @@ export default function DriverHomeScreen({ navigation }) {
         .order('completed_at', { ascending: false })
         .limit(3);
 
-      let { data, error } = await query;
-
       if (error && /completed_at/.test(error.message || '')) {
-        const fallback = await supabase
+        const fb = await supabase
           .from('bookings')
           .select('id,total_amount,package_name,updated_at')
           .eq('driver_id', driverId)
           .eq('status', 'completed')
           .order('updated_at', { ascending: false })
           .limit(3);
-        error = fallback.error;
-        data = (fallback.data || []).map((b) => ({ ...b, completed_at: b.updated_at }));
+        data = (fb.data || []).map(b => ({ ...b, completed_at: b.updated_at }));
       }
 
-      if (!error && data && data.length > 0) {
-        const earningsNotifications = data.map((booking) => {
+      if (data && data.length > 0) {
+        const earnNotifs = data.map((booking) => {
           const driverEarning = (booking.total_amount || 0) * 0.8;
-          const timeAgo = getTimeAgo(booking.completed_at);
           return {
             id: `earning_${booking.id}`,
             icon: <MaterialCommunityIcons name="cash" size={22} color="#2ecc71" />,
             message: `+ ${formatCurrency(driverEarning)} from ${booking.package_name || 'tour package'}`,
-            time: timeAgo,
+            time: getTimeAgo(booking.completed_at),
           };
         });
-
         const summary = {
           id: 'welcome_summary',
           icon: <Ionicons name="checkmark-circle" size={22} color={MAROON} />,
           message: `Completed bookings: ${data.length}`,
           time: 'Summary',
         };
-
-        setNotifications([...earningsNotifications, summary]);
+        setNotifications([...earnNotifs, summary]);
       } else {
         setNotifications(defaultNotifications);
       }
@@ -268,12 +347,20 @@ export default function DriverHomeScreen({ navigation }) {
   const todayEarnings = earningsData?.earnings_today || 0;
   const changeData = percentageChange || { percentage_change: 0, is_increase: true };
 
+  // demo data
+  const weeklyDemo = [
+    { label: 'Mon', trips: 5,  gross: 500 },
+    { label: 'Tue', trips: 8,  gross: 800 },
+    { label: 'Wed', trips: 6,  gross: 600 },
+    { label: 'Thu', trips: 10, gross: 980 },
+    { label: 'Fri', trips: 12, gross: 1100 },
+    { label: 'Sat', trips: 15, gross: 1250 },
+    { label: 'Sun', trips: 7,  gross: 560 },
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Global Notification Manager */}
       <NotificationManager navigation={navigation} />
-      
-      {/* Custom Header with Chat + Notification */}
       <TARTRACKHeader
         onMessagePress={() => navigation.navigate('Chat')}
         onNotificationPress={() => navigation.navigate('Notification')}
@@ -367,31 +454,22 @@ export default function DriverHomeScreen({ navigation }) {
           ))}
         </View>
 
-
-        
-
-
-        {/* Simple Analytics placeholder */}
+        {/* Weekly Activity (Chart) */}
         <View style={styles.analyticsCard}>
           <Text style={styles.analyticsTitle}>Weekly Activity</Text>
           <View style={styles.chartBox}>
-            <Image
-              source={{ uri: 'https://dummyimage.com/320x90/ededed/aaaaaa&text=Activity+Chart' }}
-              style={{ width: '100%', height: 90, borderRadius: 10 }}
-            />
+            <ActivityMiniChart data={weeklyDemo} height={130} />
           </View>
-          <Text style={styles.analyticsFoot}>This week</Text>
         </View>
       </ScrollView>
     </View>
   );
 }
 
+/* ------------------ styles ------------------ */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
-
-  /* Income Card */
   incomeCard: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -414,7 +492,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    gap: 6,
   },
   trendText: { fontWeight: '800', fontSize: 12 },
   incomeMainRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
@@ -442,7 +519,6 @@ const styles = StyleSheet.create({
   splitLabel: { color: MUTED, fontSize: 11, marginBottom: 2 },
   splitValue: { color: TEXT, fontSize: 13, fontWeight: '800' },
 
-  /* Section */
   sectionHeader: {
     marginHorizontal: 16,
     marginTop: 18,
@@ -453,7 +529,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '800', color: TEXT },
   sectionMeta: { fontSize: 11, color: MUTED },
 
-  /* List card */
   cardList: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -481,7 +556,6 @@ const styles = StyleSheet.create({
   listText: { flex: 1, color: TEXT, fontSize: 13, fontWeight: '600' },
   listTime: { color: MUTED, fontSize: 11, marginLeft: 8 },
 
-  /* Analytics */
   analyticsCard: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -494,12 +568,29 @@ const styles = StyleSheet.create({
   analyticsTitle: { color: TEXT, fontSize: 14, fontWeight: '800', marginBottom: 10 },
   chartBox: {
     width: '100%',
-    height: 90,
+    minHeight: 180,          // a bit more room so legend never overlaps/gets clipped
     backgroundColor: '#ededed',
     borderRadius: 10,
     overflow: 'hidden',
+    justifyContent: 'center',
+    paddingBottom: 8,        // breathing room under the SVG
+    paddingHorizontal: 10,   // so legend text doesn’t touch edges
+  },
+
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',        // allow wrapping on small screens
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingTop: 8,
   },
-  analyticsFoot: { color: MUTED, fontSize: 12, marginTop: 8, alignSelf: 'flex-end' },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  legendBox: { width: 12, height: 12, borderRadius: 2, marginRight: 6 },
+  legendLine: { width: 14, height: 3, borderRadius: 2, marginRight: 6 },
+  legendText: { fontSize: 12, color: '#555', fontWeight: '600' },
 });
