@@ -315,16 +315,19 @@ class ErrorHandlingService {
    * @param {Object} options - Additional options
    */
   static handleError(error, options = {}) {
-    const errorString = typeof error === 'string' ? error : error.message || 'An unexpected error occurred';
+    const errorString = typeof error === 'string' ? error : (error?.message || 'An unexpected error occurred');
+    
+    // Safely check error string with null/undefined protection
+    const safeErrorString = errorString || '';
     
     // Determine error type based on error message/code
-    if (errorString.includes('session') || errorString.includes('unauthorized') || errorString.includes('authentication')) {
+    if (safeErrorString.includes('session') || safeErrorString.includes('unauthorized') || safeErrorString.includes('authentication')) {
       this.handleAuthError('session_expired', options);
-    } else if (errorString.includes('network') || errorString.includes('timeout') || errorString.includes('connection')) {
+    } else if (safeErrorString.includes('network') || safeErrorString.includes('timeout') || safeErrorString.includes('connection')) {
       this.handleNetworkError('network_error', options);
-    } else if (errorString.includes('payment')) {
+    } else if (safeErrorString.includes('payment')) {
       this.handlePaymentError('payment_failed', options);
-    } else if (errorString.includes('booking')) {
+    } else if (safeErrorString.includes('booking')) {
       this.handleBookingError('booking_failed', options);
     } else {
       // Generic error

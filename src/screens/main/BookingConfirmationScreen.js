@@ -47,8 +47,8 @@ const BookingConfirmationScreen = ({ route, navigation }) => {
           <Text style={styles.title}>Booking Confirmed!</Text>
           <Text style={styles.subtitle}>
             {paymentId 
-              ? 'Your booking has been confirmed and payment has been processed successfully.'
-              : 'Your booking has been confirmed. Payment can be completed later through the bookings section.'
+              ? 'Your payment has been processed successfully! Your booking is now confirmed.'
+              : 'Your booking request has been submitted successfully. You will be notified when a driver accepts your booking, and payment will be required at that time.'
             }
           </Text>
 
@@ -91,7 +91,7 @@ const BookingConfirmationScreen = ({ route, navigation }) => {
               <View style={styles.stepItem}>
                 <Ionicons name="card-outline" size={20} color={colors.primary} />
                 <Text style={styles.stepText}>
-                  Complete payment through the bookings section when payment services are available
+                  Complete payment after a driver accepts your booking request
                 </Text>
               </View>
             )}

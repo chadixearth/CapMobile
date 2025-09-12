@@ -328,18 +328,18 @@ const RequestBookingScreen = ({ route, navigation }) => {
         pickup_address: formData.pickup_address || '',
       };
 
+      // Create booking without payment
+      const result = await createBooking(bookingData);
+      
+      if (result && result.success) {
+        const bookingRef = result.data?.booking_reference || result.data?.id || 'N/A';
+        setBookingReference(bookingRef);
+        setShowSuccessModal(true);
+      } else {
+        throw new Error(result?.error || 'Failed to create booking');
+      }
+      
       setLoading(false);
-
-      navigation.replace(Routes.PAYMENT, {
-        bookingData: bookingData,
-        packageData: {
-          packageName: selectedPackage?.package_name || 'Tour Package',
-          bookingDate: formatDate(formData.booking_date),
-          numberOfPax: formData.number_of_pax,
-        },
-        amount: formData.total_amount,
-        currency: 'PHP',
-      });
     } catch (error) {
       console.error('Error preparing booking:', error);
       setLoading(false);
@@ -654,7 +654,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
         </View>
 
         <TouchableOpacity style={styles.bookBtn} onPress={handleSubmit} disabled={loading}>
-          <Text style={styles.bookBtnText}>{loading ? 'Processing…' : 'Book'}</Text>
+          <Text style={styles.bookBtnText}>{loading ? 'Submitting…' : 'Submit Request'}</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -666,11 +666,16 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
       <SuccessModal
         visible={showSuccessModal}
-        title="Booking Successful!"
-        message={`Your booking has been created successfully!\n\nBooking Reference: ${bookingReference}`}
-        primaryActionText="Go Home"
+        title="Booking Request Submitted!"
+        message={`Your booking request has been submitted successfully!\n\nBooking Reference: ${bookingReference}\n\nYou will be notified when a driver accepts your booking. Payment will be required after driver acceptance.`}
+        primaryActionText="View My Bookings"
+        secondaryActionText="Go Home"
         onClose={() => setShowSuccessModal(false)}
         primaryAction={() => {
+          setShowSuccessModal(false);
+          navigation.navigate('Main', { screen: 'Book' });
+        }}
+        secondaryAction={() => {
           setShowSuccessModal(false);
           navigation.navigate('Main');
         }}

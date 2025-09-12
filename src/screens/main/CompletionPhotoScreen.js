@@ -11,6 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { completeBookingWithPhoto } from '../../services/tourpackage/bookingVerification';
+import { submitTripReport } from '../../services/reportService';
+import ReportModal from '../../components/ReportModal';
 
 const MAROON = '#6B2E2B';
 
@@ -18,6 +20,9 @@ export default function CompletionPhotoScreen({ navigation, route }) {
   const { booking, driverId } = route.params;
   const [photo, setPhoto] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [tripCompleted, setTripCompleted] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   const pickImage = async (useCamera = false) => {
     const permissionResult = useCamera 
@@ -58,13 +63,10 @@ export default function CompletionPhotoScreen({ navigation, route }) {
       const result = await completeBookingWithPhoto(booking.id, driverId, photo);
       
       if (result.success) {
+        setTripCompleted(true);
         Alert.alert(
           'Trip Completed!',
-          'Photo uploaded and booking completed successfully. The tourist has been notified.',
-          [{ 
-            text: 'OK', 
-            onPress: () => navigation.navigate('Main')
-          }]
+          'Photo uploaded and booking completed successfully. The tourist has been notified.'
         );
       } else {
         Alert.alert('Error', result.error || 'Failed to upload photo');
@@ -73,6 +75,23 @@ export default function CompletionPhotoScreen({ navigation, route }) {
       Alert.alert('Error', 'Failed to upload photo');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleReport = async (reportData) => {
+    setSubmittingReport(true);
+    try {
+      await submitTripReport(booking.id, driverId, reportData);
+      setShowReportModal(false);
+      Alert.alert(
+        'Report Submitted',
+        'Your report has been submitted successfully. Thank you for your feedback.',
+        [{ text: 'OK', onPress: () => navigation.navigate('Main') }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to submit report. Please try again.');
+    } finally {
+      setSubmittingReport(false);
     }
   };
 
@@ -130,21 +149,48 @@ export default function CompletionPhotoScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.uploadButton, (!photo || uploading) && styles.disabledButton]}
-          onPress={uploadPhoto}
-          disabled={!photo || uploading}
-        >
-          {uploading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="cloud-upload" size={20} color="#fff" />
-              <Text style={styles.uploadButtonText}>Complete Trip</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {!tripCompleted ? (
+          <TouchableOpacity 
+            style={[styles.uploadButton, (!photo || uploading) && styles.disabledButton]}
+            onPress={uploadPhoto}
+            disabled={!photo || uploading}
+          >
+            {uploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload" size={20} color="#fff" />
+                <Text style={styles.uploadButtonText}>Complete Trip</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.completedActions}>
+            <TouchableOpacity 
+              style={styles.reportButton}
+              onPress={() => setShowReportModal(true)}
+            >
+              <Ionicons name="flag" size={20} color="#DC3545" />
+              <Text style={styles.reportButtonText}>Report Issue</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.doneButton}
+              onPress={() => navigation.navigate('Main')}
+            >
+              <Ionicons name="checkmark" size={20} color="#fff" />
+              <Text style={styles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
+      
+      <ReportModal
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        onSubmit={handleReport}
+        loading={submittingReport}
+      />
     </View>
   );
 }
@@ -279,5 +325,41 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  completedActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  reportButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  doneButton: {
+    flex: 1,
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  doneButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

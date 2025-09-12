@@ -30,29 +30,37 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
 }
 
 export async function listReviews({ package_id, booking_id, reviewer_id, limit = 10, include_stats = false } = {}) {
-  const params = new URLSearchParams();
-  if (package_id) params.append('package_id', package_id);
-  if (booking_id) params.append('booking_id', booking_id);
-  if (reviewer_id) params.append('reviewer_id', reviewer_id);
-  if (limit) params.append('limit', String(limit));
-  if (include_stats) params.append('include_stats', 'true');
+  try {
+    const params = new URLSearchParams();
+    if (package_id) params.append('package_id', package_id);
+    if (booking_id) params.append('booking_id', booking_id);
+    if (reviewer_id) params.append('reviewer_id', reviewer_id);
+    if (limit) params.append('limit', String(limit));
+    if (include_stats) params.append('include_stats', 'true');
 
-  const qs = params.toString();
-  const res = await request(`/reviews/${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    const qs = params.toString();
+    const res = await request(`/package-reviews/${qs ? `?${qs}` : ''}`, { method: 'GET' });
 
-  if (res.ok) {
-    // Expected shape: { success: true, data: [...], count, stats? }
-    const data = res.data?.data ?? res.data?.results ?? (Array.isArray(res.data) ? res.data : []);
-    const stats = res.data?.stats || null;
-    return { success: true, data: Array.isArray(data) ? data : [], stats };
+    if (res.ok) {
+      // Expected shape: { success: true, data: [...], count, stats? }
+      const data = res.data?.data ?? res.data?.results ?? (Array.isArray(res.data) ? res.data : []);
+      const stats = res.data?.stats || null;
+      return { success: true, data: Array.isArray(data) ? data : [], stats };
+    }
+    return { success: false, error: res.data?.error || 'Failed to fetch reviews' };
+  } catch (error) {
+    // Handle missing reviews table gracefully
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return { success: true, data: [], stats: null };
+    }
+    return { success: false, error: error.message || 'Failed to fetch reviews' };
   }
-  return { success: false, error: res.data?.error || 'Failed to fetch reviews' };
 }
 
 export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '' }) {
   try {
     const token = await getAccessToken().catch(() => null);
-    const res = await request(`/reviews/`, {
+    const res = await request(`/package-reviews/`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -123,7 +131,7 @@ export async function checkExistingReviews({ booking_id, reviewer_id }) {
   if (!booking_id || !reviewer_id) return { success: false, error: 'booking_id and reviewer_id are required' };
   
   try {
-    const res = await request(`/reviews/check-existing/${booking_id}/?reviewer_id=${encodeURIComponent(reviewer_id)}`, { method: 'GET' });
+    const res = await request(`/package-reviews/check-existing/${booking_id}/?reviewer_id=${encodeURIComponent(reviewer_id)}`, { method: 'GET' });
     
     if (res.ok && res.data?.success) {
       return {
@@ -137,6 +145,16 @@ export async function checkExistingReviews({ booking_id, reviewer_id }) {
     
     return { success: false, error: res.data?.error || 'Failed to check existing reviews' };
   } catch (error) {
+    // Handle missing reviews table gracefully
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return {
+        success: true,
+        data: {
+          hasPackageReview: false,
+          hasDriverReview: false
+        }
+      };
+    }
     return { success: false, error: error.message || 'Failed to check existing reviews' };
   }
 }

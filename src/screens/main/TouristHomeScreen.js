@@ -28,7 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 import { supabase } from '../../services/supabase';
-import NotificationManager from '../../components/NotificationManager';
+
 import * as Routes from '../../constants/routes';
 
 const TERMINALS = [
@@ -284,23 +284,8 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Global Notification Manager */}
-      <NotificationManager navigation={navigation} />
-      
       <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')}
                       onMessagePress={() => navigation.navigate('Chat')} />
-
-      {/* Search Bar */}
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={18} color="#fff" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search Packages"
-          placeholderTextColor="#fff"
-          value={search}
-          onChangeText={setSearch}
-        />
-      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -310,28 +295,8 @@ export default function TouristHomeScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B2E2B" />
         }
       >
-        <Image source={require('../../../assets/tartanilla.jpg')} style={styles.featuredImage} resizeMode="cover" />
-
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Tour Packages</Text>
-          <TouchableOpacity
-            style={styles.testButton}
-            onPress={async () => {
-              try {
-                const result = await testConnection();
-                Alert.alert(
-                  result.success ? 'Connection Test Success' : 'Connection Test Failed',
-                  result.success
-                    ? `✅ Found working API endpoint!\n\nURL: ${result.url}\nStatus: ${result.status}\n\nResponse preview:\n${result.text}`
-                    : `Error: ${result.error}\n\nTested URLs:\n${result.testedUrls?.slice(0, 3).join('\n')}...`
-                );
-              } catch (error) {
-                Alert.alert('Connection Test Failed', error.message);
-              }
-            }}
-          >
-            <Text style={styles.testButtonText}>Test Connection</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Filter Row */}
@@ -662,41 +627,14 @@ export default function TouristHomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
-  scrollContent: { paddingBottom: 24 },
-
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6B2E2B',
-    borderRadius: 18,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    height: 36,
-    marginTop: 18,
-  },
-  searchInput: { flex: 1, color: '#fff', marginLeft: 6, fontSize: 13 },
-
-  featuredImage: {
-    width: '92%',
-    height: 150,
-    borderRadius: 12,
-    alignSelf: 'center',
-    marginVertical: 8,
-  },
+  scrollContent: { paddingBottom: 24, paddingTop: 12 },
 
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     marginHorizontal: 16,
-    marginTop: 16,
+    marginTop: 8,
     marginBottom: 6,
   },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#222' },
-
-  testButton: { backgroundColor: '#6B2E2B', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
-  testButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
   networkStatus: { fontSize: 12, fontWeight: '600' },
 

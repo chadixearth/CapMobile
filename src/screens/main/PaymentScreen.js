@@ -28,6 +28,8 @@ const PaymentScreen = ({ route, navigation }) => {
   const [paymentData, setPaymentData] = useState(null);
   const [showWebView, setShowWebView] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('gcash');
+  const [paymentCompleted, setPaymentCompleted] = useState(false);
+  const [bookingStatus, setBookingStatus] = useState(null);
 
   // NEW: confirmation modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -39,7 +41,39 @@ const PaymentScreen = ({ route, navigation }) => {
     { id: 'card', name: 'Credit/Debit Card', icon: 'card-outline', color: colors.primary, hint: 'Visa / Mastercard' },
   ];
 
-  useEffect(() => { testConnection(); }, []);
+  useEffect(() => { 
+    testConnection();
+    checkBookingStatus();
+  }, []);
+
+  const checkBookingStatus = async () => {
+    if (!bookingId) return;
+    
+    try {
+      const { apiBaseUrl } = await import('../../services/networkConfig');
+      const { getAccessToken } = await import('../../services/authService');
+      const accessToken = await getAccessToken();
+      
+      const response = await fetch(`${apiBaseUrl()}/tour-booking/${bookingId}/`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          setBookingStatus(result.data);
+          const paymentStatus = (result.data.payment_status || '').toLowerCase();
+          if (paymentStatus === 'paid') {
+            setPaymentCompleted(true);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking booking status:', error);
+    }
+  };
 
   const testConnection = async () => {
     const connectionStatus = await paymentService.testConnection();
@@ -47,21 +81,45 @@ const PaymentScreen = ({ route, navigation }) => {
   };
 
   // OPEN the modal instead of Alert
-  const createPayment = () => setShowConfirmModal(true);
-
-  const onConfirmPay = async () => {
-    if (isLoading) return;
-    setShowConfirmModal(false);
-    await simulatePayment();
+  const createPayment = () => {
+    if (paymentCompleted) {
+      alert('This booking has already been paid for.');
+      return;
+    }
+    setShowConfirmModal(true);
   };
 
-  const simulatePayment = async () => {
+  const onConfirmPay = async () => {
+    if (isLoading || paymentCompleted) return;
+    setShowConfirmModal(false);
+    await processPayment();
+  };
+
+  const processPayment = async () => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      // Update booking status first
+      if (bookingId) {
+        const result = await updateBookingStatusAfterPayment(bookingId);
+        if (result && result.success) {
+          setPaymentCompleted(true);
+          setBookingStatus(result.data);
+          
+          // Show success message
+          setTimeout(() => {
+            alert('Payment completed successfully! Your booking is now confirmed.');
+          }, 500);
+          
+          return; // Don't proceed to createBookingAfterPayment for existing bookings
+        }
+      }
+      
+      // Then proceed with booking creation/navigation for new bookings
       await createBookingAfterPayment();
     } catch (error) {
-      console.error('Payment simulation error:', error);
+      console.error('Payment processing error:', error);
+      // Show error to user
+      alert('Payment processing failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -115,50 +173,78 @@ const PaymentScreen = ({ route, navigation }) => {
 
   const createBookingAfterPayment = async () => {
     try {
-      const { createBooking } = await import('../../services/tourpackage/requestBooking');
-      const response = await createBooking(bookingData);
-
-      if (response?.success) {
-        const createdBookingId = response.data?.id || response.data?.booking_id;
-        const bookingReference = response.data?.booking_reference || 'N/A';
-        await updateBookingStatusAfterPayment(createdBookingId);
-
-        navigation.navigate('PaymentReceipt', {
-          paymentData: {
-            paymentId: 'TEST_PAYMENT_' + Date.now(),
-            amount,
-            paymentMethod: selectedPaymentMethod,
-            paidAt: new Date().toISOString(),
-          },
-          bookingData: {
-            bookingReference,
-            packageName: packageData?.packageName || 'Tour Package',
-            amount,
-            bookingId: createdBookingId,
-          },
-        });
+      let createdBookingId = bookingId;
+      let bookingReference = 'N/A';
+      
+      // If bookingId exists, this is payment for existing booking
+      if (bookingId) {
+        bookingReference = bookingId;
+        await updateBookingStatusAfterPayment(bookingId);
       } else {
-        // toast: payment ok but booking failed
+        // Create new booking (legacy flow)
+        const { createBooking } = await import('../../services/tourpackage/requestBooking');
+        const response = await createBooking(bookingData);
+
+        if (response?.success) {
+          createdBookingId = response.data?.id || response.data?.booking_id;
+          bookingReference = response.data?.booking_reference || 'N/A';
+          await updateBookingStatusAfterPayment(createdBookingId);
+        } else {
+          throw new Error('Failed to create booking');
+        }
       }
+
+      navigation.navigate('PaymentReceipt', {
+        paymentData: {
+          paymentId: 'TEST_PAYMENT_' + Date.now(),
+          amount,
+          paymentMethod: selectedPaymentMethod,
+          paidAt: new Date().toISOString(),
+        },
+        bookingData: {
+          bookingReference,
+          packageName: packageData?.packageName || 'Tour Package',
+          amount,
+          bookingId: createdBookingId,
+        },
+      });
     } catch (error) {
-      console.error('[PaymentScreen] Error creating booking after payment:', error);
+      console.error('[PaymentScreen] Error processing payment:', error);
     }
   };
 
   const updateBookingStatusAfterPayment = async (id) => {
     try {
       const { apiBaseUrl } = await import('../../services/networkConfig');
-      await fetch(`${apiBaseUrl()}/payment/complete/`, {
+      const { getAccessToken } = await import('../../services/authService');
+      const accessToken = await getAccessToken();
+      
+      const response = await fetch(`${apiBaseUrl()}/payment/complete/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
         body: JSON.stringify({
           booking_id: id,
           payment_status: 'paid',
-          payment_reference: 'TEST_PAYMENT_' + Date.now(),
+          payment_method: selectedPaymentMethod,
+          payment_reference: 'MOBILE_PAYMENT_' + Date.now(),
         }),
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[PaymentScreen] Payment completion API error:', response.status, response.statusText, errorText);
+        throw new Error(`Payment completion failed: ${response.status}`);
+      } else {
+        const result = await response.json();
+        console.log('[PaymentScreen] Payment completion successful:', result);
+        return result;
+      }
     } catch (error) {
       console.error('[PaymentScreen] Error updating booking status:', error);
+      throw error;
     }
   };
 
@@ -394,7 +480,27 @@ const PaymentScreen = ({ route, navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         {renderSummaryCard()}
-        {renderPaymentMethodSelector()}
+        
+        {paymentCompleted ? (
+          <View style={styles.successCard}>
+            <View style={styles.successHeader}>
+              <Ionicons name="checkmark-circle" size={24} color="#2E7D32" />
+              <Text style={styles.successTitle}>Payment Completed!</Text>
+            </View>
+            <Text style={styles.successMessage}>
+              Your payment has been successfully processed. Your booking is confirmed and your driver can now start the trip on the scheduled date.
+            </Text>
+            <TouchableOpacity
+              style={styles.viewBookingBtn}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.viewBookingBtnText}>View Booking Details</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          renderPaymentMethodSelector()
+        )}
 
         <View style={styles.securityNote}>
           <Ionicons name="lock-closed" size={16} color={colors.accent} style={styles.securityIcon} />
@@ -411,13 +517,18 @@ const PaymentScreen = ({ route, navigation }) => {
           <Text style={styles.bottomTotalValue}>{formatCurrency(amount)}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.bottomPayBtn, isLoading && styles.disabledButton]}
+          style={[styles.bottomPayBtn, (isLoading || paymentCompleted) && styles.disabledButton]}
           onPress={createPayment}
-          disabled={isLoading}
+          disabled={isLoading || paymentCompleted}
           activeOpacity={0.9}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
+          ) : paymentCompleted ? (
+            <>
+              <Ionicons name="checkmark-circle" size={18} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.bottomPayText}>Payment Complete</Text>
+            </>
           ) : (
             <>
               <Ionicons name="shield-checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
@@ -467,13 +578,15 @@ const PaymentScreen = ({ route, navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalConfirm, isLoading && styles.disabledButton]}
+                style={[styles.modalBtn, styles.modalConfirm, (isLoading || paymentCompleted) && styles.disabledButton]}
                 onPress={onConfirmPay}
-                disabled={isLoading}
+                disabled={isLoading || paymentCompleted}
                 activeOpacity={0.9}
               >
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
+                ) : paymentCompleted ? (
+                  <Text style={styles.modalConfirmText}>Already Paid</Text>
                 ) : (
                   <Text style={styles.modalConfirmText}>Confirm & Pay</Text>
                 )}
@@ -670,6 +783,45 @@ const styles = StyleSheet.create({
   },
   bottomPayText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
   disabledButton: { opacity: 0.6 },
+
+  /** Success Card */
+  successCard: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#C8E6C9',
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  successHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  successTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2E7D32',
+  },
+  successMessage: {
+    fontSize: 14,
+    color: '#1B5E20',
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  viewBookingBtn: {
+    backgroundColor: '#2E7D32',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: RADIUS - 6,
+    alignItems: 'center',
+  },
+  viewBookingBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   /** Loading */
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },

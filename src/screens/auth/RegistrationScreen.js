@@ -204,26 +204,15 @@ const RegistrationScreen = ({ navigation, route }) => {
   const scrollRef = useRef(null);
   const inputRefs = useRef({});
 
-  const ModernInput = ({ label, nextField, refKey, ...props }) => (
+  const ModernInput = ({ label, ...props }) => (
     <View style={styles.inputContainer}>
       {label && <Text style={styles.inputLabel}>{label}</Text>}
       <TextInput
         {...props}
-        ref={(ref) => { if (refKey) inputRefs.current[refKey] = ref; }}
         style={[styles.modernInput, props.style]}
         placeholderTextColor={colors.textSecondary}
         autoCorrect={false}
         autoComplete="off"
-        textContentType="none"
-        returnKeyType={nextField ? 'next' : 'done'}
-        onSubmitEditing={() => {
-          if (nextField && inputRefs.current[nextField]) {
-            inputRefs.current[nextField].focus();
-          } else {
-            Keyboard.dismiss();
-          }
-        }}
-        blurOnSubmit={false}
       />
     </View>
   );
@@ -242,18 +231,12 @@ const RegistrationScreen = ({ navigation, route }) => {
   );
 
   return (
-    <KeyboardAvoidingView
+    <ScrollView
+      contentContainerStyle={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
     >
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        keyboardDismissMode="none"
-      >
         {/* Header with back button */}
         <View style={styles.header}>
           <BackButton onPress={() => navigation.goBack()} />
@@ -557,8 +540,6 @@ const RegistrationScreen = ({ navigation, route }) => {
             </Text>
           </Text>
         </View>
-      </ScrollView>
-
       {/* Terms & Conditions Modal */}
       <Modal
         visible={showTC}
@@ -630,7 +611,7 @@ const RegistrationScreen = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </ScrollView>
   );
 };
 

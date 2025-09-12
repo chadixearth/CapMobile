@@ -85,6 +85,7 @@ class ApiClient {
 
       console.log(`[ApiClient] ${options.method || 'GET'} ${this.baseURL}${endpoint}`);
       console.log(`[ApiClient] Auth token:`, token ? 'Present' : 'Missing');
+      console.log(`[ApiClient] Headers:`, headers);
 
       const response = await fetch(`${this.baseURL}${endpoint}`, {
         method: 'GET',
@@ -100,7 +101,8 @@ class ApiClient {
         const errorData = await response.text();
         console.log(`[ApiClient] Auth error:`, errorData);
         
-        if (errorData.includes('token') || errorData.includes('expired') || errorData.includes('invalid')) {
+        const errorText = errorData || '';
+        if (errorText.includes('token') || errorText.includes('expired') || errorText.includes('invalid')) {
           console.log('[ApiClient] Token expired, clearing session and redirecting to login');
           await clearLocalSession();
           navigateToLogin();
@@ -114,6 +116,13 @@ class ApiClient {
         : await response.text();
 
       if (!response.ok) {
+        console.error(`[ApiClient] HTTP Error ${response.status}:`, {
+          url: `${this.baseURL}${endpoint}`,
+          status: response.status,
+          statusText: response.statusText,
+          data: data
+        });
+        
         // Record failure for 5xx errors
         if (response.status >= 500) {
           this.recordFailure();

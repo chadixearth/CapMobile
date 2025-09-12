@@ -28,6 +28,7 @@ import {
 } from '../../services/tourpackage/bookingVerification';
 import VerificationPhotoModal from '../../components/VerificationPhotoModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import DriverCancellationModal from '../../components/DriverCancellationModal';
 import {
   getAvailableCustomTourRequestsForDrivers,
   driverAcceptCustomTourRequest,
@@ -60,6 +61,7 @@ export default function DriverBookScreen({ navigation }) {
   const [bookingToVerify, setBookingToVerify] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState(null);
+  const [showDriverCancelModal, setShowDriverCancelModal] = useState(false);
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -85,14 +87,30 @@ export default function DriverBookScreen({ navigation }) {
               const bookingNotifs = newNotifications.filter(n => n.type === 'booking');
               if (bookingNotifs.length > 0) {
                 const latestNotif = bookingNotifs[0];
-                Alert.alert(
-                  '🚗 New Booking Available!',
-                  latestNotif.message,
-                  [
-                    { text: 'Refresh', onPress: () => fetchUserAndBookings() },
-                    { text: 'OK' }
-                  ]
-                );
+                
+                // Check if it's a payment notification
+                if (latestNotif.title?.includes('Payment Received')) {
+                  // Force immediate refresh for payment notifications
+                  setTimeout(() => fetchUserAndBookings(), 500);
+                  
+                  Alert.alert(
+                    '💰 Payment Received!',
+                    latestNotif.message,
+                    [
+                      { text: 'View Booking', onPress: () => setActiveTab('ongoing') },
+                      { text: 'OK' }
+                    ]
+                  );
+                } else {
+                  Alert.alert(
+                    '🚗 New Booking Available!',
+                    latestNotif.message,
+                    [
+                      { text: 'Refresh', onPress: () => fetchUserAndBookings() },
+                      { text: 'OK' }
+                    ]
+                  );
+                }
               }
             }
           });
@@ -327,43 +345,30 @@ export default function DriverBookScreen({ navigation }) {
   const handleCancelBooking = async (booking) => {
     if (!booking || !user) return;
     setBookingToCancel(booking);
-    setShowCancelModal(true);
+    setShowDriverCancelModal(true);
   };
 
-  const confirmCancelBooking = async () => {
-    if (!bookingToCancel || !user) return;
+  const handleDriverCancellationSuccess = (result) => {
+    setShowDriverCancelModal(false);
+    setBookingToCancel(null);
     
-    try {
-      setAcceptingBooking(true);
-      let result;
-      if (bookingToCancel.request_type === 'custom_tour') {
-        result = await updateCustomTourStatus(bookingToCancel.id, 'waiting_for_driver');
-        result = { success: !!(result && result.success), ...result };
-      } else {
-        result = await driverCancelBooking(bookingToCancel.id, user.id, 'Driver cancelled');
+    if (result.success) {
+      let message = result.message || 'Booking cancelled and reassigned to other drivers.';
+      
+      if (result.driver_suspended) {
+        message += '\n\nNote: Your account has been temporarily suspended due to multiple cancellations.';
       }
       
-      setShowCancelModal(false);
-      setBookingToCancel(null);
-      
-      if (result && result.success) {
-        Alert.alert('Cancelled', 'The booking has been made available to other drivers.', [
-          { 
-            text: 'OK', 
-            onPress: () => { 
-              // Add delay before refresh to allow backend to process
-              setTimeout(() => fetchUserAndBookings(), 1000);
-            } 
-          },
-        ]);
-      } else {
-        Alert.alert('Error', result?.error || 'Failed to cancel booking');
-      }
-    } catch (error) {
-      console.error('Error cancelling booking:', error);
-      Alert.alert('Error', `Failed to cancel booking: ${error.message}`);
-    } finally {
-      setAcceptingBooking(false);
+      Alert.alert('Booking Cancelled', message, [
+        { 
+          text: 'OK', 
+          onPress: () => { 
+            setTimeout(() => fetchUserAndBookings(), 1000);
+          } 
+        },
+      ]);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to cancel booking');
     }
   };
 
@@ -502,6 +507,7 @@ export default function DriverBookScreen({ navigation }) {
       case 'waiting_for_driver':
         return '#B26A00';
       case 'driver_assigned':
+      case 'confirmed':
       case 'accepted':
         return '#2E7D32';
       case 'in_progress':
@@ -527,6 +533,7 @@ export default function DriverBookScreen({ navigation }) {
       case 'waiting_for_driver':
         return 'time';
       case 'driver_assigned':
+      case 'confirmed':
       case 'accepted':
         return 'checkmark-circle';
       case 'in_progress':
@@ -611,7 +618,7 @@ export default function DriverBookScreen({ navigation }) {
         )}
       </View>
 
-      {booking.status === 'waiting_for_driver' && activeTab === 'available' && (
+      {booking.status === 'pending' && activeTab === 'available' && (
         booking.cancelled_by_driver_id === user?.id ? (
           <View style={[styles.acceptButton, styles.disabledButton]}>
             <Ionicons name="block" size={18} color="#999" />
@@ -630,7 +637,13 @@ export default function DriverBookScreen({ navigation }) {
           <Text style={styles.acceptButtonText}>Complete Booking</Text>
         </TouchableOpacity>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
+      {activeTab === 'ongoing' && (booking.status === 'confirmed' || booking.status === 'driver_assigned') && booking.payment_status !== 'paid' && (
+        <View style={[styles.acceptButton, styles.disabledButton]}>
+          <Ionicons name="card" size={18} color="#999" />
+          <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
+        </View>
+      )}
+      {activeTab === 'ongoing' && booking.payment_status === 'paid' && booking.status === 'driver_assigned' && (
         <>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
@@ -730,7 +743,7 @@ export default function DriverBookScreen({ navigation }) {
         )}
       </View>
 
-      {tour.status === 'waiting_for_driver' && activeTab === 'available' && (
+      {(tour.status === 'waiting_for_driver' || tour.status === 'pending') && activeTab === 'available' && (
         tour.cancelled_by_driver_id === user?.id ? (
           <View style={[styles.acceptButton, styles.customTourAcceptButton, styles.disabledButton]}>
             <Ionicons name="block" size={18} color="#999" />
@@ -805,7 +818,7 @@ export default function DriverBookScreen({ navigation }) {
   const ongoingBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();
     // Include all statuses that represent ongoing trips
-    return status === 'driver_assigned' || status === 'in_progress' || status === 'accepted' || status === 'ongoing';
+    return status === 'confirmed' || status === 'driver_assigned' || status === 'in_progress';
   });
   const historyBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();
@@ -1061,26 +1074,16 @@ export default function DriverBookScreen({ navigation }) {
         onSuccess={handleVerificationSuccess}
       />
 
-      {/* Cancel Booking Confirmation Modal */}
-      <ConfirmationModal
-        visible={showCancelModal}
-        title="Cancel Booking"
-        message="Are you sure you want to cancel this accepted booking? This may affect your metrics."
-        confirmText="Yes, Cancel"
-        cancelText="No"
-        onConfirm={confirmCancelBooking}
+      {/* Enhanced Driver Cancellation Modal */}
+      <DriverCancellationModal
+        visible={showDriverCancelModal}
         onClose={() => {
-          setShowCancelModal(false);
+          setShowDriverCancelModal(false);
           setBookingToCancel(null);
         }}
-        iconName="warning"
-        isDestructive={true}
-        loading={acceptingBooking}
-        bookingInfo={bookingToCancel ? [
-          { label: 'Package', value: bookingToCancel.package_name || 'N/A' },
-          { label: 'Date', value: formatDate(bookingToCancel.booking_date) },
-          { label: 'Reference', value: bookingToCancel.booking_reference || 'N/A' }
-        ] : null}
+        booking={bookingToCancel}
+        driverId={user?.id}
+        onCancellationSuccess={handleDriverCancellationSuccess}
       />
     </View>
   );

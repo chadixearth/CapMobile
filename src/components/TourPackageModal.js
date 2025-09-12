@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+
 import { supabase } from '../services/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -42,9 +42,9 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
     setLoadingReviews(true);
     try {
       const [{ data: allRatings, error: rErr }, { data: latest, error: lErr }] = await Promise.all([
-        supabase.from('reviews').select('rating').eq('package_id', packageData.id),
+        supabase.from('package_reviews').select('rating').eq('package_id', packageData.id),
         supabase
-          .from('reviews')
+          .from('package_reviews')
           .select('id, rating, comment, created_at, users(name)')
           .eq('package_id', packageData.id)
           .order('created_at', { ascending: false })
@@ -66,7 +66,12 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
         setStats({ total: 0, average: 0 });
       }
     } catch (e) {
-      console.error('loadReviews error:', e);
+      // Handle missing reviews table gracefully
+      if (e?.code === '42P01' || e?.message?.includes('does not exist')) {
+        console.log('Reviews table not available, using fallback data');
+      } else {
+        console.error('loadReviews error:', e);
+      }
       setReviews([]);
       setStats({ total: 0, average: 0 });
     } finally {
@@ -242,7 +247,11 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
               <InfoRow title="Driver" subtitle={packageData?.driver_language || 'TBA'} />
               <InfoRow
                 title="Pick-up Location"
-                subtitle={packageData?.start_point || packageData?.location || 'Tartanilla Terminal'}
+                subtitle={packageData?.pickup_location || packageData?.start_point || packageData?.location || 'Tartanilla Terminal'}
+              />
+              <InfoRow
+                title="Destination"
+                subtitle={packageData?.destination || 'Various locations'}
               />
             </View>
 
@@ -341,10 +350,10 @@ const InfoRow = ({ title, subtitle }) => (
 /** Adaptive chip that stays readable on any hero image */
 const AdaptiveChip = ({ children }) => {
   return (
-    <BlurView tint={Platform.OS === 'ios' ? 'system' : 'default'} intensity={40} style={styles.chip}>
+    <View style={styles.chip}>
       <View style={styles.chipOverlay} />
       <View style={styles.chipInner}>{children}</View>
-    </BlurView>
+    </View>
   );
 };
 
@@ -437,6 +446,7 @@ const styles = StyleSheet.create({
   chip: {
     borderRadius: 16,
     overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   chipOverlay: {
     ...StyleSheet.absoluteFillObject,

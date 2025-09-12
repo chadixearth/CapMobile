@@ -19,7 +19,7 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
       // Build query parameters
       const queryParams = new URLSearchParams();
       queryParams.append('driver_id', driverId);
-      queryParams.append('status', filters.status || 'waiting_for_driver');
+      queryParams.append('status', filters.status || 'pending');
       
       Object.keys(filters).forEach(key => {
         if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
@@ -28,18 +28,25 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
       });
       
       const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
+      console.log(`[getAvailableBookingsForDrivers] Calling endpoint: ${endpoint}`);
+      console.log(`[getAvailableBookingsForDrivers] Attempt ${attempt}/${maxRetries}`);
+      
       const result = await apiClient.get(endpoint);
       
       console.log('Available bookings response:', result.data);
       return result.data;
     } catch (error) {
       lastError = error;
-      console.error(`Error fetching available bookings (attempt ${attempt}/${maxRetries}):`, error);
+      console.error(`[getAvailableBookingsForDrivers] Error on attempt ${attempt}/${maxRetries}:`, {
+        message: error.message,
+        stack: error.stack,
+        endpoint: `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`
+      });
       
       // If it's a 500 error and we have retries left, wait and retry
       if (error.message?.includes('500') && attempt < maxRetries) {
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
-        console.log(`Retrying in ${delay}ms...`);
+        console.log(`[getAvailableBookingsForDrivers] Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -49,7 +56,8 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
     }
   }
   
-  console.error('All retry attempts failed for available bookings');
+  console.error('[getAvailableBookingsForDrivers] All retry attempts failed:', lastError);
+  console.error('[getAvailableBookingsForDrivers] Final endpoint that failed:', `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`);
   return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
 }
 
@@ -72,10 +80,13 @@ export async function driverAcceptBooking(bookingId, driverData) {
     if (result.data && result.data.success && result.data.data) {
       try {
         console.log('[AcceptBooking] Triggering tourist notification for accepted booking:', result.data.data.id);
-        const notifResult = await NotificationService.notifyTouristOfAcceptedBooking(
-          result.data.data.customer_id,
-          driverData.driver_name || 'Driver',
-          result.data.data
+        // Enhanced notification with payment reminder
+        const notifResult = await NotificationService.sendNotification(
+          [result.data.data.customer_id],
+          'Booking Accepted! Payment Required ✅💳',
+          `Great news! ${driverData.driver_name || 'A driver'} has accepted your booking. Please complete payment to confirm your tour.`,
+          'booking_accepted',
+          'tourist'
         );
         console.log('[AcceptBooking] Tourist notification result:', notifResult);
       } catch (notifError) {
