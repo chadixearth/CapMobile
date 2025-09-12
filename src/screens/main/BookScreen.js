@@ -998,14 +998,6 @@ export default function BookScreen({ navigation }) {
 
     const expandId = `custom-${r?.id}`;
     const isExpanded = !!expandedMap[expandId];
-<<<<<<< HEAD
-    const toggleExpand = () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
-    };
-
-    const statusColor = getStatusColor(r); // Pass the whole object for consistency
-=======
     const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
       const getCustomParticipantRole = (r) => {
         // Use request_type to determine role
@@ -1028,7 +1020,6 @@ export default function BookScreen({ navigation }) {
         (status.toLowerCase() === 'owner_accepted' || 
           status.toLowerCase() === 'in_progress'))
       );
->>>>>>> 79bb525a7300f15cd3a85c3b24ad67cba14df388
 
     return (
       <View key={expandId} style={styles.card}>
