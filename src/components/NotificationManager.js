@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import NotificationService from '../services/notificationService';
 import { getCurrentUser } from '../services/authService';
+import { useNotifications } from '../contexts/NotificationContext';
 
 /**
  * Global notification manager component
@@ -9,6 +10,7 @@ import { getCurrentUser } from '../services/authService';
  */
 const NotificationManager = ({ navigation }) => {
   const [user, setUser] = useState(null);
+  const { loadNotifications } = useNotifications();
 
   useEffect(() => {
     initializeNotifications();
@@ -45,6 +47,9 @@ const NotificationManager = ({ navigation }) => {
 
   const handleNewNotifications = (notifications) => {
     if (!notifications || notifications.length === 0) return;
+    
+    // Reload notifications in context to update badge count
+    loadNotifications();
     
     notifications.forEach(notification => {
       handleNotificationByType(notification);

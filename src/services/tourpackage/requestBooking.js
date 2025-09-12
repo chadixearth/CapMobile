@@ -101,8 +101,8 @@ export async function createBooking(bookingData) {
     special_requests: bookingData.special_requests || '',
     contact_number: String(bookingData.contact_number || ''),
     pickup_address: bookingData.pickup_address || '',
-    // Ensure new bookings start in a valid state for driver discovery
-    status: 'waiting_for_driver',
+    // New bookings start as pending until driver accepts
+    status: 'pending',
   };
   const attempt = async (bodyPayload) => {
     const controller = new AbortController();
@@ -158,10 +158,10 @@ export async function createBooking(bookingData) {
       const isStatusCheck = /23514|status_check|bookings_status_check/i.test(err?.message || '');
       const isUserNotFound = /Tourist.*does not exist|Customer.*does not exist/i.test(err?.message || '');
       
-      if (isStatusCheck && currentPayload.status === 'waiting_for_driver') {
-        // Fallback to a conservative initial status if backend disallows waiting_for_driver at creation
-        currentPayload = { ...currentPayload, status: 'pending' };
-        console.warn('Backend rejected initial status; retrying with status=pending');
+      if (isStatusCheck && currentPayload.status === 'pending') {
+        // If backend rejects pending status, try with waiting_for_driver as fallback
+        currentPayload = { ...currentPayload, status: 'waiting_for_driver' };
+        console.warn('Backend rejected pending status; retrying with status=waiting_for_driver');
         continue;
       }
       
@@ -364,6 +364,11 @@ export async function getCustomerBookings(customerId, filters = {}) {
     try {
       // Build query parameters
       const queryParams = new URLSearchParams();
+      
+      // Always include driver information
+      queryParams.append('include_driver', 'true');
+      queryParams.append('include_package', 'true');
+      
       Object.keys(filters).forEach(key => {
         if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
           queryParams.append(key, filters[key]);
@@ -400,6 +405,11 @@ export async function getCustomerBookings(customerId, filters = {}) {
   const attemptNoTimeout = async () => {
     // Build query parameters
     const queryParams = new URLSearchParams();
+    
+    // Always include driver information
+    queryParams.append('include_driver', 'true');
+    queryParams.append('include_package', 'true');
+    
     Object.keys(filters).forEach(key => {
       if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
         queryParams.append(key, filters[key]);

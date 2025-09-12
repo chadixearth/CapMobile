@@ -134,6 +134,23 @@ export default function BookScreen({ navigation }) {
       else processedBookings = [];
 
       setBookings(processedBookings);
+      
+      // Debug: Log first booking to see driver data structure
+      if (processedBookings.length > 0) {
+        console.log('Sample booking data:', JSON.stringify(processedBookings[0], null, 2));
+        
+        // Log driver-specific fields
+        const firstBooking = processedBookings[0];
+        console.log('Driver fields:', {
+          driver_id: firstBooking.driver_id,
+          assigned_driver_id: firstBooking.assigned_driver_id,
+          driver: firstBooking.driver,
+          assigned_driver: firstBooking.assigned_driver,
+          driver_name: firstBooking.driver_name,
+          driver_email: firstBooking.driver_email,
+          driver_phone: firstBooking.driver_phone
+        });
+      }
 
       // Load existing reviews for completed bookings
       try {
@@ -171,26 +188,62 @@ export default function BookScreen({ navigation }) {
   };
 
   // ---------- helpers
-  const getStatusColor = (status) => {
-    switch ((status || '').toLowerCase()) {
+  const getStatusColor = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    
+    // Show payment status if driver assigned and paid
+    if (status === 'driver_assigned' && paymentStatus === 'paid') {
+      return '#1976d2'; // Blue for paid
+    }
+    
+    switch (status) {
       case 'confirmed': return '#2e7d32';
+      case 'driver_assigned': return '#2e7d32';
       case 'pending':   return '#ef6c00';
       case 'cancelled': return '#c62828';
       case 'completed': return '#1565c0';
+      case 'in_progress': return '#1976d2';
+      case 'no_driver_available': return '#ff9800'; // Orange for timeout
       default:          return '#616161';
     }
   };
-  const getStatusIcon = (status) => {
-    switch ((status || '').toLowerCase()) {
+  const getStatusIcon = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    
+    // Show payment icon if driver assigned and paid
+    if (status === 'driver_assigned' && paymentStatus === 'paid') {
+      return 'card'; // Card icon for paid
+    }
+    
+    switch (status) {
       case 'confirmed': return 'checkmark-circle';
+      case 'driver_assigned': return 'checkmark-circle';
       case 'pending':   return 'time';
       case 'cancelled': return 'close-circle';
       case 'completed': return 'checkmark-done-circle';
+      case 'in_progress': return 'car';
+      case 'no_driver_available': return 'alert-circle';
       default:          return 'help-circle';
     }
   };
-  const prettyStatus = (s) =>
-    (s || 'Unknown').toString().toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  const prettyStatus = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    
+    // Show 'Paid' if driver assigned and payment completed
+    if (status === 'driver_assigned' && paymentStatus === 'paid') {
+      return 'Paid';
+    }
+    
+    // Special handling for timeout status
+    if (status === 'no_driver_available') {
+      return 'No Driver Available';
+    }
+    
+    return (status || 'Unknown').toString().toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : 'N/A';
   const formatTime = (t) => t || 'N/A';
@@ -221,9 +274,28 @@ export default function BookScreen({ navigation }) {
   const getBookingReference = (b) => b?.booking_reference || b?.reference || b?.ref || b?.id || null;
 
   const getDriverName = (b) => {
-    const n = b?.assigned_driver?.name || b?.driver?.name || b?.assigned_driver_name || b?.driver_name || null;
-    if (n && /@/.test(String(n))) return null;
-    return n && String(n).trim() ? n : null;
+    // Try multiple possible driver name fields
+    const possibleNames = [
+      b?.assigned_driver?.name,
+      b?.driver?.name, 
+      b?.assigned_driver_name,
+      b?.driver_name,
+      b?.assigned_driver?.full_name,
+      b?.driver?.full_name,
+      b?.driver_info?.name,
+      b?.driver_details?.name
+    ];
+    
+    for (const name of possibleNames) {
+      if (name && String(name).trim()) {
+        const trimmed = String(name).trim();
+        // Skip if it's a generic placeholder
+        if (/^(driver|user|admin)$/i.test(trimmed)) continue;
+        return trimmed;
+      }
+    }
+    
+    return null;
   };
   const getDriverAvatarUrl = (b) => {
     const src = b?.assigned_driver || b?.driver || null;
@@ -239,15 +311,145 @@ export default function BookScreen({ navigation }) {
     const r = Number(raw);
     return Number.isFinite(r) && r > 0 ? Math.min(5, r) : null;
   };
-  const hasAssignedDriver = (b) => !!getDriverName(b);
+  const getDriverContact = (b) => {
+    const contacts = [
+      b?.assigned_driver?.email,
+      b?.driver?.email,
+      b?.assigned_driver?.phone,
+      b?.driver?.phone,
+      b?.driver_email,
+      b?.driver_phone
+    ];
+    
+    return contacts.find(contact => contact && String(contact).trim()) || null;
+  };
 
-  const getDriverId = (b) => b?.driver_id || b?.assigned_driver_id || b?.driver?.id || b?.assigned_driver?.id || null;
+  const hasAssignedDriver = (b) => {
+    const driverId = getDriverId(b);
+    const driverName = getDriverName(b);
+    const driverContact = getDriverContact(b);
+    return !!(driverId || driverName || driverContact);
+  };
+
+  const getDriverId = (b) => {
+    return b?.driver_id || 
+           b?.assigned_driver_id || 
+           b?.driver?.id || 
+           b?.assigned_driver?.id ||
+           b?.driver_info?.id ||
+           b?.driver_details?.id ||
+           null;
+  };
   const getPackageId = (b) => b?.package_id || b?.package?.id || b?.tour_package_id || null;
 
   // Check if booking can be cancelled
   const canCancelBooking = (booking) => {
     const status = (booking?.status || '').toLowerCase();
-    return status === 'pending' || status === 'confirmed' || status === 'driver_assigned' || status === 'waiting_for_driver';
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    // Can cancel if not in progress or completed, and if paid, only before trip starts
+    return (status === 'pending' || status === 'confirmed' || status === 'driver_assigned' || status === 'waiting_for_driver' || status === 'no_driver_available') && 
+           (paymentStatus !== 'paid' || status === 'driver_assigned');
+  };
+
+  // Check if booking timed out (no driver available)
+  const isBookingTimedOut = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    return status === 'no_driver_available';
+  };
+
+  // Check if booking can be rebooked
+  const canRebookBooking = (booking) => {
+    return isBookingTimedOut(booking);
+  };
+
+  // Handle rebooking for timed out bookings
+  const handleRebookBooking = (booking) => {
+    Alert.alert(
+      'Rebook Your Tour',
+      'No driver was available for your original date. Would you like to select a new date?',
+      [
+        { text: 'Cancel Booking', style: 'destructive', onPress: () => handleCancelTimeoutBooking(booking) },
+        { text: 'Select New Date', onPress: () => navigation.navigate('RebookTour', { 
+          bookingId: booking.id,
+          originalBooking: booking,
+          onRebookSuccess: () => fetchUserAndBookings()
+        })}
+      ]
+    );
+  };
+
+  // Handle cancelling a timed out booking
+  const handleCancelTimeoutBooking = async (booking) => {
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/bookings/cancel-timeout/${booking.id}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: user?.id,
+          reason: 'No driver available - cancelled by customer'
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        Alert.alert(
+          'Booking Cancelled',
+          'Your booking has been cancelled. If you made a payment, a full refund will be processed.',
+          [{ text: 'OK', onPress: () => fetchUserAndBookings() }]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to cancel booking');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+    }
+  };
+
+  // Check if booking can be paid for (driver assigned but not paid)
+  const canPayForBooking = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    return status === 'driver_assigned' && (paymentStatus === 'pending' || paymentStatus === '' || !paymentStatus);
+  };
+
+  // Check if booking is paid and waiting for trip to start
+  const isPaidAndWaitingForTrip = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    const paymentStatus = (booking?.payment_status || '').toLowerCase();
+    return paymentStatus === 'paid' && status === 'driver_assigned';
+  };
+
+  // Check if booking is in progress or completed
+  const isTripStartedOrCompleted = (booking) => {
+    const status = (booking?.status || '').toLowerCase();
+    return status === 'in_progress' || status === 'completed';
+  };
+
+  // Handle payment for confirmed booking
+  const handlePayForBooking = (booking) => {
+    const packageName = getPackageName(booking);
+    const totalAmount = getTotalAmount(booking);
+    const bookingDate = getBookingDateValue(booking);
+    const numPax = getNumPax(booking);
+    
+    navigation.navigate('Payment', {
+      bookingId: booking.id,
+      bookingData: {
+        packageName: packageName,
+        bookingDate: formatDate(bookingDate),
+        numberOfPax: numPax,
+      },
+      packageData: {
+        packageName: packageName,
+        bookingDate: formatDate(bookingDate),
+        numberOfPax: numPax,
+      },
+      amount: totalAmount,
+      currency: 'PHP',
+    });
   };
 
   const buildStars = (rating) => {
@@ -319,7 +521,12 @@ export default function BookScreen({ navigation }) {
           }
         }));
       }
-    } catch {}
+    } catch (e) {
+      // Handle missing reviews table gracefully
+      if (e?.code === '42P01' || e?.message?.includes('does not exist')) {
+        console.log('Reviews table not available');
+      }
+    }
   };
 
   const openRating = (booking, type) => {
@@ -490,7 +697,7 @@ export default function BookScreen({ navigation }) {
 
     const expandId = String(ref || b.id || 'unknown');
     const isExpanded = !!expandedMap[expandId];
-    const statusColor = getStatusColor(b.status);
+    const statusColor = getStatusColor(b);
 
     const toggleExpand = () => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -515,9 +722,9 @@ export default function BookScreen({ navigation }) {
               {pkgName || 'Package'}
             </Text>
             <View style={[styles.simpleBadge, { borderColor: statusColor }]}>
-              <Ionicons name={getStatusIcon(b.status)} size={14} color={statusColor} />
+              <Ionicons name={getStatusIcon(b)} size={14} color={statusColor} />
               <Text style={[styles.simpleBadgeText, { color: statusColor }]} numberOfLines={1}>
-                {prettyStatus(b.status)}
+                {prettyStatus(b)}
               </Text>
             </View>
           </View>
@@ -533,7 +740,9 @@ export default function BookScreen({ navigation }) {
                 <>
                   <Image source={{ uri: avatarUrl }} style={styles.simpleAvatar} />
                   <View style={{ minWidth: 0 }}>
-                    <Text style={styles.simpleDriverName} numberOfLines={1}>{driverName}</Text>
+                    <Text style={styles.simpleDriverName} numberOfLines={1}>
+                      {driverName || getDriverContact(b) || 'Driver Assigned'}
+                    </Text>
                     {buildStars(rating)}
                   </View>
                 </>
@@ -575,6 +784,11 @@ export default function BookScreen({ navigation }) {
                   <Text style={styles.driverName} numberOfLines={1} ellipsizeMode="middle">
                     {driverName || 'To be assigned'}
                   </Text>
+                  {getDriverContact(b) && (
+                    <Text style={styles.driverContact} numberOfLines={1}>
+                      {getDriverContact(b)}
+                    </Text>
+                  )}
                   {buildStars(rating)}
                 </View>
               </View>
@@ -582,19 +796,64 @@ export default function BookScreen({ navigation }) {
             {/* Divider */}
             <View style={styles.dottedDivider} />
 
-            {canCancelBooking(b) && (
+            {(canCancelBooking(b) || canPayForBooking(b) || isPaidAndWaitingForTrip(b) || isTripStartedOrCompleted(b) || canRebookBooking(b)) && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Actions</Text>
                 <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.cancelBtn]}
-                    onPress={() => handleCancelBooking(b)}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="close-circle-outline" size={16} color="#C62828" />
-                    <Text style={[styles.actionBtnText, { color: '#C62828' }]} numberOfLines={1}>Cancel Booking</Text>
-                  </TouchableOpacity>
+                  {canPayForBooking(b) && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.payBtn]}
+                      onPress={() => handlePayForBooking(b)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="card-outline" size={16} color="#2E7D32" />
+                      <Text style={[styles.actionBtnText, { color: '#2E7D32' }]} numberOfLines={1}>Pay Now</Text>
+                    </TouchableOpacity>
+                  )}
+                  {isPaidAndWaitingForTrip(b) && (
+                    <View style={[styles.actionBtn, { backgroundColor: '#E8F5E8', borderColor: '#C8E6C9' }]}>
+                      <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+                      <Text style={[styles.actionBtnText, { color: '#2E7D32' }]} numberOfLines={1}>Payment Complete</Text>
+                    </View>
+                  )}
+                  {isTripStartedOrCompleted(b) && (
+                    <View style={[styles.actionBtn, { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' }]}>
+                      <Ionicons name="car" size={16} color="#1976D2" />
+                      <Text style={[styles.actionBtnText, { color: '#1976D2' }]} numberOfLines={1}>
+                        {(b?.status || '').toLowerCase() === 'completed' ? 'Trip Completed' : 'Trip In Progress'}
+                      </Text>
+                    </View>
+                  )}
+                  {canRebookBooking(b) && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2' }]}
+                      onPress={() => handleRebookBooking(b)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="calendar-outline" size={16} color="#FF9800" />
+                      <Text style={[styles.actionBtnText, { color: '#FF9800' }]} numberOfLines={1}>Rebook Tour</Text>
+                    </TouchableOpacity>
+                  )}
+                  {canCancelBooking(b) && !canRebookBooking(b) && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.cancelBtn]}
+                      onPress={() => handleCancelBooking(b)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="close-circle-outline" size={16} color="#C62828" />
+                      <Text style={[styles.actionBtnText, { color: '#C62828' }]} numberOfLines={1}>Cancel Booking</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+                {isPaidAndWaitingForTrip(b) && (
+                  <Text style={styles.smallNote}>✅ Payment received! Your driver can now start the trip on the scheduled date.</Text>
+                )}
+                {isTripStartedOrCompleted(b) && (b?.status || '').toLowerCase() === 'in_progress' && (
+                  <Text style={styles.smallNote}>🚗 Your trip is currently in progress. Enjoy your tour!</Text>
+                )}
+                {isBookingTimedOut(b) && (
+                  <Text style={styles.smallNote}>⏰ No driver accepted within 6 hours. Please rebook for another date or cancel for a full refund.</Text>
+                )}
               </View>
             )}
 
@@ -770,10 +1029,10 @@ export default function BookScreen({ navigation }) {
             <Text style={styles.simpleTitle} numberOfLines={1} ellipsizeMode="tail">
               {title}
             </Text>
-            <View style={[styles.simpleBadge, { borderColor: getStatusColor(status) }]}>
-              <Ionicons name={getStatusIcon(status)} size={14} color={getStatusColor(status)} />
-              <Text style={[styles.simpleBadgeText, { color: getStatusColor(status) }]} numberOfLines={1}>
-                {prettyStatus(status)}
+            <View style={[styles.simpleBadge, { borderColor: statusColor }]}>
+              <Ionicons name={getStatusIcon({ status })} size={14} color={statusColor} />
+              <Text style={[styles.simpleBadgeText, { color: statusColor }]} numberOfLines={1}>
+                {prettyStatus({ status })}
               </Text>
             </View>
           </View>
@@ -1367,6 +1626,7 @@ const styles = StyleSheet.create({
   actionBtnText: { color: MAROON, fontSize: 12, fontWeight: '700' },
   actionBtnDisabled: { opacity: 0.5 },
   cancelBtn: { borderColor: '#FFCDD2' },
+  payBtn: { borderColor: '#C8E6C9' },
   smallNote: { fontSize: 12, color: '#9aa0a6', marginTop: 6 },
 
   // cancellation policy styles
@@ -1460,6 +1720,7 @@ const styles = StyleSheet.create({
   driverBlock: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   driverAvatarLg: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: '#eee', backgroundColor: '#fff' },
   driverName: { fontSize: 14, color: '#333', fontWeight: '700' },
+  driverContact: { fontSize: 12, color: '#666', marginTop: 2 },
 
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
   ratingText: { fontSize: 12, color: '#666', marginLeft: 6, fontWeight: '600' },

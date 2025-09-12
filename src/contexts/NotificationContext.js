@@ -18,13 +18,19 @@ export const NotificationProvider = ({ children }) => {
   const { user } = useAuth();
 
   const filterTestNotifications = (notifications) => {
-    return notifications.filter(n => 
-      !n.title.includes('Test Notification') && 
-      !n.message.includes('test notification to verify') &&
-      !n.title.includes('Test Booking Request') &&
-      !n.message.includes('Test Tourist') &&
-      !n.message.includes('Test Driver')
-    );
+    return notifications.filter(n => {
+      // Safely check if title and message exist before calling includes
+      const title = n.title || '';
+      const message = n.message || '';
+      
+      return (
+        !title.includes('Test Notification') && 
+        !message.includes('test notification to verify') &&
+        !title.includes('Test Booking Request') &&
+        !message.includes('Test Tourist') &&
+        !message.includes('Test Driver')
+      );
+    });
   };
 
   const loadNotifications = async () => {

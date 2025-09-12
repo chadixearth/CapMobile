@@ -28,6 +28,7 @@ import * as Routes from '../constants/routes';
 import ChatNavigator from '../chat/navigation/ChatNavigator';
 import Communication from '../communication/navigation/CommunicationNavigator';
 import { useAuth } from '../hooks/useAuth';
+import NotificationManager from '../components/NotificationManager';
 
 const Stack = createNativeStackNavigator();
 
@@ -70,7 +71,11 @@ export default function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator ref={navigationRef} screenOptions={{ headerShown: false }}>
+    <>
+      {/* Global Notification Manager - works across all tabs */}
+      {isAuthenticated && <NotificationManager navigation={navigationRef.current} />}
+      
+      <Stack.Navigator ref={navigationRef} screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
         <>
           <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
@@ -103,6 +108,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Communication" component={Communication} />
         </>
       )}
-    </Stack.Navigator>
+      </Stack.Navigator>
+    </>
   );
 }
