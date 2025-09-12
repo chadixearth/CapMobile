@@ -4,10 +4,10 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import RootNavigator from './navigation/RootNavigator';
 import AppInitService from './services/AppInitService';
-import { installFetchInterceptor, wasSessionExpiredFlagSet, clearSessionExpiredFlag } from './services/fetchInterceptor';
-import { on, off, EVENTS } from './services/eventBus';
+
 import ErrorProvider from './components/ErrorProvider';
 import ErrorHandlingService from './services/errorHandlingService';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -15,9 +15,6 @@ export default function App() {
   const navRef = useRef(createNavigationContainerRef());
 
   useEffect(() => {
-    // Install fetch interceptor once
-    installFetchInterceptor();
-
     initializeApp();
   }, []);
 
@@ -25,23 +22,7 @@ export default function App() {
     try {
       console.log('[App] Starting app initialization...');
 
-      // If previous session expired flag is set (e.g., app was backgrounded), show message once
-      if (await wasSessionExpiredFlagSet()) {
-        try { await clearSessionExpiredFlag(); } catch {}
-        // Defer alert slightly to avoid during splash
-        setTimeout(() => {
-          Alert.alert('Session expired', 'Your session has expired. Please log in again.');
-          // Navigation will go to Welcome once RootNavigator loads auth state,
-          // but we also try to reset here just in case
-          if (navRef.current?.isReady?.()) {
-            try {
-              navRef.current.reset({ index: 0, routes: [{ name: 'Welcome' }] });
-            } catch (error) {
-              console.warn('Navigation reset failed:', error);
-            }
-          }
-        }, 600);
-      }
+
 
       const result = await AppInitService.initialize();
       
@@ -65,15 +46,7 @@ export default function App() {
     }
   };
 
-  // Subscribe to session expiry event
-  useEffect(() => {
-    const handler = () => {
-      // Use the error handling service instead of direct Alert
-      ErrorHandlingService.handleAuthError('session_expired');
-    };
-    on(EVENTS.SESSION_EXPIRED, handler);
-    return () => off(EVENTS.SESSION_EXPIRED, handler);
-  }, []);
+
 
   if (isInitializing) {
     return (
@@ -89,17 +62,19 @@ export default function App() {
 
   return (
     <ErrorProvider>
-      <NavigationContainer 
-        ref={navRef}
-        onReady={() => {
-          // Set navigation reference for error handling service
-          ErrorHandlingService.setNavigationRef(navRef.current);
-          // Make navigation ref globally available for logout
-          global.navigationRef = navRef.current;
-        }}
-      >
-        <RootNavigator />
-      </NavigationContainer>
+      <NotificationProvider>
+        <NavigationContainer 
+          ref={navRef}
+          onReady={() => {
+            // Set navigation reference for error handling service
+            ErrorHandlingService.setNavigationRef(navRef.current);
+            // Make navigation ref globally available for logout
+            global.navigationRef = navRef.current;
+          }}
+        >
+          <RootNavigator />
+        </NavigationContainer>
+      </NotificationProvider>
     </ErrorProvider>
   );
 }

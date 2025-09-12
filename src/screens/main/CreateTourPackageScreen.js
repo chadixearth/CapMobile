@@ -8,8 +8,12 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { createTourPackage, updateTourPackage, getPickupPoints } from '../../services/tourPackageService';
 
 const MAROON = '#6B2E2B';
@@ -30,10 +34,17 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     max_pax: '',
     available_days_data: [],
     expiration_date_data: '',
+    start_time: '',
+    photo: null,
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedTime, setSelectedTime] = useState(new Date());
   const [pickupPoints, setPickupPoints] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingPickups, setLoadingPickups] = useState(true);
+  const [photoUri, setPhotoUri] = useState(null);
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -50,7 +61,17 @@ export default function CreateTourPackageScreen({ navigation, route }) {
         max_pax: existingPackage.max_pax?.toString() || '',
         available_days_data: existingPackage.available_days_data || [],
         expiration_date_data: existingPackage.expiration_date_data || '',
+        start_time: existingPackage.start_time || '',
       });
+      if (existingPackage.expiration_date_data) {
+        setSelectedDate(new Date(existingPackage.expiration_date_data));
+      }
+      if (existingPackage.start_time) {
+        const [hours, minutes] = existingPackage.start_time.split(':');
+        const timeDate = new Date();
+        timeDate.setHours(parseInt(hours), parseInt(minutes));
+        setSelectedTime(timeDate);
+      }
     }
   }, []);
 
@@ -78,6 +99,37 @@ export default function CreateTourPackageScreen({ navigation, route }) {
         ? prev.available_days_data.filter(d => d !== day)
         : [...prev.available_days_data, day]
     }));
+  };
+
+  const onDateChange = (event, date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (date) {
+      setSelectedDate(date);
+      updateField('expiration_date_data', date.toISOString().split('T')[0]);
+    }
+  };
+
+  const onTimeChange = (event, time) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (time) {
+      setSelectedTime(time);
+      const timeString = time.toTimeString().split(' ')[0].substring(0, 5);
+      updateField('start_time', timeString);
+    }
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setPhotoUri(result.assets[0].uri);
+      updateField('photo', result.assets[0]);
+    }
   };
 
   const validateForm = () => {
@@ -185,6 +237,23 @@ export default function CreateTourPackageScreen({ navigation, route }) {
             />
           </View>
 
+          {/* Photo */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Package Photo</Text>
+            <TouchableOpacity
+              style={styles.photoButton}
+              onPress={pickImage}
+            >
+              <Ionicons name="camera-outline" size={20} color={MAROON} />
+              <Text style={styles.photoButtonText}>
+                {photoUri ? 'Change Photo' : 'Add Photo'}
+              </Text>
+            </TouchableOpacity>
+            {photoUri && (
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+            )}
+          </View>
+
 
 
           {/* Pickup Location */}
@@ -277,16 +346,52 @@ export default function CreateTourPackageScreen({ navigation, route }) {
             </View>
           </View>
 
+          {/* Start Time */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Start Time</Text>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Ionicons name="time-outline" size={20} color={MAROON} />
+              <Text style={styles.dateButtonText}>
+                {formData.start_time || 'Select Start Time'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Expiration Date */}
           <View style={styles.field}>
             <Text style={styles.label}>Expiration Date</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.expiration_date_data}
-              onChangeText={(value) => updateField('expiration_date_data', value)}
-              placeholder="YYYY-MM-DD"
-            />
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Ionicons name="calendar-outline" size={20} color={MAROON} />
+              <Text style={styles.dateButtonText}>
+                {formData.expiration_date_data || 'Select Expiration Date'}
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display="default"
+              onChange={onDateChange}
+              minimumDate={new Date()}
+            />
+          )}
+
+          {showTimePicker && (
+            <DateTimePicker
+              value={selectedTime}
+              mode="time"
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -376,6 +481,21 @@ const styles = StyleSheet.create({
     color: '#666',
     flex: 1,
   },
+  dateButton: {
+    backgroundColor: CARD,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateButtonText: {
+    fontSize: 16,
+    color: '#666',
+    flex: 1,
+  },
   daysContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -421,5 +541,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  photoButton: {
+    backgroundColor: CARD,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoButtonText: {
+    fontSize: 16,
+    color: '#666',
+    flex: 1,
+  },
+  photoPreview: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginTop: 8,
   },
 });

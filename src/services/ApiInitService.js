@@ -101,8 +101,14 @@ class ApiInitService {
   async _loadUserBookings(userId) {
     try {
       // Import booking service dynamically to avoid circular dependencies
-      const { default: bookingService } = await import('./tourpackage/requestBooking');
-      return await bookingService.getUserBookings(userId);
+      const bookingModule = await import('./tourpackage/requestBooking');
+      const bookingService = bookingModule.default || bookingModule;
+      if (bookingService && typeof bookingService.getUserBookings === 'function') {
+        return await bookingService.getUserBookings(userId);
+      } else {
+        console.warn('[ApiInit] getUserBookings method not available');
+        return [];
+      }
     } catch (error) {
       console.warn('[ApiInit] User bookings unavailable:', error.message);
       return [];

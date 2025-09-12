@@ -91,6 +91,50 @@ export default function MyTourPackagesScreen({ navigation }) {
           <Text style={styles.duration}>{pkg.duration_hours}h • {pkg.max_pax} pax</Text>
         </View>
 
+        {/* Locations */}
+        {(pkg.pickup_location || pkg.destination) && (
+          <View style={styles.locationSection}>
+            {pkg.pickup_location && (
+              <View style={styles.locationRow}>
+                <Ionicons name="location-outline" size={16} color="#666" />
+                <Text style={styles.locationText}>Pickup: {pkg.pickup_location}</Text>
+              </View>
+            )}
+            {pkg.destination && (
+              <View style={styles.locationRow}>
+                <Ionicons name="flag-outline" size={16} color="#666" />
+                <Text style={styles.locationText}>Destination: {pkg.destination}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Schedule Info */}
+        <View style={styles.scheduleSection}>
+          {pkg.available_days_data && pkg.available_days_data.length > 0 && (
+            <View style={styles.scheduleRow}>
+              <Ionicons name="calendar-outline" size={16} color="#666" />
+              <Text style={styles.scheduleText}>
+                Available: {pkg.available_days_data.map(day => day.substring(0, 3)).join(', ')}
+              </Text>
+            </View>
+          )}
+          {pkg.start_time && (
+            <View style={styles.scheduleRow}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.scheduleText}>Start Time: {pkg.start_time}</Text>
+            </View>
+          )}
+          {pkg.expiration_date_data && (
+            <View style={styles.scheduleRow}>
+              <Ionicons name="hourglass-outline" size={16} color="#666" />
+              <Text style={styles.scheduleText}>
+                Expires: {new Date(pkg.expiration_date_data).toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.packageActions}>
           <TouchableOpacity
             style={styles.actionButton}
@@ -336,5 +380,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  locationSection: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationText: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
+  },
+  scheduleSection: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  scheduleText: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
   },
 });

@@ -59,6 +59,11 @@ export async function requestAccountDeletion(userId, reason = null) {
   });
 
   if (result.success && result.data.success) {
+    // If logout is required, clear local session immediately
+    if (result.data.logout_required || result.data.user_logged_out) {
+      await clearLocalSession();
+    }
+    
     return {
       success: true,
       message: result.data.message,
@@ -67,6 +72,7 @@ export async function requestAccountDeletion(userId, reason = null) {
       days_remaining: result.data.days_remaining,
       account_suspended: result.data.account_suspended,
       logout_required: result.data.logout_required,
+      user_logged_out: result.data.user_logged_out,
     };
   }
 
@@ -74,6 +80,20 @@ export async function requestAccountDeletion(userId, reason = null) {
     success: false,
     error: result.data?.error || result.error || 'Failed to request account deletion',
   };
+}
+
+// Helper function to clear local session
+async function clearLocalSession() {
+  try {
+    const AsyncStorage = await import('@react-native-async-storage/async-storage');
+    await AsyncStorage.default.multiRemove([
+      'access_token',
+      'refresh_token', 
+      'user_data'
+    ]);
+  } catch (error) {
+    console.error('Error clearing local session:', error);
+  }
 }
 
 /**

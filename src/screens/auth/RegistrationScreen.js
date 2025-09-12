@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   Modal,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerUser } from '../../services/authService';
@@ -200,13 +201,29 @@ const RegistrationScreen = ({ navigation, route }) => {
       console.error('Registration error:', e);
     }
   };
-  const ModernInput = ({ label, ...props }) => (
+  const scrollRef = useRef(null);
+  const inputRefs = useRef({});
+
+  const ModernInput = ({ label, nextField, refKey, ...props }) => (
     <View style={styles.inputContainer}>
       {label && <Text style={styles.inputLabel}>{label}</Text>}
       <TextInput
         {...props}
+        ref={(ref) => { if (refKey) inputRefs.current[refKey] = ref; }}
         style={[styles.modernInput, props.style]}
         placeholderTextColor={colors.textSecondary}
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
+        returnKeyType={nextField ? 'next' : 'done'}
+        onSubmitEditing={() => {
+          if (nextField && inputRefs.current[nextField]) {
+            inputRefs.current[nextField].focus();
+          } else {
+            Keyboard.dismiss();
+          }
+        }}
+        blurOnSubmit={false}
       />
     </View>
   );
@@ -228,12 +245,14 @@ const RegistrationScreen = ({ navigation, route }) => {
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      keyboardVerticalOffset={0}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="none"
       >
         {/* Header with back button */}
         <View style={styles.header}>
@@ -272,21 +291,29 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="First Name" 
                 placeholder="Enter your first name" 
                 value={firstName} 
-                onChangeText={setFirstName} 
+                onChangeText={setFirstName}
+                refKey="firstName"
+                nextField="lastName"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Last Name" 
                 placeholder="Enter your last name" 
                 value={lastName} 
-                onChangeText={setLastName} 
+                onChangeText={setLastName}
+                refKey="lastName"
+                nextField="email"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Email Address" 
                 placeholder="Enter your email" 
                 value={email} 
-                onChangeText={setEmail} 
+                onChangeText={setEmail}
+                refKey="email"
+                nextField="password"
                 autoCapitalize="none" 
-                keyboardType="email-address" 
+                keyboardType="email-address"
               />
               
               <SectionHeader 
@@ -298,15 +325,18 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Password" 
                 placeholder="Enter your password" 
                 value={password} 
-                onChangeText={setPassword} 
-                secureTextEntry 
+                onChangeText={setPassword}
+                refKey="password"
+                nextField="confirmPassword"
+                secureTextEntry
               />
               <ModernInput 
                 label="Confirm Password" 
                 placeholder="Re-enter your password" 
                 value={confirmPassword} 
-                onChangeText={setConfirmPassword} 
-                secureTextEntry 
+                onChangeText={setConfirmPassword}
+                refKey="confirmPassword"
+                secureTextEntry
               />
             </>
           )}
@@ -323,28 +353,38 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="First Name" 
                 placeholder="Enter your first name" 
                 value={firstName} 
-                onChangeText={setFirstName} 
+                onChangeText={setFirstName}
+                refKey="firstName"
+                nextField="lastName"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Last Name" 
                 placeholder="Enter your last name" 
                 value={lastName} 
-                onChangeText={setLastName} 
+                onChangeText={setLastName}
+                refKey="lastName"
+                nextField="email"
+                autoCapitalize="words"
               />
               <ModernInput 
                 label="Email Address" 
                 placeholder="Enter your email" 
                 value={email} 
-                onChangeText={setEmail} 
+                onChangeText={setEmail}
+                refKey="email"
+                nextField="phone"
                 autoCapitalize="none" 
-                keyboardType="email-address" 
+                keyboardType="email-address"
               />
               <ModernInput 
                 label="Phone Number" 
                 placeholder="Enter your phone number" 
                 value={phone} 
-                onChangeText={setPhone} 
-                keyboardType="phone-pad" 
+                onChangeText={setPhone}
+                refKey="phone"
+                nextField={role === 'driver' ? 'license' : 'business'}
+                keyboardType="phone-pad"
               />
             </>
           )}
@@ -361,7 +401,10 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Driver's License Number" 
                 placeholder="Enter your license number" 
                 value={licenseNumber} 
-                onChangeText={setLicenseNumber} 
+                onChangeText={setLicenseNumber}
+                refKey="license"
+                nextField={ownsTartanilla ? 'ownedCount' : null}
+                autoCapitalize="characters"
               />
               
               <View style={styles.questionContainer}>
@@ -397,8 +440,10 @@ const RegistrationScreen = ({ navigation, route }) => {
                   label="Number of Tartanillas Owned" 
                   placeholder="Enter number" 
                   value={ownedCount} 
-                  onChangeText={setOwnedCount} 
-                  keyboardType="number-pad" 
+                  onChangeText={setOwnedCount}
+                  refKey="ownedCount"
+                  keyboardType="number-pad"
+                  maxLength={2}
                 />
               )}
             </>
@@ -416,7 +461,9 @@ const RegistrationScreen = ({ navigation, route }) => {
                 label="Business Name" 
                 placeholder="Enter your business name" 
                 value={businessName} 
-                onChangeText={setBusinessName} 
+                onChangeText={setBusinessName}
+                refKey="business"
+                autoCapitalize="words"
               />
               
               <View style={styles.questionContainer}>
@@ -661,15 +708,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 22,
   },
   
   // Input Styles
@@ -677,24 +724,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 6,
+    marginBottom: 10,
     marginLeft: 4,
   },
   modernInput: {
     backgroundColor: colors.card,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 16,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     fontSize: 16,
     color: colors.text,
     ...card,
     shadowOpacity: 0.03,
     shadowRadius: 4,
+    minHeight: 56,
   },
   
   // Question/Toggle Styles
@@ -707,10 +755,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
   },
   questionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.md,
+    lineHeight: 26,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -722,20 +771,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 16,
+    paddingVertical: 18,
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
+    minHeight: 60,
   },
   toggleSelected: {
     backgroundColor: `${colors.primary}10`,
     borderColor: colors.primary,
   },
   toggleText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   toggleTextSelected: {
@@ -760,15 +810,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   termsMainText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: 6,
+    lineHeight: 24,
   },
   termsSubtext: {
-    fontSize: 13,
+    fontSize: 16,
     color: colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 22,
   },
   termsLink: {
     color: colors.primary,
@@ -779,8 +830,8 @@ const styles = StyleSheet.create({
   // Register Button
   registerButton: {
     backgroundColor: colors.primary,
-    borderRadius: 16,
-    paddingVertical: 18,
+    borderRadius: 20,
+    paddingVertical: 22,
     marginTop: spacing.lg,
     marginBottom: spacing.lg,
     ...card,
@@ -789,6 +840,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
+    minHeight: 70,
   },
   registerButtonDisabled: {
     backgroundColor: colors.textSecondary,
@@ -805,8 +857,8 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '360deg' }],
   },
   registerButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
   },

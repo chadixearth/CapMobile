@@ -39,10 +39,6 @@ async function apiCall(endpoint, options = {}) {
     
     const data = await response.json();
     
-    if (!data.success) {
-      throw new Error(data.error || data.message || 'Request failed');
-    }
-    
     return data;
   } catch (error) {
     clearTimeout(timeoutId);

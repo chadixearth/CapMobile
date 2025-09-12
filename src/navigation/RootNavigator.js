@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, ActivityIndicator } from 'react-native';
+import { setNavigationRef } from '../services/apiClient';
 import SplashScreen from '../screens/splash/SplashScreen';
 import WelcomeScreen from '../screens/welcome/WelcomeScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -18,6 +19,8 @@ import BookingConfirmationScreen from '../screens/main/BookingConfirmationScreen
 import ReviewsScreen from '../screens/main/ReviewsScreen';
 import MyTourPackagesScreen from '../screens/main/MyTourPackagesScreen';
 import CreateTourPackageScreen from '../screens/main/CreateTourPackageScreen';
+import CompletionPhotoScreen from '../screens/main/CompletionPhotoScreen';
+import PaymentReceiptScreen from '../screens/main/PaymentReceiptScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
@@ -30,6 +33,20 @@ const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { isAuthenticated, role, loading } = useAuth();
+  const navigationRef = React.useRef();
+
+  React.useEffect(() => {
+    if (navigationRef.current) {
+      setNavigationRef(navigationRef.current);
+      global.navigationRef = navigationRef.current;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (navigationRef.current && navigationRef.current.isReady()) {
+      global.navigationRef = navigationRef.current;
+    }
+  }, [isAuthenticated, role, loading]);
 
   React.useEffect(() => {
     console.log('[RootNavigator] State changed:', { isAuthenticated, role, loading });
@@ -53,7 +70,7 @@ export default function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator ref={navigationRef} screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
         <>
           <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
@@ -80,6 +97,8 @@ export default function RootNavigator() {
           <Stack.Screen name="MyTourPackages" component={MyTourPackagesScreen} />
           <Stack.Screen name="CreateTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
+          <Stack.Screen name="CompletionPhoto" component={CompletionPhotoScreen} />
+          <Stack.Screen name="PaymentReceipt" component={PaymentReceiptScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
           <Stack.Screen name="Communication" component={Communication} />
         </>

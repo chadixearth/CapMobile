@@ -15,6 +15,7 @@ import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
 import { loginUser } from '../../services/authService';
 import { apiBaseUrl } from '../../services/networkConfig';
+import AccountDeletionHandler from '../../components/AccountDeletionHandler';
 
 const API_BASE_URL = 'http://192.168.101.76:8000/api';
 import { Ionicons } from '@expo/vector-icons';
@@ -86,11 +87,12 @@ export default function LoginScreen({ navigation }) {
       const result = await loginUser(email, password, allowedRoles);
       console.log('[LoginScreen] Login result:', result);
       
-      if (result.success) {
+      // Use AccountDeletionHandler to handle login result
+      AccountDeletionHandler.handleLoginResult(result, async (successResult) => {
         // Check if user is suspended
-        if (result.user?.profile?.status === 'Suspended') {
-          const suspendedUntil = result.user.profile.suspended_until;
-          const reason = result.user.profile.suspension_reason || 'Account suspended';
+        if (successResult.user?.profile?.status === 'Suspended') {
+          const suspendedUntil = successResult.user.profile.suspended_until;
+          const reason = successResult.user.profile.suspension_reason || 'Account suspended';
           const endDate = suspendedUntil ? new Date(suspendedUntil).toLocaleDateString() : 'Unknown';
           
           Alert.alert(
@@ -104,18 +106,11 @@ export default function LoginScreen({ navigation }) {
         
         await saveCredentials();
         console.log('[LoginScreen] Calling login function...');
-        await login(result.user);
+        await login(successResult.user);
         console.log('[LoginScreen] Login function completed');
-        
-        if (result.deletion_cancelled || result.account_reactivated) {
-          Alert.alert(
-            '🎉 Welcome Back!',
-            'Good news! Your scheduled account deletion has been automatically cancelled. Your account is now fully active and all your data is safe.',
-            [{ text: 'Great!', style: 'default' }],
-            { cancelable: false }
-          );
-        }
-      } else {
+      });
+      
+      if (!result.success && !result.scheduled_for_deletion) {
         console.log('[LoginScreen] Login failed:', result.error);
         setError(result.error || 'Login failed.');
       }

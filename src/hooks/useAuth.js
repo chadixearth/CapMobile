@@ -75,8 +75,8 @@ export const useAuth = () => {
           console.log('Performing backend session validation...');
           const validationResult = await validateSession();
           if (!validationResult.valid) {
-            // Backend validation failed, clear auth state and auto-logout
-            console.log('Session expired, auto-logging out');
+            // Backend validation failed, clear auth state
+            console.log('Session expired, clearing auth state');
             await logoutUser();
             updateGlobalAuthState({
               isAuthenticated: false,
@@ -132,31 +132,8 @@ export const useAuth = () => {
       console.warn('[useAuth] Failed to clear authenticated data:', error);
     }
     
-    // Force navigation to Welcome
-    const navRef = navigationRef || global.navigationRef;
-    if (navRef && navRef.isReady()) {
-      try {
-        console.log('[useAuth] Attempting navigation to Welcome');
-        navRef.reset({
-          index: 0,
-          routes: [{ name: 'Welcome' }],
-        });
-        console.log('[useAuth] Successfully navigated to Welcome screen');
-      } catch (error) {
-        console.warn('[useAuth] Failed to navigate to Welcome:', error);
-      }
-    } else {
-      console.warn('[useAuth] Navigation ref not available or not ready');
-      // Force state update to trigger RootNavigator re-render
-      setTimeout(() => {
-        console.log('[useAuth] Forcing auth state update after logout');
-        updateGlobalAuthState({
-          isAuthenticated: false,
-          user: null,
-          role: null
-        });
-      }, 50);
-    }
+    // Don't force navigation - let RootNavigator handle it
+    console.log('[useAuth] Auth state cleared, RootNavigator will handle navigation');
     
     // Backend cleanup (non-blocking)
     logoutUser().catch(() => {});

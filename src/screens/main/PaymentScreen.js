@@ -1,5 +1,5 @@
 /**
- * PaymentScreen Component for React Native
+ * PaymentScreen — modern & elegant UI with confirmation modal
  * Handles PayMongo payment integration for tour bookings
  */
 
@@ -9,242 +9,100 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
-  Linking,
+  Platform,
+  Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import paymentService from '../../services/paymentService';
-import { colors, spacing, card } from '../../styles/global';
-import BackButton from '../../components/BackButton';
+import { colors, spacing } from '../../styles/global';
 import * as Routes from '../../constants/routes';
 
 const PaymentScreen = ({ route, navigation }) => {
-  const { bookingId, bookingData, amount, currency = 'PHP' } = route.params;
-  
+  const { bookingId, bookingData, packageData, amount, currency = 'PHP' } = route.params;
+
   const [isLoading, setIsLoading] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [showWebView, setShowWebView] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('gcash');
 
+  // NEW: confirmation modal
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   const paymentMethods = [
-    { id: 'gcash', name: 'GCash', icon: 'wallet-outline', color: '#007BFF' },
-    { id: 'grab_pay', name: 'GrabPay', icon: 'car-outline', color: '#00B14F' },
-    { id: 'paymaya', name: 'Maya (PayMaya)', icon: 'card-outline', color: '#FFB74D' },
-    { id: 'card', name: 'Credit/Debit Card', icon: 'card-outline', color: colors.primary },
+    { id: 'gcash', name: 'GCash', icon: 'wallet-outline', color: '#0EA5E9', hint: 'Instant e-wallet' },
+    { id: 'grab_pay', name: 'GrabPay', icon: 'car-outline', color: '#22C55E', hint: 'Pay via Grab wallet' },
+    { id: 'paymaya', name: 'Maya (PayMaya)', icon: 'card-outline', color: '#8B5CF6', hint: 'Use Maya balance' },
+    { id: 'card', name: 'Credit/Debit Card', icon: 'card-outline', color: colors.primary, hint: 'Visa / Mastercard' },
   ];
 
-  useEffect(() => {
-    // Test connection on component mount
-    testConnection();
-  }, []);
+  useEffect(() => { testConnection(); }, []);
 
   const testConnection = async () => {
     const connectionStatus = await paymentService.testConnection();
-    if (!connectionStatus.overall) {
-      Alert.alert(
-        'Connection Issue',
-        `Unable to connect to the payment service.\n\nBackend: ${connectionStatus.backend ? '✅' : '❌'}\nPayMongo: ${connectionStatus.paymongo ? '✅' : '❌'}\n\nError: ${connectionStatus.error || 'Network unavailable'}`,
-        [
-          { 
-            text: 'Retry', 
-            onPress: testConnection 
-          },
-          { 
-            text: 'Continue Anyway', 
-            onPress: () => {
-              // User can still try to make payment, will get proper error handling
-            }
-          },
-        ]
-      );
-    }
+    console.log('[Payment] connection status:', connectionStatus);
   };
 
-  const createPayment = async () => {
-    if (!bookingId) {
-      Alert.alert('Error', 'Booking ID is required');
-      return;
-    }
+  // OPEN the modal instead of Alert
+  const createPayment = () => setShowConfirmModal(true);
 
+  const onConfirmPay = async () => {
+    if (isLoading) return;
+    setShowConfirmModal(false);
+    await simulatePayment();
+  };
+
+  const simulatePayment = async () => {
     setIsLoading(true);
     try {
-      console.log(`Creating payment for booking: ${bookingId}`);
-      
-      const result = await paymentService.createMobilePayment(
-        bookingId,
-        selectedPaymentMethod
-      );
-
-      if (result.success) {
-        setPaymentData(result);
-        
-        console.log('Payment data received:', result);
-        console.log('Next action:', result.nextAction);
-        
-        // Check if this requires client-side payment processing
-        if (result.nextAction?.type === 'client_side_payment') {
-          Alert.alert(
-            'Payment Setup Complete',
-            'Payment intent created successfully. To complete the payment integration, you need to implement PayMongo React Native SDK.\n\nFor now, you can test payment confirmation using the payment_intent_id: ' + result.paymentIntentId,
-            [
-              { text: 'OK', onPress: () => {} },
-              { text: 'Test Confirm', onPress: () => confirmPayment() }
-            ]
-          );
-        } else if (result.nextAction?.redirect?.url || result.checkoutUrl) {
-          // For e-wallet payments with checkout URLs
-          console.log('Opening payment checkout URL:', result.checkoutUrl || result.nextAction.redirect.url);
-          setShowWebView(true);
-        } else {
-          console.log('No payment URL found in response:', result);
-          Alert.alert(
-            'Payment Ready',
-            `Payment has been set up successfully!\n\nPayment Method: ${result.paymentMethod}\nAmount: ₱${result.amount}\nBooking: ${result.bookingReference}\n\nYou can now test payment confirmation.`,
-            [
-              { text: 'OK', onPress: () => {} },
-              { text: 'Confirm Payment', onPress: () => confirmPayment() }
-            ]
-          );
-        }
-      } else {
-        // Handle different types of errors more specifically
-        if (result.error?.includes('404') || result.error?.includes('not found')) {
-          Alert.alert(
-            'Payment Feature Not Available', 
-            'The payment feature is not yet implemented on the backend. Your booking has been created successfully. Please contact support for payment assistance.',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.navigate(Routes.BOOKING_CONFIRMATION, {
-                  bookingId: bookingId,
-                  paymentId: null,
-                  status: 'payment_pending',
-                }),
-              },
-            ]
-          );
-        } else if (result.error?.includes('Network') || result.error?.includes('timeout')) {
-          Alert.alert(
-            'Network Error',
-            'Unable to connect to payment service. Please check your internet connection and try again.',
-            [
-              { text: 'Retry', onPress: createPayment },
-              { text: 'Cancel', onPress: () => navigation.goBack() },
-            ]
-          );
-        } else {
-          Alert.alert('Payment Error', result.error || 'Failed to create payment');
-        }
-      }
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      await createBookingAfterPayment();
     } catch (error) {
-      console.error('Payment creation error:', error);
-      
-      // Provide more specific error messages based on error type
-      if (error.message?.includes('Network') || error.message?.includes('fetch')) {
-        Alert.alert(
-          'Network Error',
-          'Unable to connect to the payment service. Please check your internet connection and try again.',
-          [
-            { text: 'Retry', onPress: createPayment },
-            { text: 'Cancel', onPress: () => navigation.goBack() },
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Payment Service Error', 
-          'Payment processing encountered an error. Your booking has been saved and you can complete payment later.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate(Routes.BOOKING_CONFIRMATION, {
-                bookingId: bookingId,
-                paymentId: null,
-                status: 'payment_error',
-              }),
-            },
-          ]
-        );
-      }
+      console.error('Payment simulation error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCardPayment = (paymentData) => {
-    // For card payments, you might want to integrate with a card input component
-    // or redirect to PayMongo's hosted payment page
-    if (paymentData.nextAction?.redirect) {
-      const url = paymentData.nextAction.redirect.url;
-      Linking.openURL(url).catch(err => {
-        console.error('Failed to open payment URL:', err);
-        Alert.alert('Error', 'Failed to open payment page');
-      });
-    }
-  };
-
   const handleWebViewNavigation = (navState) => {
     const { url } = navState;
-    console.log('WebView navigation:', url);
-
-    // Enhanced payment completion detection
-    if (url.includes('payment-success') || url.includes('success') || 
-        url.includes('payment-complete') || url.includes('tartanilla://payment-success') ||
-        url.includes('checkout.paymongo.com/success')) {
-      console.log('Payment success detected, closing WebView');
+    if (
+      url.includes('payment-success') ||
+      url.includes('success') ||
+      url.includes('payment-complete') ||
+      url.includes('tartanilla://payment-success') ||
+      url.includes('checkout.paymongo.com/success')
+    ) {
       setShowWebView(false);
-      
-      // Check payment source status if we have a sourceId
       if (paymentData?.sourceId) {
         checkPaymentSourceAndConfirm();
       } else {
         confirmPayment();
       }
-    } else if (url.includes('payment-failed') || url.includes('fail') || 
-               url.includes('error') || url.includes('tartanilla://payment-failed') ||
-               url.includes('checkout.paymongo.com/cancel')) {
-      console.log('Payment failure detected, closing WebView');
+    } else if (
+      url.includes('payment-failed') ||
+      url.includes('fail') ||
+      url.includes('error') ||
+      url.includes('tartanilla://payment-failed') ||
+      url.includes('checkout.paymongo.com/cancel')
+    ) {
       setShowWebView(false);
-      Alert.alert('Payment Failed', 'Payment was not completed. Please try again.');
-    }
-    
-    // Stop excessive navigation loops
-    if (url === (paymentData?.checkoutUrl || paymentData?.nextAction?.redirect?.url) && navState.canGoBack) {
-      console.log('Stopping navigation loop');
-      return false;
+      // toast here if desired
     }
   };
 
   const checkPaymentSourceAndConfirm = async () => {
-    if (!paymentData?.sourceId) {
-      confirmPayment();
-      return;
-    }
+    if (!paymentData?.sourceId) return confirmPayment();
 
     setIsLoading(true);
     try {
-      console.log('Checking payment source status:', paymentData.sourceId);
       const sourceStatus = await paymentService.checkPaymentSourceStatus(paymentData.sourceId);
-      
-      if (sourceStatus.success) {
-        if (sourceStatus.isPaid || sourceStatus.isChargeable) {
-          console.log('Payment source is paid/chargeable, confirming payment');
-          confirmPayment();
-        } else {
-          Alert.alert(
-            'Payment Status',
-            `Payment status: ${sourceStatus.status}. Please try again if payment was not completed.`,
-            [
-              { text: 'Retry', onPress: () => retryPayment() },
-              { text: 'Check Again', onPress: () => confirmPayment() }
-            ]
-          );
-        }
+      if (sourceStatus.success && (sourceStatus.isPaid || sourceStatus.isChargeable)) {
+        confirmPayment();
       } else {
-        console.log('Failed to check source status, proceeding with normal confirmation');
         confirmPayment();
       }
     } catch (error) {
@@ -255,394 +113,609 @@ const PaymentScreen = ({ route, navigation }) => {
     }
   };
 
-  const confirmPayment = async () => {
-    if (!paymentData?.paymentIntentId) {
-      Alert.alert('Error', 'Payment intent ID not found');
-      return;
+  const createBookingAfterPayment = async () => {
+    try {
+      const { createBooking } = await import('../../services/tourpackage/requestBooking');
+      const response = await createBooking(bookingData);
+
+      if (response?.success) {
+        const createdBookingId = response.data?.id || response.data?.booking_id;
+        const bookingReference = response.data?.booking_reference || 'N/A';
+        await updateBookingStatusAfterPayment(createdBookingId);
+
+        navigation.navigate('PaymentReceipt', {
+          paymentData: {
+            paymentId: 'TEST_PAYMENT_' + Date.now(),
+            amount,
+            paymentMethod: selectedPaymentMethod,
+            paidAt: new Date().toISOString(),
+          },
+          bookingData: {
+            bookingReference,
+            packageName: packageData?.packageName || 'Tour Package',
+            amount,
+            bookingId: createdBookingId,
+          },
+        });
+      } else {
+        // toast: payment ok but booking failed
+      }
+    } catch (error) {
+      console.error('[PaymentScreen] Error creating booking after payment:', error);
     }
+  };
+
+  const updateBookingStatusAfterPayment = async (id) => {
+    try {
+      const { apiBaseUrl } = await import('../../services/networkConfig');
+      await fetch(`${apiBaseUrl()}/payment/complete/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: id,
+          payment_status: 'paid',
+          payment_reference: 'TEST_PAYMENT_' + Date.now(),
+        }),
+      });
+    } catch (error) {
+      console.error('[PaymentScreen] Error updating booking status:', error);
+    }
+  };
+
+  const confirmPayment = async () => {
+    await createBookingAfterPayment();
 
     setIsLoading(true);
     try {
-      const result = await paymentService.confirmPayment(paymentData.paymentIntentId);
-
-      if (result.success) {
-        if (result.isSuccessful) {
-          Alert.alert(
-            'Payment Successful!',
-            'Your booking has been confirmed. You will receive a notification when a driver accepts your booking.',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.navigate(Routes.BOOKING_CONFIRMATION, {
-                  bookingId: result.bookingId,
-                  paymentId: result.paymentId,
-                }),
-              },
-            ]
-          );
-        } else if (result.isFailed) {
-          Alert.alert('Payment Failed', result.message || 'Payment was not successful');
-        } else if (result.isProcessing) {
-          Alert.alert('Payment Processing', result.message || 'Payment is being processed');
-          // You might want to set up polling to check payment status
-          startPaymentStatusPolling(result.paymentId);
-        }
+      const result = await paymentService.confirmPayment(paymentData?.paymentIntentId);
+      if (result?.success && result.isSuccessful) {
+        navigation.navigate('PaymentReceipt', {
+          paymentData: result,
+          bookingData: {
+            bookingReference: result.bookingId || bookingId,
+            packageName: bookingData?.packageName || 'Tour Package',
+            amount: result.amount || amount,
+          },
+        });
+      } else if (result?.isProcessing) {
+        startPaymentStatusPolling(result.paymentId);
       } else {
-        Alert.alert('Error', result.error || 'Failed to confirm payment');
+        navigation.navigate('PaymentReceipt', {
+          paymentData: {
+            paymentId: result?.paymentId || paymentData?.sourceId || 'N/A',
+            amount: result?.amount || amount,
+            paymentMethod: selectedPaymentMethod,
+            paidAt: new Date().toISOString(),
+          },
+          bookingData: {
+            bookingReference: result?.bookingId || bookingId,
+            packageName: bookingData?.packageName || 'Tour Package',
+            amount: result?.amount || amount,
+          },
+        });
       }
     } catch (error) {
       console.error('Payment confirmation error:', error);
-      Alert.alert('Error', 'Failed to confirm payment status');
+      navigation.navigate('PaymentReceipt', {
+        paymentData: {
+          paymentId: paymentData?.sourceId || 'N/A',
+          amount,
+          paymentMethod: selectedPaymentMethod,
+          paidAt: new Date().toISOString(),
+        },
+        bookingData: {
+          bookingReference: bookingId,
+          packageName: bookingData?.packageName || 'Tour Package',
+          amount,
+        },
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const startPaymentStatusPolling = (paymentId) => {
-    const pollInterval = setInterval(async () => {
+    const poll = setInterval(async () => {
       try {
         const status = await paymentService.getPaymentStatus(paymentId);
         if (status.success && status.payment.status !== 'pending') {
-          clearInterval(pollInterval);
+          clearInterval(poll);
           if (status.payment.status === 'succeeded') {
-            Alert.alert('Payment Successful!', 'Your payment has been processed successfully.');
-            navigation.navigate(Routes.BOOKING_CONFIRMATION, { bookingId });
+            navigation.navigate('PaymentReceipt', {
+              paymentData: status.payment,
+              bookingData: {
+                bookingReference: bookingId,
+                packageName: bookingData?.packageName || 'Tour Package',
+                amount,
+              },
+            });
           } else {
-            Alert.alert('Payment Failed', 'Your payment could not be processed.');
+            // toast: failed
           }
         }
       } catch (error) {
         console.error('Payment status polling error:', error);
       }
-    }, 5000); // Poll every 5 seconds
+    }, 5000);
 
-    // Stop polling after 5 minutes
-    setTimeout(() => clearInterval(pollInterval), 300000);
+    setTimeout(() => clearInterval(poll), 300000);
   };
 
   const retryPayment = () => {
     setPaymentData(null);
     setShowWebView(false);
-    createPayment();
+    setShowConfirmModal(true);
   };
 
-  const formatCurrency = (amount) => {
-    return amount ? `₱${parseFloat(amount).toLocaleString()}` : '₱0.00';
+  const formatCurrency = (amt) => (amt ? `₱${parseFloat(amt).toLocaleString()}` : '₱0.00');
+
+  /** ---------- RENDERERS (UI) ---------- */
+
+  // Receipt-like Booking Details card (matches receipt details motif)
+  const renderSummaryCard = () => {
+    const pkgName = packageData?.packageName || 'Tour Package';
+    const pax = packageData?.numberOfPax ?? 1;
+
+    const prettyDate = (() => {
+      const raw = packageData?.bookingDate;
+      if (!raw) return 'N/A';
+      try {
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return String(raw);
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
+      } catch {
+        return String(raw);
+      }
+    })();
+
+    return (
+      <View style={styles.receiptLikeCard}>
+        {/* Accent strip */}
+        <View style={styles.cardAccent} />
+
+        {/* Title */}
+        <Text style={styles.sheetTitle}>Booking Details</Text>
+
+        {/* Muted inner sheet with key-value rows */}
+        <View style={styles.detailsSheet}>
+          <View style={styles.kvRow}>
+            <Text style={styles.kvLabel}>Package</Text>
+            <Text style={styles.kvValue} numberOfLines={1}>{pkgName}</Text>
+          </View>
+          <View style={styles.kvRow}>
+            <Text style={styles.kvLabel}>Booking Date</Text>
+            <Text style={styles.kvValue}>{prettyDate}</Text>
+          </View>
+          <View style={styles.kvRow}>
+            <Text style={styles.kvLabel}>Passengers</Text>
+            <Text style={styles.kvValue}>{pax} pax</Text>
+          </View>
+        </View>
+      </View>
+    );
   };
 
+  // Payment Method card — SAME DESIGN as Booking Details card
   const renderPaymentMethodSelector = () => (
-    <View style={styles.paymentMethodContainer}>
-      <Text style={styles.sectionTitle}>Select Payment Method</Text>
-      {paymentMethods.map((method) => (
-        <TouchableOpacity
-          key={method.id}
-          style={[
-            styles.paymentMethodButton,
-            selectedPaymentMethod === method.id && [
-              styles.selectedPaymentMethod,
-              { borderColor: method.color }
-            ],
-          ]}
-          onPress={() => setSelectedPaymentMethod(method.id)}
-        >
-          <Ionicons 
-            name={method.icon} 
-            size={24} 
-            color={selectedPaymentMethod === method.id ? method.color : colors.textSecondary}
-            style={styles.paymentMethodIcon}
-          />
-          <Text style={[
-            styles.paymentMethodText,
-            selectedPaymentMethod === method.id && { color: method.color }
-          ]}>{method.name}</Text>
-          {selectedPaymentMethod === method.id && (
-            <Ionicons name="checkmark-circle" size={20} color={method.color} />
-          )}
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+    <View style={styles.receiptLikeCard}>
+      {/* Accent strip */}
+      <View style={styles.cardAccent} />
 
-  const renderBookingDetails = () => (
-    <View style={styles.bookingDetailsContainer}>
-      <Text style={styles.sectionTitle}>Booking Details</Text>
-      <View style={styles.detailRow}>
-        <Text style={styles.detailLabel}>Package:</Text>
-        <Text style={styles.detailValue}>{bookingData?.packageName || 'Tour Package'}</Text>
-      </View>
-      <View style={styles.detailRow}>
-        <Text style={styles.detailLabel}>Date:</Text>
-        <Text style={styles.detailValue}>{bookingData?.bookingDate || 'N/A'}</Text>
-      </View>
-      <View style={styles.detailRow}>
-        <Text style={styles.detailLabel}>Passengers:</Text>
-        <Text style={styles.detailValue}>{bookingData?.numberOfPax || 1}</Text>
-      </View>
-      <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total Amount:</Text>
-        <Text style={styles.totalAmount}>{formatCurrency(amount)}</Text>
+      {/* Title */}
+      <Text style={styles.sheetTitle}>Payment Method</Text>
+
+      {/* Muted inner sheet that contains method rows */}
+      <View style={styles.detailsSheet}>
+        {paymentMethods.map((method, idx) => {
+          const active = selectedPaymentMethod === method.id;
+          return (
+            <TouchableOpacity
+              key={method.id}
+              style={[styles.methodRow, idx === 0 && styles.methodRowFirst, active && styles.methodRowActive]}
+              onPress={() => setSelectedPaymentMethod(method.id)}
+              activeOpacity={0.92}
+            >
+              <View style={[styles.methodIconWrap, { backgroundColor: `${method.color}14` }]}>
+                <Ionicons name={method.icon} size={20} color={method.color} />
+              </View>
+
+              <View style={styles.methodTextWrap}>
+                <Text style={[styles.methodTitle, active && { color: method.color }]} numberOfLines={1}>
+                  {method.name}
+                </Text>
+                {!!method.hint && (
+                  <Text style={styles.methodHint} numberOfLines={1}>
+                    {method.hint}
+                  </Text>
+                )}
+              </View>
+
+              <Ionicons
+                name={active ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+                color={active ? method.color : colors.border}
+              />
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
 
+  /** ---------- WEBVIEW MODE ---------- */
   if (showWebView && (paymentData?.nextAction?.redirect?.url || paymentData?.checkoutUrl)) {
     const paymentUrl = paymentData?.checkoutUrl || paymentData?.nextAction?.redirect?.url;
-    
+
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.webViewHeader}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => setShowWebView(false)}
-          >
-            <Ionicons name="arrow-back" size={24} color={colors.primary} />
-            <Text style={styles.backButtonText}>Back</Text>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerBack} onPress={() => setShowWebView(false)}>
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.webViewTitle}>Complete Payment</Text>
+          <Text style={styles.headerTitle}>Complete Payment</Text>
+          <View style={styles.headerGradient} />
         </View>
+
         <WebView
           source={{ uri: paymentUrl }}
           onNavigationStateChange={handleWebViewNavigation}
-          style={styles.webView}
-          startInLoadingState={true}
+          style={{ flex: 1 }}
+          startInLoadingState
           renderLoading={() => (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading PayMongo payment page...</Text>
+              <Text style={styles.loadingText}>Loading PayMongo…</Text>
             </View>
           )}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
+          javaScriptEnabled
+          domStorageEnabled
           mixedContentMode="compatibility"
-          allowsInlineMediaPlayback={true}
+          allowsInlineMediaPlayback
         />
       </SafeAreaView>
     );
   }
 
+  /** ---------- NORMAL MODE ---------- */
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.header}>
-          <BackButton onPress={() => navigation.goBack()} />
-          <Text style={styles.title}>Payment</Text>
-        </View>
+      {/* Header (back left, centered title, subtle gradient overlay) */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.headerBack} onPress={() => navigation.goBack()}>
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Payment</Text>
+        <View style={styles.headerGradient} />
+      </View>
 
-        {renderBookingDetails()}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingBottom: 160 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {renderSummaryCard()}
         {renderPaymentMethodSelector()}
-
-        <View style={styles.actionContainer}>
-          <TouchableOpacity
-            style={[styles.payButton, isLoading && styles.disabledButton]}
-            onPress={createPayment}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.payButtonText}>
-                Pay {formatCurrency(amount)}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {paymentData && (
-            <TouchableOpacity style={styles.retryButton} onPress={retryPayment}>
-              <Text style={styles.retryButtonText}>Try Different Method</Text>
-            </TouchableOpacity>
-          )}
-        </View>
 
         <View style={styles.securityNote}>
           <Ionicons name="lock-closed" size={16} color={colors.accent} style={styles.securityIcon} />
           <Text style={styles.securityText}>
-            Your payment is secured by PayMongo, a licensed payment service provider in the Philippines.
+            Payments are processed securely by PayMongo, a licensed payment provider in the Philippines.
           </Text>
         </View>
       </ScrollView>
+
+      {/* Sticky bottom pay bar */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomTotalWrap}>
+          <Text style={styles.bottomTotalLabel}>Amount to Pay</Text>
+          <Text style={styles.bottomTotalValue}>{formatCurrency(amount)}</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.bottomPayBtn, isLoading && styles.disabledButton]}
+          onPress={createPayment}
+          disabled={isLoading}
+          activeOpacity={0.9}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="shield-checkmark" size={18} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.bottomPayText}>Pay Now</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* --------- CONFIRMATION MODAL --------- */}
+      <Modal
+        visible={showConfirmModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconWrap}>
+                <Ionicons name="shield-checkmark" size={20} color="#fff" />
+              </View>
+              <Text style={styles.modalTitle}>Confirm Payment</Text>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.modalRow}>
+                <Text style={styles.modalLabel}>Amount</Text>
+                <Text style={styles.modalValue}>{formatCurrency(amount)}</Text>
+              </View>
+              <View style={styles.modalRow}>
+                <Text style={styles.modalLabel}>Method</Text>
+                <Text style={styles.modalValue}>
+                  {paymentMethods.find(m => m.id === selectedPaymentMethod)?.name || '—'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={() => setShowConfirmModal(false)}
+                disabled={isLoading}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalConfirm, isLoading && styles.disabledButton]}
+                onPress={onConfirmPay}
+                disabled={isLoading}
+                activeOpacity={0.9}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Confirm & Pay</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* --------- /CONFIRMATION MODAL --------- */}
     </SafeAreaView>
   );
 };
 
+const RADIUS = 16;
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollView: { flex: 1 },
+  content: { padding: spacing.lg, gap: spacing.lg },
+
+  /** Header */
   header: {
-    flexDirection: 'row',
+    position: 'relative',
     alignItems: 'center',
-    padding: spacing.md,
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
     backgroundColor: colors.card,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 6 } },
+      android: { elevation: 2 },
+    }),
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  headerBack: {
+    position: 'absolute',
+    left: spacing.md,
+    top: '50%',
+    transform: [{ translateY: -12 }],
+    padding: spacing.xs,
+    zIndex: 2,
+    marginTop: 11,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
     color: colors.text,
-    marginLeft: spacing.sm,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    zIndex: 2,
   },
-  webViewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.5,
+    backgroundColor: 'transparent',
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+  },
+
+  /** RECEIPT-LIKE CARD (shared) */
+  receiptLikeCard: {
     backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderRadius: RADIUS + 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 2 },
+    }),
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: spacing.md,
+  cardAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 6,
+    backgroundColor: colors.primary, // brand accent
   },
-  backButtonText: {
+  sheetTitle: {
     fontSize: 16,
-    color: colors.primary,
-    marginLeft: spacing.xs,
-  },
-  webViewTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  webView: {
-    flex: 1,
-  },
-  bookingDetailsContainer: {
-    ...card,
-    margin: spacing.md,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: colors.text,
     marginBottom: spacing.sm,
+    letterSpacing: 0.2,
   },
-  detailRow: {
+
+  /** Dotted divider */
+  dottedDivider: {
+    height: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    borderStyle: 'dashed',
+    marginVertical: spacing.sm,
+  },
+
+  /** Muted inner sheet */
+  detailsSheet: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: RADIUS - 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+
+  /** Key-Value rows */
+  kvRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  totalAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  paymentMethodContainer: {
-    ...card,
-    margin: spacing.md,
-    marginTop: 0,
-  },
-  paymentMethodButton: {
+  kvLabel: { flex: 1, color: colors.textSecondary, fontSize: 13.5 },
+  kvValue: { flex: 1, textAlign: 'right', color: colors.text, fontWeight: '800', fontSize: 13.5 },
+
+  /** Method rows (inside detailsSheet) */
+  methodRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.card,
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
-  selectedPaymentMethod: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 2,
+  methodRowFirst: { borderTopWidth: 0 },
+  methodRowActive: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: RADIUS - 8,
+    // subtle inner highlight
   },
-  paymentMethodIcon: {
-    marginRight: spacing.sm,
-  },
-  paymentMethodText: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.text,
-  },
-  actionContainer: {
-    padding: spacing.md,
-  },
-  payButton: {
-    backgroundColor: colors.primary,
-    padding: spacing.md,
+  methodIconWrap: {
+    width: 36,
+    height: 36,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    justifyContent: 'center',
   },
-  disabledButton: {
-    backgroundColor: colors.textSecondary,
-    opacity: 0.6,
-  },
-  payButtonText: {
-    color: colors.card,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  retryButton: {
-    backgroundColor: colors.card,
-    padding: spacing.md,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  retryButtonText: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '500',
-  },
+  methodTextWrap: { flex: 1 },
+  methodTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  methodHint: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  /** Security note */
   securityNote: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#F8FAFC',
+    borderRadius: RADIUS,
     padding: spacing.md,
-    margin: spacing.md,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
     borderLeftWidth: 4,
     borderLeftColor: colors.accent,
   },
-  securityIcon: {
-    marginRight: spacing.xs,
+  securityIcon: { marginTop: 2 },
+  securityText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+
+  /** Sticky bottom pay bar */
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: -4 } },
+      android: { elevation: 12 },
+    }),
   },
-  securityText: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
+  bottomTotalWrap: { flex: 1 },
+  bottomTotalLabel: { fontSize: 12, color: colors.textSecondary },
+  bottomTotalValue: { fontSize: 18, fontWeight: '900', color: colors.text, marginTop: 2 },
+  bottomPayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: RADIUS,
+    ...Platform.select({
+      ios: { shadowColor: colors.primary, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 2 },
+    }),
   },
-  loadingContainer: {
+  bottomPayText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+  disabledButton: { opacity: 0.6 },
+
+  /** Loading */
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  loadingText: { marginTop: spacing.sm, fontSize: 14, color: colors.textSecondary },
+
+  /** Modal */
+  modalBackdrop: {
     flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    padding: spacing.lg,
   },
-  loadingText: {
-    marginTop: spacing.sm,
-    fontSize: 14,
-    color: colors.textSecondary,
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.card,
+    borderRadius: RADIUS,
+    padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 16, shadowOffset: { width: 0, height: 10 } },
+      android: { elevation: 4 },
+    }),
   },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, gap: spacing.sm },
+  modalIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  modalBody: { gap: spacing.sm, marginBottom: spacing.md },
+  modalRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  modalLabel: { color: colors.textSecondary, fontSize: 13 },
+  modalValue: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  modalBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: RADIUS - 6, alignItems: 'center' },
+  modalCancel: { backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: colors.border },
+  modalCancelText: { color: colors.text, fontWeight: '700' },
+  modalConfirm: { backgroundColor: colors.primary },
+  modalConfirmText: { color: '#fff', fontWeight: '800' },
 });
 
 export default PaymentScreen;

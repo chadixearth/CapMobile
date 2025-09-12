@@ -6,14 +6,18 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  ScrollView,
+  TouchableOpacity,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Button from '../../components/Button'; // ✅ keep the refresh button
+import { useFocusEffect } from '@react-navigation/native';
+import Button from '../../components/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { listGoodsServicesPosts } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
+
+const { width } = Dimensions.get('window');
 
 export default function GoodsServicesScreen() {
   const auth = useAuth();
@@ -55,31 +59,37 @@ export default function GoodsServicesScreen() {
   const fetchRecentReviews = useCallback(async () => {
     setLoadingReviews(true);
     try {
-      const res = await listReviews({ limit: 20, include_stats: false });
+      // Fetch all reviews to match with drivers
+      const res = await listReviews({ limit: 100, include_stats: true });
       if (res.success) {
         const arr = Array.isArray(res.data) ? res.data : [];
+        console.log('Fetched reviews:', arr.length);
         setReviews(arr);
       }
-    } catch (_) {
-      // ignore errors, leave reviews empty
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
     } finally {
       setLoadingReviews(false);
     }
   }, []);
 
-  // Resolve author names for posts that lack a concrete name
+  // Resolve author names and clear cache when posts change
   useEffect(() => {
     const run = async () => {
       try {
+        // Clear author map to force refresh
+        setAuthorMap({});
+        
         const missingIds = Array.from(
           new Set(
             (Array.isArray(posts) ? posts : [])
               .map((p) => p.author_id)
               .filter(Boolean)
-              .filter((id) => !authorMap[id])
           )
         );
         if (missingIds.length === 0) return;
+
+        console.log('Fetching author profiles for:', missingIds.length, 'users');
 
         const results = await Promise.all(
           missingIds.map(async (id) => {
@@ -97,30 +107,37 @@ export default function GoodsServicesScreen() {
                   name, 
                   email: userData.email || '', 
                   role: userData.role || 'user',
-                  phone: userData.phone || ''
+                  phone: userData.phone || '',
+                  profile_photos: userData.profile_photos || userData.photos || []
                 };
               }
-            } catch {}
+            } catch (error) {
+              console.warn('Failed to fetch profile for user:', id, error.message);
+            }
             return { id, name: '', email: '', role: 'user', phone: '' };
           })
         );
 
-        const mapUpdate = { ...authorMap };
+        const mapUpdate = {};
         for (const r of results) {
           mapUpdate[r.id] = { name: r.name, email: r.email, role: r.role, phone: r.phone };
         }
+        console.log('Author map updated with:', Object.keys(mapUpdate).length, 'profiles');
         setAuthorMap(mapUpdate);
-      } catch {}
+      } catch (error) {
+        console.error('Error resolving author profiles:', error);
+      }
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posts]);
 
-  useEffect(() => {
-    // Load posts and reviews on mount
-    fetchPosts();
-    fetchRecentReviews();
-  }, [fetchPosts, fetchRecentReviews]);
+  // Refresh data when screen comes into focus (fixes photo not showing after bio update)
+  useFocusEffect(
+    useCallback(() => {
+      fetchPosts();
+      fetchRecentReviews();
+    }, [fetchPosts, fetchRecentReviews])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -128,23 +145,129 @@ export default function GoodsServicesScreen() {
     setRefreshing(false);
   }, [fetchPosts, fetchRecentReviews]);
 
-  // Modern media grid (2x2) — simple + clean
+  // Enhanced media grid with better layout and error handling
   const renderMediaGrid = (mediaArr) => {
-    if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
-    const images = mediaArr.filter((m) => m?.url).slice(0, 4);
+    console.log('renderMediaGrid called with:', mediaArr);
+    
+    if (!Array.isArray(mediaArr) || mediaArr.length === 0) {
+      console.log('No media array or empty array');
+      return null;
+    }
+    
+    // Filter valid images and ensure URLs are accessible
+    const images = mediaArr
+      .filter((m) => {
+        const isValid = m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '';
+        if (!isValid) {
+          console.log('Invalid media item:', m);
+        }
+        return isValid;
+      })
+      .map((m) => ({
+        ...m,
+        url: m.url.replace(/\?$/, '') // Remove trailing ?
+      }))
+      .slice(0, 6); // Show up to 6 images
+    
+    console.log('Filtered images:', images.length, 'valid images');
+    
+    if (images.length === 0) {
+      console.log('No valid images found');
+      return null;
+    }
+    
+    const getImageStyle = (index, total) => {
+      if (total === 1) return [styles.mediaTile, styles.singleImage];
+      if (total === 2) return [styles.mediaTile, styles.doubleImage];
+      if (total === 3) {
+        return index === 0 ? [styles.mediaTile, styles.tripleMain] : [styles.mediaTile, styles.tripleSide];
+      }
+      return [styles.mediaTile, styles.quadImage];
+    };
+    
+    console.log('About to render media grid with', images.length, 'images');
+    
     return (
-      <View style={styles.mediaGrid}>
-        {images.map((m, idx) => (
-          <Image key={idx} source={{ uri: m.url }} style={styles.mediaTile} />
-        ))}
+      <View style={styles.mediaContainer}>
+        <Text style={styles.mediaLabel}>Photos ({images.length})</Text>
+        <View style={styles.mediaGrid}>
+          {images.map((m, idx) => {
+            console.log(`Rendering image ${idx + 1}:`, m.url);
+            return (
+              <TouchableOpacity key={idx} activeOpacity={0.8}>
+                <Image 
+                  source={{ uri: m.url }} 
+                  style={getImageStyle(idx, images.length)}
+                  resizeMode="cover"
+                  onError={(error) => {
+                    console.log('❌ Image load error for URL:', m.url);
+                    console.log('Error details:', error.nativeEvent);
+                  }}
+                  onLoad={() => {
+                    console.log('✅ Image loaded successfully:', m.url);
+                  }}
+                  onLoadStart={() => {
+                    console.log('🔄 Image loading started:', m.url);
+                  }}
+                />
+                {images.length > 4 && idx === 3 && (
+                  <View style={styles.moreOverlay}>
+                    <Text style={styles.moreText}>+{images.length - 4}</Text>
+                  </View>
+                )}
+                {m.caption && (
+                  <View style={styles.captionOverlay}>
+                    <Text style={styles.captionText} numberOfLines={1}>{m.caption}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     );
   };
 
   const renderItem = ({ item }) => {
-    const sampleReviews = reviews.slice(0, 3);
+    // Get reviews specific to this driver/owner
+    const driverReviews = reviews.filter(review => 
+      review.driver_id === item.author_id || 
+      review.package_owner_id === item.author_id
+    );
+    
+    // Calculate average rating for this driver
+    const avgRating = driverReviews.length > 0 
+      ? driverReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / driverReviews.length
+      : 0;
 
     const authorFromMap = authorMap[item.author_id] || {};
+    
+    // Get media from multiple possible sources
+    let mediaArray = [];
+    
+    // Handle the media field which might be an array of objects or just [Array] placeholder
+    if (item.media && Array.isArray(item.media) && item.media.length > 0) {
+      // Check if it's actual media objects or just placeholder
+      const firstItem = item.media[0];
+      if (firstItem && typeof firstItem === 'object' && firstItem.url) {
+        mediaArray = item.media;
+      }
+    }
+    
+    // Fallback to other possible fields
+    if (mediaArray.length === 0) {
+      if (Array.isArray(item.photos) && item.photos.length > 0) {
+        mediaArray = item.photos.map(url => ({ url }));
+      } else if (Array.isArray(item.images) && item.images.length > 0) {
+        mediaArray = item.images.map(url => ({ url }));
+      } else if (Array.isArray(item.profile_photos) && item.profile_photos.length > 0) {
+        mediaArray = item.profile_photos.map(url => ({ url }));
+      } else if (Array.isArray(authorFromMap.profile_photos) && authorFromMap.profile_photos.length > 0) {
+        mediaArray = authorFromMap.profile_photos.map(url => ({ url }));
+      }
+    }
+    
+    console.log('Media array for item:', item.id, mediaArray);
     
     const displayName = (() => {
       // Try direct name fields first
@@ -171,75 +294,116 @@ export default function GoodsServicesScreen() {
     })();
     
     const userRole = item.author_role || authorFromMap?.role || 'user';
-    const userEmail = item.author_email || authorFromMap?.email || '';
+    const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
 
     return (
       <View style={styles.card}>
-        {/* Header: Avatar + Name + Role + Contact Info */}
+        {/* Enhanced Header */}
         <View style={styles.headerRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+            </View>
+            {userRole && (
+              <View style={styles.roleIndicator}>
+                <Ionicons 
+                  name={userRole.includes('driver') ? 'car' : 'business'} 
+                  size={12} 
+                  color={COLORS.white} 
+                />
+              </View>
+            )}
           </View>
           <View style={styles.headerTextWrap}>
-            <Text style={styles.author} numberOfLines={1}>{displayName}</Text>
-            <View style={styles.metaWrap}>
-              {!!userRole && (
+            <View style={styles.nameRow}>
+              <Text style={styles.author} numberOfLines={1}>{displayName}</Text>
+              {userRole && (
                 <View style={styles.pill}>
                   <Text style={styles.pillText}>{String(userRole).toUpperCase()}</Text>
                 </View>
               )}
-              {!!userEmail && (
-                <Text style={styles.contactText} numberOfLines={1}>📧 {userEmail}</Text>
+            </View>
+            <View style={styles.contactRow}>
+              {userEmail && (
+                <TouchableOpacity 
+                  style={styles.contactChip}
+                  onPress={() => {
+                    // Could implement email functionality here
+                    console.log('Email:', userEmail);
+                  }}
+                >
+                  <Ionicons name="mail" size={12} color={COLORS.primary} />
+                  <Text style={styles.contactText} numberOfLines={1}>{userEmail}</Text>
+                </TouchableOpacity>
               )}
-              {!!userPhone && (
-                <Text style={styles.contactText} numberOfLines={1}>📱 {userPhone}</Text>
+              {userPhone && (
+                <TouchableOpacity 
+                  style={styles.contactChip}
+                  onPress={() => {
+                    // Could implement call functionality here
+                    console.log('Phone:', userPhone);
+                  }}
+                >
+                  <Ionicons name="call" size={12} color={COLORS.primary} />
+                  <Text style={styles.contactText} numberOfLines={1}>{userPhone}</Text>
+                </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.timeText} numberOfLines={1}>{getPostedOrUpdated(item)}</Text>
+            <Text style={styles.timeText}>{getPostedOrUpdated(item)}</Text>
           </View>
         </View>
 
         {/* Content */}
-        {!!item.title && <Text style={styles.title} numberOfLines={2}>{item.title}</Text>}
-        {!!item.description && <Text style={styles.description} numberOfLines={5}>{item.description}</Text>}
+        {item.title && <Text style={styles.title}>{item.title}</Text>}
+        {item.description && (
+          <View style={styles.bioSection}>
+            <Text style={styles.bioLabel}>About {displayName}:</Text>
+            <Text style={styles.description}>{item.description}</Text>
+          </View>
+        )}
 
-        {renderMediaGrid(item.media)}
+        {/* Driver Rating */}
+        {avgRating > 0 && (
+          <View style={styles.ratingSection}>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={16} color="#FFB800" />
+              <Text style={styles.ratingValue}>{avgRating.toFixed(1)}</Text>
+              <Text style={styles.ratingCount}>({driverReviews.length} review{driverReviews.length !== 1 ? 's' : ''})</Text>
+            </View>
+          </View>
+        )}
 
-        {/* Reviews */}
-        <View style={styles.sectionHeader}>
-          <Ionicons name="chatbubbles-outline" size={14} color={COLORS.pillText} style={{ marginRight: 6 }} />
-          <Text style={styles.sectionTitle}>Recent Reviews</Text>
-        </View>
+        {renderMediaGrid(mediaArray)}
 
-        <View style={styles.reviewBox}>
-          {loadingReviews ? (
-            <Text style={styles.muted}>Loading reviews...</Text>
-          ) : sampleReviews.length === 0 ? (
-            <Text style={styles.muted}>No reviews yet.</Text>
-          ) : (
-            sampleReviews.map((rv, idx) => (
+        {/* Driver-specific Reviews */}
+        {driverReviews.length > 0 && (
+          <View style={styles.reviewsSection}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="star" size={14} color="#FFB800" />
+              <Text style={styles.sectionTitle}>Customer Reviews ({driverReviews.length})</Text>
+            </View>
+            {driverReviews.slice(0, 3).map((rv, idx) => (
               <View key={rv.id || idx} style={styles.reviewItem}>
-                <View style={styles.reviewTopRow}>
-                  <Text style={styles.reviewReviewer} numberOfLines={1}>
-                    {rv.reviewer_name || 'Tourist'}
-                  </Text>
+                <View style={styles.reviewRow}>
+                  <Text style={styles.reviewReviewer}>{rv.reviewer_name || rv.tourist_name || 'Customer'}</Text>
                   {Number.isFinite(Number(rv.rating)) && (
-                    <View style={styles.ratingChip}>
-                      <Text style={styles.ratingText}>★ {Number(rv.rating).toFixed(1)}</Text>
-                    </View>
+                    <Text style={styles.ratingText}>★ {Number(rv.rating).toFixed(1)}</Text>
                   )}
                 </View>
-                {!!rv.comment && (
-                  <Text style={styles.reviewText} numberOfLines={3}>{rv.comment}</Text>
+                {rv.comment && (
+                  <Text style={styles.reviewText} numberOfLines={2}>{rv.comment}</Text>
                 )}
-                <Text style={styles.reviewTime}>
-                  {formatDateTime(rv.created_at || rv.updated_at || Date.now())}
-                </Text>
+                {rv.created_at && (
+                  <Text style={styles.reviewDate}>{formatDateTime(rv.created_at)}</Text>
+                )}
               </View>
-            ))
-          )}
-        </View>
+            ))}
+            {driverReviews.length > 3 && (
+              <Text style={styles.moreReviews}>+{driverReviews.length - 3} more reviews</Text>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -253,7 +417,14 @@ export default function GoodsServicesScreen() {
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={!loading ? <Text style={styles.empty}>No posts yet.</Text> : null}
+        ListEmptyComponent={!loading ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="business-outline" size={48} color={COLORS.sub} />
+            <Text style={styles.empty}>No goods & services posts yet.</Text>
+            <Text style={styles.emptySubtext}>Drivers and owners can create posts to showcase their services.</Text>
+          </View>
+        ) : null}
+        showsVerticalScrollIndicator={false}
       />
 
       {/* ✅ Keep the refresh button (no custom request button) */}
@@ -271,14 +442,20 @@ export default function GoodsServicesScreen() {
 }
 
 const COLORS = {
-  bg: '#F7F7F8',
+  bg: '#F8F9FA',
   card: '#FFFFFF',
-  text: '#1E1E1E',
-  sub: '#6F6F6F',
-  line: '#EAEAEA',
-  pillBg: '#F2E9E6',
-  pillBorder: '#E7D6CE',
-  pillText: '#6B2E2B',
+  text: '#1A1A1A',
+  sub: '#6B7280',
+  line: '#E5E7EB',
+  primary: '#6B2E2B',
+  secondary: '#F3F4F6',
+  accent: '#EF4444',
+  success: '#10B981',
+  warning: '#F59E0B',
+  white: '#FFFFFF',
+  pillBg: '#FEF2F2',
+  pillBorder: '#FECACA',
+  pillText: '#991B1B',
 };
 
 const RADIUS = 14;
@@ -287,7 +464,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   listContent: { padding: 16, paddingBottom: 24 },
   error: { color: 'red', padding: 16 },
-  empty: { textAlign: 'center', color: COLORS.sub, marginTop: 28 },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  empty: { 
+    textAlign: 'center', 
+    color: COLORS.text, 
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    textAlign: 'center',
+    color: COLORS.sub,
+    fontSize: 14,
+    marginTop: 8,
+    lineHeight: 20,
+  },
   muted: { color: COLORS.sub, fontSize: 12 },
 
   // Footer refresh button stays
@@ -308,87 +504,272 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // Header
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  avatar: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    backgroundColor: COLORS.pillBg, 
+  // Enhanced header
+  headerRow: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    marginBottom: 16 
+  },
+  avatarContainer: {
+    position: 'relative',
     marginRight: 12,
+  },
+  avatar: { 
+    width: 48, 
+    height: 48, 
+    borderRadius: 24, 
+    backgroundColor: COLORS.primary, 
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.pillBorder,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   avatarText: {
-    color: COLORS.pillText,
+    color: COLORS.white,
     fontWeight: '700',
     fontSize: 18,
   },
-  headerTextWrap: { flex: 1, minWidth: 0 },
-  author: { fontWeight: '700', color: COLORS.text, fontSize: 16 },
-  metaWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' },
+  roleIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  headerTextWrap: { 
+    flex: 1, 
+    minWidth: 0 
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  author: { 
+    fontWeight: '700', 
+    color: COLORS.text, 
+    fontSize: 16,
+    flex: 1,
+  },
   pill: {
     backgroundColor: COLORS.pillBg,
     borderColor: COLORS.pillBorder,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
   },
-  pillText: { color: COLORS.pillText, fontWeight: '700', fontSize: 10, letterSpacing: 0.3 },
-  timeText: { fontSize: 12, color: COLORS.sub, flexShrink: 1, marginTop: 4 },
-  contactText: { fontSize: 11, color: COLORS.sub, flexShrink: 1 },
+  pillText: { 
+    color: COLORS.pillText, 
+    fontWeight: '600', 
+    fontSize: 10, 
+    letterSpacing: 0.5 
+  },
+  contactRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  contactChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+    maxWidth: 200,
+  },
+  contactText: { 
+    fontSize: 12, 
+    color: COLORS.primary, 
+    fontWeight: '500',
+    maxWidth: 120,
+  },
+  timeText: { 
+    fontSize: 12, 
+    color: COLORS.sub, 
+    fontWeight: '500' 
+  },
 
   // Content text
-  title: { color: COLORS.text, fontWeight: '700', fontSize: 16, marginBottom: 6, lineHeight: 22 },
-  description: { color: '#2D2D2D', lineHeight: 20, fontSize: 14, marginBottom: 10 },
+  title: { 
+    color: COLORS.text, 
+    fontWeight: '700', 
+    fontSize: 17, 
+    marginBottom: 8, 
+    lineHeight: 24 
+  },
+  bioSection: {
+    marginBottom: 12,
+  },
+  bioLabel: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  description: { 
+    color: COLORS.text, 
+    lineHeight: 22, 
+    fontSize: 15, 
+    marginBottom: 4 
+  },
+  
+  // Rating section
+  ratingSection: {
+    marginBottom: 12,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ratingValue: {
+    color: COLORS.text,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  ratingCount: {
+    color: COLORS.sub,
+    fontSize: 14,
+  },
 
-  // Media grid (2x2)
+  // Enhanced media grid
+  mediaContainer: {
+    marginVertical: 12,
+  },
+  mediaLabel: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginBottom: 8,
+  },
   mediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 6,
+    gap: 6,
   },
   mediaTile: {
-    width: '48%',
-    aspectRatio: 1.1,
     borderRadius: 12,
-    backgroundColor: '#EEE',
+    backgroundColor: '#ff0000', // Red background to debug
+    overflow: 'hidden',
+    minWidth: 50,
+    minHeight: 50,
+  },
+  singleImage: {
+    width: '100%',
+    height: 200,
+  },
+  doubleImage: {
+    width: '49%',
+    height: 120,
+  },
+  tripleMain: {
+    width: '60%',
+    height: 140,
+  },
+  tripleSide: {
+    width: '38%',
+    height: 67,
+  },
+  quadImage: {
+    width: '49%',
+    height: 100,
+  },
+  moreOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  captionOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  captionText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '500',
   },
 
-  // Section header
+  // Compact reviews
+  reviewsSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.line,
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  sectionTitle: { 
+    fontSize: 13, 
+    fontWeight: '600', 
+    color: COLORS.sub,
+  },
+  reviewItem: {
+    marginBottom: 8,
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  reviewReviewer: { 
+    fontWeight: '600', 
+    color: COLORS.text, 
+    fontSize: 12,
+  },
+  ratingText: { 
+    color: '#FFB800', 
+    fontWeight: '600', 
+    fontSize: 12 
+  },
+  reviewText: { 
+    color: COLORS.sub, 
+    fontSize: 12, 
+    lineHeight: 16,
+  },
+  reviewDate: {
+    color: COLORS.sub,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  moreReviews: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
     marginTop: 8,
-    marginBottom: 6,
   },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text },
-
-  // Reviews
-  reviewBox: {
-    backgroundColor: '#FBF7F4',
-    borderWidth: 1,
-    borderColor: '#EFE1D9',
-    borderRadius: 12,
-    padding: 10,
-  },
-  reviewItem: { paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#efefef' },
-  reviewTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  reviewReviewer: { fontWeight: '700', color: COLORS.text, flexShrink: 1, marginRight: 8 },
-  ratingChip: {
-    backgroundColor: COLORS.pillBg,
-    borderColor: COLORS.pillBorder,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  ratingText: { color: COLORS.pillText, fontWeight: '800', fontSize: 12 },
-  reviewText: { color: '#333', marginTop: 4, fontSize: 12, lineHeight: 18 },
-  reviewTime: { color: COLORS.sub, fontSize: 11, marginTop: 4 },
 });

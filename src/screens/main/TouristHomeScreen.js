@@ -21,11 +21,14 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import LeafletMapView from '../../components/LeafletMapView';
+import TourPackageModal from '../../components/TourPackageModal';
+
 import { fetchMapData } from '../../services/map/fetchMap';
 import { useFocusEffect } from '@react-navigation/native';
 import { requestRide } from '../../services/api';
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 import { supabase } from '../../services/supabase';
+import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
 
 const TERMINALS = [
@@ -64,6 +67,8 @@ export default function TouristHomeScreen({ navigation }) {
   const [markers, setMarkers] = useState([]);
   const [filteredPackages, setFilteredPackages] = useState([]);
   const [sortBy, setSortBy] = useState('default'); // 'default', 'price_low', 'price_high', 'rating'
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
     Animated.timing(sheetY, {
@@ -279,6 +284,9 @@ export default function TouristHomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Global Notification Manager */}
+      <NotificationManager navigation={navigation} />
+      
       <TARTRACKHeader onNotificationPress={() => navigation.navigate('Notification')}
                       onMessagePress={() => navigation.navigate('Chat')} />
 
@@ -379,12 +387,10 @@ export default function TouristHomeScreen({ navigation }) {
                 key={pkg.id || `${pkg.package_name}-${index}`}
                 activeOpacity={0.9}
                 style={styles.packageCard}
-                onPress={() =>
-                  navigation.navigate(Routes.REQUEST_BOOKING, {
-                    packageId: pkg.id,
-                    packageData: pkg,
-                  })
-                }
+                onPress={() => {
+                  setSelectedPackage(pkg);
+                  setModalVisible(true);
+                }}
               >
                 {pkg.photos && pkg.photos.length > 0 ? (
                   <Image source={{ uri: pkg.photos[0] }} style={styles.packageImage} resizeMode="cover" />
@@ -457,9 +463,10 @@ export default function TouristHomeScreen({ navigation }) {
 
                   <TouchableOpacity
                     style={styles.bookBtn}
-                    onPress={() =>
-                      navigation.navigate(Routes.REQUEST_BOOKING, { packageId: pkg.id, packageData: pkg })
-                    }
+                    onPress={() => {
+                      setSelectedPackage(pkg);
+                      setModalVisible(true);
+                    }}
                   >
                     <Ionicons name="book-outline" size={12} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.bookBtnText} numberOfLines={1}>
@@ -633,12 +640,28 @@ export default function TouristHomeScreen({ navigation }) {
           </TouchableOpacity>
         </Animated.View>
       </Modal>
+
+      {/* Tour Package Details Modal */}
+      <TourPackageModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        packageData={selectedPackage}
+        onBook={() => {
+          if (selectedPackage) {
+            navigation.navigate(Routes.REQUEST_BOOKING, {
+              packageId: selectedPackage.id,
+              packageData: selectedPackage,
+            });
+          }
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+
   scrollContent: { paddingBottom: 24 },
 
   searchBar: {

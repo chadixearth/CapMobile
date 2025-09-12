@@ -13,6 +13,57 @@ function getDevServerHost() {
 const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`; 
 import { getAccessToken, getCurrentUser } from '../authService';
 import { syncUserToBackend } from '../userSync';
+import NotificationService from '../notificationService';
+
+// Helper function to create tourist record via sync endpoint
+async function createTouristRecord(user) {
+  try {
+    const token = await getAccessToken();
+    const response = await fetch(`${API_BASE_URL.replace('/tour-booking/', '/auth/sync-user/')}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        id: user.id,
+        email: user.email,
+        name: user.name || user.email?.split('@')[0] || 'User',
+        role: user.role || 'tourist',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      data: result.data || result,
+    };
+  } catch (error) {
+    const isRLSError = error.message?.includes('row-level security policy') || 
+                      error.message?.includes('42501');
+    
+    if (isRLSError) {
+      console.log('Tourist record creation blocked by RLS policy');
+      return {
+        success: false,
+        error: 'Tourist record creation blocked by database policy',
+        rls_error: true
+      };
+    }
+    
+    console.log('Error creating tourist record:', error.message);
+    return {
+      success: false,
+      error: error.message || 'Failed to create tourist record',
+    };
+  }
+}
 
 export async function createBooking(bookingData) {
   // Defensive: enforce server-expected types and field names
@@ -92,7 +143,15 @@ export async function createBooking(bookingData) {
   let currentPayload = { ...payload };
   for (let i = 0; i < 3; i += 1) {
     try {
-      return await attempt(currentPayload);
+      const result = await attempt(currentPayload);
+      
+      // Backend already handles driver notifications
+      if (result && result.success && result.data) {
+        console.log('[Booking] ✅ Booking created successfully:', result.data.id);
+        console.log('[Booking] Backend notification result:', result.notification_result);
+      }
+      
+      return result;
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
       const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');
@@ -107,19 +166,31 @@ export async function createBooking(bookingData) {
       }
       
       if (isUserNotFound && i === 0) {
-        // Try to sync user to backend
+        // Try to create tourist record directly
         try {
           const user = await getCurrentUser();
           if (user) {
-            console.log('Attempting to sync user to backend...');
-            const syncResult = await syncUserToBackend(user);
-            if (syncResult.success) {
-              console.log('User synced successfully, retrying booking creation');
+            console.log('Attempting to create tourist record...');
+            const createResult = await createTouristRecord(user);
+            if (createResult.success) {
+              console.log('Tourist record created successfully, retrying booking creation');
               continue;
+            } else {
+              console.log('Failed to create tourist record, trying user sync...');
+              const syncResult = await syncUserToBackend(user);
+              if (syncResult.success) {
+                console.log('User synced successfully, retrying booking creation');
+                continue;
+              } else {
+                console.log('User sync failed, but continuing with booking attempt...');
+                // Don't fail the booking just because user sync failed
+                // The backend should handle missing users gracefully
+              }
             }
           }
         } catch (syncError) {
-          console.error('Failed to sync user:', syncError);
+          console.log('User sync error (non-blocking):', syncError.message);
+          // Continue with booking attempt even if user sync fails
         }
       }
       

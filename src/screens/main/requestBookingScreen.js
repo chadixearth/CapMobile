@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ImageBackground,
+  InteractionManager,
+  Keyboard,
+  Animated,
+  Easing,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { createBooking } from '../../services/tourpackage/requestBooking';
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +26,7 @@ import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/authService';
 import { useError } from '../../components/ErrorProvider';
 import ErrorHandlingService from '../../services/errorHandlingService';
+import NotificationService from '../../services/notificationService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F7F4F2';
@@ -28,10 +34,62 @@ const CARD = '#FFFFFF';
 const BORDER = '#E9DAD1';
 const MUTED = '#6B7280';
 const TEXT = '#1F2937';
+const HAIRLINE = '#ECECEC';
+const MUTED_BG = '#FAFAFA';
+
+const SCROLL_PADDING = 100; // how far above the field to land when focusing
 
 const RequestBookingScreen = ({ route, navigation }) => {
   const { packageId, packageData } = route.params || {};
   const { showError, showSuccess } = useError();
+
+  // Scroll + field position refs
+  const scrollRef = useRef(null);
+  const fieldPositions = useRef({}); // { fieldName: y }
+
+  const registerField = (name) => (e) => {
+    fieldPositions.current[name] = e.nativeEvent.layout.y;
+  };
+
+  const focusField = (name) => {
+    const y = fieldPositions.current[name] ?? 0;
+    InteractionManager.runAfterInteractions(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - SCROLL_PADDING), animated: true });
+    });
+  };
+
+  // Bottom bar hide/show while typing
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const bottomBarAnim = useRef(new Animated.Value(0)).current; // 0 = shown, 1 = hidden
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvt, () => {
+      setKeyboardVisible(true);
+      Animated.timing(bottomBarAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    });
+
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      Animated.timing(bottomBarAnim, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => setKeyboardVisible(false));
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [bottomBarAnim]);
 
   // Set navigation reference for error handling
   React.useEffect(() => {
@@ -52,14 +110,13 @@ const RequestBookingScreen = ({ route, navigation }) => {
     pickup_address: '',
   });
 
-  const [packages, setPackages] = useState([]); // kept for validation fallback, no dropdown
+  const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [bookingReference, setBookingReference] = useState('');
-  // Removed error modal states - using ErrorProvider instead
-
-
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Ensure pickup_time is in HH:MM:SS and valid
   const sanitizeTime = (timeStr) => {
@@ -75,7 +132,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
   };
 
   useEffect(() => {
-    // Keep this in case screen can be reached without full packageData
     if (!packageData && packageId) {
       loadPackages();
     }
@@ -94,7 +150,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
     try {
       const list = await tourPackageService.getAllPackages();
       setPackages(list);
-      // If we only got an ID, bind the full object so hero/pills work
       if (!packageData && packageId) {
         const found = list.find((p) => p.id === packageId);
         if (found) {
@@ -121,7 +176,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
       [field]: value,
     }));
 
-    // Recalculate total when pax changes
     if (field === 'number_of_pax') {
       const pkg = selectedPackage;
       if (pkg) {
@@ -147,6 +201,9 @@ const RequestBookingScreen = ({ route, navigation }) => {
           title: 'Missing Information',
           type: 'warning',
         });
+        if (['number_of_pax', 'contact_number', 'contact_email', 'pickup_address', 'special_requests'].includes(field)) {
+          focusField(field);
+        }
         return false;
       }
     }
@@ -156,10 +213,10 @@ const RequestBookingScreen = ({ route, navigation }) => {
         title: 'Invalid Passenger Count',
         type: 'warning',
       });
+      focusField('number_of_pax');
       return false;
     }
 
-    // Validate pickup_time format HH:MM or HH:MM:SS
     const timeOk =
       typeof formData.pickup_time === 'string' &&
       /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
@@ -182,6 +239,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
         title: 'Passenger Limit Exceeded',
         type: 'warning',
       });
+      focusField('number_of_pax');
       return false;
     }
 
@@ -196,7 +254,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
       return false;
     }
 
-    // Contact number validation (PH)
     if (formData.contact_number) {
       const cn = String(formData.contact_number).replace(/\D/g, '');
       const startsValid = cn.startsWith('09') || cn.startsWith('63');
@@ -205,6 +262,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
           title: 'Invalid Contact Number',
           type: 'warning',
         });
+        focusField('contact_number');
         return false;
       }
       const len = cn.length;
@@ -213,16 +271,17 @@ const RequestBookingScreen = ({ route, navigation }) => {
           title: 'Invalid Contact Number',
           type: 'warning',
         });
+        focusField('contact_number');
         return false;
       }
     }
 
-    // Email validation
     if (formData.contact_email && !String(formData.contact_email).includes('@')) {
       showError('Please enter a valid email address', {
         title: 'Invalid Email',
         type: 'warning',
       });
+      focusField('contact_email');
       return false;
     }
 
@@ -234,7 +293,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
     setLoading(true);
     try {
-      // Get current user (prefer app auth, fallback to Supabase)
       let userId = null;
       const currentUser = await getCurrentUser();
       if (currentUser && currentUser.id) {
@@ -250,14 +308,14 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
 
       if (!userId) {
+        setLoading(false);
         ErrorHandlingService.handleAuthError('unauthorized', {
           title: 'Login Required',
-          customMessage: 'Please log in to create a booking',
+          customMessage: 'Please log in to proceed with booking',
         });
         return;
       }
 
-      // Build a strict payload with validated types
       const bookingData = {
         package_id: formData.package_id,
         customer_id: userId,
@@ -268,56 +326,29 @@ const RequestBookingScreen = ({ route, navigation }) => {
         special_requests: formData.special_requests || '',
         contact_number: String(formData.contact_number || ''),
         pickup_address: formData.pickup_address || '',
-        // contact_email intentionally omitted
       };
 
-      const response = await createBooking(bookingData);
-
-      if (response.success) {
-        const bookingId = response.data?.id || response.data?.booking_id;
-        setBookingReference(response.data?.booking_reference || 'N/A');
-        
-        // Navigate to payment screen instead of showing success modal
-        if (bookingId && formData.total_amount > 0) {
-          navigation.navigate(Routes.PAYMENT, {
-            bookingId: bookingId,
-            bookingData: {
-              packageName: selectedPackage?.package_name || 'Tour Package',
-              bookingDate: formatDate(formData.booking_date),
-              numberOfPax: formData.number_of_pax,
-            },
-            amount: formData.total_amount,
-            currency: 'PHP'
-          });
-        } else {
-          // Fallback to success modal if no payment needed
-          setShowSuccessModal(true);
-        }
-      } else {
-        ErrorHandlingService.handleBookingError('booking_failed', {
-          customMessage: response.error || 'Failed to create booking',
-        });
-      }
-    } catch (error) {
-      console.error('Error creating booking:', error);
-      
-      // Check for session expired error
-      if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
-        ErrorHandlingService.handleBookingError('session_expired_booking');
-        return;
-      }
-      
-      const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-      const errorMessage = isAbort
-        ? 'Request timed out. Please check your connection and try again.'
-        : error.message || 'Failed to create booking';
-        
-      ErrorHandlingService.handleBookingError('booking_failed', {
-        customMessage: errorMessage,
-        onRetry: () => handleSubmit(), // Allow retry
-      });
-    } finally {
       setLoading(false);
+
+      navigation.replace(Routes.PAYMENT, {
+        bookingData: bookingData,
+        packageData: {
+          packageName: selectedPackage?.package_name || 'Tour Package',
+          bookingDate: formatDate(formData.booking_date),
+          numberOfPax: formData.number_of_pax,
+        },
+        amount: formData.total_amount,
+        currency: 'PHP',
+      });
+    } catch (error) {
+      console.error('Error preparing booking:', error);
+      setLoading(false);
+
+      const errorMessage = error.message || 'Failed to prepare booking';
+      showError(errorMessage, {
+        title: 'Booking Error',
+        type: 'error',
+      });
     }
   };
 
@@ -341,12 +372,40 @@ const RequestBookingScreen = ({ route, navigation }) => {
     return `${h}:${m}`;
   };
 
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setFormData((prev) => ({ ...prev, booking_date: selectedDate }));
+    }
+  };
 
-  // ——— UI helpers (pure presentation) ———
-  const pkgImage = useMemo(() => {
-    const p = selectedPackage || {};
-    return p.image_url || p.cover_image || p.photo_url || p.thumbnail || p.image || null;
+  const onTimeChange = (event, selectedTime) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (selectedTime) {
+      const timeString = formatTimeHM(selectedTime);
+      setFormData((prev) => ({ ...prev, pickup_time: timeString }));
+    }
+  };
+
+  // --- Photos for hero background ---
+  const photos = useMemo(() => {
+    const fromPkg = selectedPackage?.photos;
+    if (Array.isArray(fromPkg) && fromPkg.length > 0) return fromPkg;
+    const fallback = [
+      selectedPackage?.image_url,
+      selectedPackage?.cover_image,
+      selectedPackage?.photo_url,
+      selectedPackage?.thumbnail,
+      selectedPackage?.image,
+    ].filter(Boolean);
+    return fallback.length ? [fallback[0]] : [];
   }, [selectedPackage]);
+
+  const heroImageSource = useMemo(() => {
+    if (!photos || photos.length === 0) return undefined;
+    const first = photos[0];
+    return typeof first === 'string' ? { uri: first } : first;
+  }, [photos]);
 
   const pills = useMemo(() => {
     const arr = [];
@@ -358,11 +417,15 @@ const RequestBookingScreen = ({ route, navigation }) => {
   }, [selectedPackage]);
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.select({ ios: 80, android: 0 })}
+    >
       {/* HERO with background image */}
       <View style={styles.heroWrap}>
         <ImageBackground
-          source={pkgImage ? { uri: pkgImage } : undefined}
+          source={heroImageSource}
           style={styles.hero}
           imageStyle={styles.heroImg}
         >
@@ -377,25 +440,23 @@ const RequestBookingScreen = ({ route, navigation }) => {
             <View style={{ width: 36 }} />
           </View>
 
-          {/* Pills + price */}
-          <View style={styles.pillsRow}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {pills.map((p, i) => (
-                <View key={i} style={styles.metaPill}>
-                  <Ionicons name={p.icon} size={12} color={MAROON} />
-                  <Text style={styles.metaText}>{p.text}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={styles.priceTop}>
-              ₱ {Number(selectedPackage?.price || formData.total_amount || 0).toFixed(2)}
-            </Text>
-          </View>
-
-          {/* About card */}
+          {/* About card with pills in the upper-right */}
           {selectedPackage && (
             <View style={styles.aboutCard}>
-              <Text style={styles.aboutTitle}>About this Package</Text>
+              <View style={styles.aboutHeader}>
+                <Text style={styles.aboutTitle}>About this Package</Text>
+                {pills.length > 0 && (
+                  <View style={styles.pillsRowInside}>
+                    {pills.map((p, i) => (
+                      <View key={i} style={styles.metaPill}>
+                        <Ionicons name={p.icon} size={12} color={MAROON} />
+                        <Text style={styles.metaText}>{p.text}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
               {!!selectedPackage.description && (
                 <Text style={styles.aboutText} numberOfLines={6}>
                   {String(selectedPackage.description).trim()}
@@ -408,101 +469,167 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
       {/* CONTENT */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 140 }}
+        contentContainerStyle={{ paddingBottom: keyboardVisible ? 24 : 140 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.formContainer}>
-          {/* Tour Package (read-only) */}
-          <Text style={styles.sectionTitle}>Tour Package</Text>
-          <View style={styles.readonlyPackageRow}>
-            <Text style={styles.pickerText} numberOfLines={1}>
-              {selectedPackage?.package_name || 'Selected package'}
-            </Text>
-          </View>
+        <View style={styles.formOuterPad}>
+          {/* FORM CARD — same motif as receipt details card */}
+          <View style={styles.formCard}>
+            <View style={styles.formAccent} />
+            <Text style={styles.sheetTitle}>Booking Details</Text>
 
-          {/* Date & Time row */}
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Booking Date *</Text>
+            {/* Package (readonly) */}
+            <View style={styles.readonlyPackageRow}>
+              <Ionicons name="pricetag-outline" size={16} color={MAROON} style={{ marginRight: 8 }} />
+              <Text style={styles.pickerText} numberOfLines={1}>
+                {selectedPackage?.package_name || 'Selected package'}
+              </Text>
+            </View>
+
+            <View style={styles.dottedDivider} />
+
+            {/* Date & Time row */}
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.label}>Booking Date *</Text>
+                <TouchableOpacity
+                  style={[styles.input, styles.inputButton]}
+                  onPress={() => setShowDatePicker(true)}
+                  onLayout={registerField('booking_date')}
+                  onFocus={() => focusField('booking_date')}
+                >
+                  <View style={styles.inputButtonContent}>
+                    <Ionicons name="calendar-outline" size={16} color={MAROON} />
+                    <Text style={styles.inputButtonText}>
+                      {formatDate(formData.booking_date)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.label}>Pickup Time</Text>
+                <TouchableOpacity
+                  style={[styles.input, styles.inputButton]}
+                  onPress={() => setShowTimePicker(true)}
+                  onLayout={registerField('pickup_time')}
+                  onFocus={() => focusField('pickup_time')}
+                >
+                  <View style={styles.inputButtonContent}>
+                    <Ionicons name="time-outline" size={16} color={MAROON} />
+                    <Text style={styles.inputButtonText}>
+                      {formData.pickup_time}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={formData.booking_date}
+                mode="date"
+                display="default"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+              />
+            )}
+
+            {showTimePicker && (
+              <DateTimePicker
+                value={new Date(`2000-01-01T${formData.pickup_time}:00`)}
+                mode="time"
+                display="default"
+                onChange={onTimeChange}
+              />
+            )}
+
+            <View style={styles.dottedDivider} />
+
+            {/* Contacts */}
+            <View style={styles.inputGroup} onLayout={registerField('contact_number')}>
+              <Text style={styles.label}>Contact Number</Text>
               <TextInput
                 style={styles.input}
-                value={formatDate(formData.booking_date)}
-                onChangeText={(value) => {
-                  const date = new Date(value);
-                  if (!isNaN(date.getTime())) {
-                    setFormData(prev => ({ ...prev, booking_date: date }));
-                  }
-                }}
-                placeholder="MM/DD/YYYY"
+                value={formData.contact_number}
+                onChangeText={(value) => handleInputChange('contact_number', value)}
+                placeholder="09XX XXX XXXX"
+                keyboardType="phone-pad"
+                onFocus={() => focusField('contact_number')}
+                returnKeyType="next"
               />
             </View>
-            <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>Pickup Time</Text>
+
+            <View style={styles.inputGroup} onLayout={registerField('contact_email')}>
+              <Text style={styles.label}>Contact Email</Text>
               <TextInput
                 style={styles.input}
-                value={formData.pickup_time}
-                onChangeText={(value) => handleInputChange('pickup_time', value)}
-                placeholder="09:00"
+                value={formData.contact_email}
+                onChangeText={(value) => handleInputChange('contact_email', value)}
+                placeholder="your@email.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                onFocus={() => focusField('contact_email')}
+                returnKeyType="next"
               />
             </View>
-          </View>
 
-          {/* Contact Number */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Contact Number</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.contact_number}
-              onChangeText={(value) => handleInputChange('contact_number', value)}
-              placeholder="09XX XXX XXXX"
-              keyboardType="phone-pad"
-            />
-          </View>
+            <View style={styles.dottedDivider} />
 
-          {/* Contact Email */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Contact Email</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.contact_email}
-              onChangeText={(value) => handleInputChange('contact_email', value)}
-              placeholder="your@email.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+            {/* Addresses & Notes */}
+            <View style={styles.inputGroup} onLayout={registerField('pickup_address')}>
+              <Text style={styles.label}>Pickup Address</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={formData.pickup_address}
+                onChangeText={(value) => handleInputChange('pickup_address', value)}
+                placeholder="Your pickup address"
+                multiline
+                numberOfLines={3}
+                onFocus={() => focusField('pickup_address')}
+              />
+            </View>
 
-          {/* Pickup Address */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pickup Address</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.pickup_address}
-              onChangeText={(value) => handleInputChange('pickup_address', value)}
-              placeholder="Your pickup address"
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-
-          {/* Special Requests */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Special Request</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.special_requests}
-              onChangeText={(value) => handleInputChange('special_requests', value)}
-              placeholder="Any special request or notes"
-              multiline
-              numberOfLines={4}
-            />
+            <View style={styles.inputGroup} onLayout={registerField('special_requests')}>
+              <Text style={styles.label}>Special Request</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={formData.special_requests}
+                onChangeText={(value) => handleInputChange('special_requests', value)}
+                placeholder="Any special request or notes"
+                multiline
+                numberOfLines={4}
+                onFocus={() => focusField('special_requests')}
+              />
+            </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Sticky Bottom Bar */}
-      <View style={styles.bottomBar}>
+      {/* Sticky Bottom Bar (animated hide while typing) */}
+      <Animated.View
+        pointerEvents={keyboardVisible ? 'none' : 'auto'}
+        style={[
+          styles.bottomBar,
+          {
+            opacity: bottomBarAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
+            transform: [
+              {
+                translateY: bottomBarAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 40], // slide down slightly when hiding
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         <View>
           <Text style={styles.totalCaption}>Total Price</Text>
           <Text style={styles.totalValue}>₱ {Number(formData.total_amount || 0).toFixed(2)}</Text>
@@ -529,7 +656,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
         <TouchableOpacity style={styles.bookBtn} onPress={handleSubmit} disabled={loading}>
           <Text style={styles.bookBtnText}>{loading ? 'Processing…' : 'Book'}</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       {loading && (
         <View style={styles.loadingOverlay}>
@@ -537,7 +664,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      {/* Success Modal */}
       <SuccessModal
         visible={showSuccessModal}
         title="Booking Successful!"
@@ -555,13 +681,12 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  heroWrap: { width: '100%', height: 220, backgroundColor: '#f5f5f5' },
+
+  /* HERO */
+  heroWrap: { width: '100%', height: 210, backgroundColor: '#f5f5f5' },
   hero: { flex: 1, justifyContent: 'flex-end' },
   heroImg: { width: '100%', height: '100%', resizeMode: 'cover' },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },
   heroTopRow: {
     position: 'absolute',
     top: 14,
@@ -575,48 +700,74 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: MAROON,
+    backgroundColor: 'rgba(82, 78, 78, 0.52)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroTitle: {
-    flex: 1,
-    textAlign: 'center',
-    color: CARD,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  pillsRow: {
-    width: '100%',
-    paddingHorizontal: 16,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  priceTop: { color: CARD, fontWeight: '800', fontSize: 14 },
+  heroTitle: { flex: 1, textAlign: 'center', color: CARD, fontWeight: '700', fontSize: 14 },
+
+  /* About card + pills */
   aboutCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(82, 78, 78, 0.52)',
     borderRadius: 14,
     padding: 12,
-    margin: 16,
+    marginTop: 10,
+    marginHorizontal: 15,
+    marginBottom: 15,
   },
-  aboutTitle: { fontSize: 14, fontWeight: '700', color: TEXT, marginBottom: 6 },
-  aboutText: { fontSize: 12, color: MUTED, lineHeight: 16 },
+  aboutHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  aboutTitle: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,1)' },
+  pillsRowInside: { flexDirection: 'row', gap: 8, marginLeft: 'auto' },
+  aboutText: { fontSize: 12, color: 'rgba(255,255,255,1)', lineHeight: 16 },
 
+  /* CONTENT */
   scrollView: { flex: 1 },
-  formContainer: { padding: 16 },
+  formOuterPad: { padding: 16 },
 
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: TEXT,
-    marginTop: 8,
-    marginBottom: 10,
+  /* FORM CARD — mirrors the receipt details motif */
+  formCard: {
+    backgroundColor: CARD,
+    borderRadius: 20,
+    paddingTop: 14,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  formAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 6, backgroundColor: MAROON },
+  sheetTitle: { fontSize: 16, fontWeight: '800', color: TEXT, marginBottom: 10 },
+
+  dottedDivider: {
+    marginTop: 14,
+    marginBottom: 12,
+    height: 1,
+    borderBottomColor: HAIRLINE,
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
   },
 
+  readonlyPackageRow: {
+    backgroundColor: MUTED_BG,
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pickerText: { fontSize: 14, color: TEXT, flex: 1, marginRight: 8, fontWeight: '700' },
+
+  /* Rows + inputs */
+  row: { flexDirection: 'row', alignItems: 'center' },
   inputGroup: { marginBottom: 14 },
-  label: { fontSize: 13, fontWeight: '600', color: TEXT, marginBottom: 6 },
+  label: { fontSize: 13, fontWeight: '700', color: TEXT, marginBottom: 6 },
   input: {
     backgroundColor: CARD,
     borderWidth: 1,
@@ -627,34 +778,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TEXT,
   },
-  inputButton: {
-    justifyContent: 'center',
-  },
-  inputButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputButtonText: {
-    fontSize: 14,
-    color: TEXT,
-    fontWeight: '600',
-  },
-  textArea: { height: 84, textAlignVertical: 'top' },
-
-  readonlyPackageRow: {
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  pickerText: { fontSize: 14, color: TEXT, flex: 1, marginRight: 8 },
-
-  row: { flexDirection: 'row', alignItems: 'center' },
+  inputButton: { justifyContent: 'center' },
+  inputButtonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inputButtonText: { fontSize: 14, color: TEXT, fontWeight: '700' },
+  textArea: { height: 96, textAlignVertical: 'top' },
 
   metaPill: {
     flexDirection: 'row',
@@ -669,6 +796,7 @@ const styles = StyleSheet.create({
   },
   metaText: { color: MAROON, fontSize: 11, fontWeight: '700' },
 
+  /* Bottom bar */
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -705,12 +833,7 @@ const styles = StyleSheet.create({
   },
   stepperValue: { minWidth: 20, textAlign: 'center', fontWeight: '700', color: MAROON },
 
-  bookBtn: {
-    backgroundColor: MAROON,
-    borderRadius: 999,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-  },
+  bookBtn: { backgroundColor: MAROON, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12 },
   bookBtnText: { color: '#fff', fontWeight: '700' },
 
   loadingOverlay: {

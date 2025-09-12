@@ -19,6 +19,7 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    console.log(`[goodsServices] Making request to: ${API_BASE_URL}${path}`);
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers: {
@@ -30,8 +31,10 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
     });
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await response.json() : await response.text();
+    console.log(`[goodsServices] Response status: ${response.status}, data:`, data);
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
+    console.error(`[goodsServices] Request error:`, error);
     if (error.name === 'AbortError') {
       return { ok: false, status: 0, data: { success: false, error: 'Request timeout' } };
     }
@@ -61,28 +64,48 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
   if (author_id) params.append('author_id', author_id);
   if (author_role) params.append('author_role', author_role);
   const qs = params.toString();
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${qs ? `?${qs}` : ''}`,
-    `/goods-services-posts/${qs ? `?${qs}` : ''}`,
-  ], { method: 'GET' });
+  
+  const res = await request(`/goods-services-profiles/${qs ? `?${qs}` : ''}`, { 
+    method: 'GET',
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  });
+  
   if (res.ok) {
     // The optimized list may return {results: [...]} or a raw array
     const items = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
+    console.log('[goodsServices] Fetched items:', items.length, 'posts');
     return { success: true, data: items };
   }
   return { success: false, error: res.data?.error || 'Failed to fetch posts' };
 }
 
 export async function createGoodsServicesPost(authorId, description, media = []) {
-  const payload = JSON.stringify({ author_id: authorId, description, media });
-  const res = await requestWithFallback([
-    '/goods-services-profiles/',
-    '/goods-services-posts/',
-  ], { method: 'POST', body: payload, timeoutMs: 30000 });
+  const payload = { 
+    author_id: authorId, 
+    description: description.trim(), 
+    media: Array.isArray(media) ? media : [] 
+  };
+  console.log('[goodsServices] Creating/updating post with payload:', JSON.stringify(payload, null, 2));
+  
+  const res = await request('/goods-services-profiles/', { 
+    method: 'POST', 
+    body: JSON.stringify(payload), 
+    timeoutMs: 30000,
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  });
+  
+  console.log('[goodsServices] Create/update response:', JSON.stringify(res, null, 2));
+  
   if (res.ok) {
     return { success: true, data: res.data };
   }
-  return { success: false, error: res.data?.error || 'Failed to create post' };
+  return { success: false, error: res.data?.error || res.data?.message || 'Failed to create post' };
 }
 
 export async function updateGoodsServicesPost(postId, { author_id, description, is_active, media }) {
@@ -91,19 +114,13 @@ export async function updateGoodsServicesPost(postId, { author_id, description, 
   if (description !== undefined) body.description = description;
   if (is_active !== undefined) body.is_active = is_active;
   if (media !== undefined) body.media = media;
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${postId}/`,
-    `/goods-services-posts/${postId}/`,
-  ], { method: 'PUT', body: JSON.stringify(body) });
+  const res = await request(`/goods-services-profiles/${postId}/`, { method: 'PUT', body: JSON.stringify(body) });
   if (res.ok) return { success: true, data: res.data };
   return { success: false, error: res.data?.error || 'Failed to update post' };
 }
 
 export async function deleteGoodsServicesPost(postId, authorId) {
-  const res = await requestWithFallback([
-    `/goods-services-profiles/${postId}/`,
-    `/goods-services-posts/${postId}/`,
-  ], { method: 'DELETE', body: JSON.stringify({ author_id: authorId }) });
+  const res = await request(`/goods-services-profiles/${postId}/`, { method: 'DELETE', body: JSON.stringify({ author_id: authorId }) });
   if (res.ok) return { success: true };
   return { success: false, error: res.data?.error || 'Failed to delete post' };
 }
@@ -129,46 +146,54 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
       return { success: true, urls: [] };
     }
 
-    const formData = new FormData();
-    if (userId) formData.append('user_id', userId);
-
-    for (const item of filesOrUris) {
-      // Accept either a React Native file object { uri, name, type } or a string URI
+    const urls = [];
+    
+    // Upload each file individually to the goods storage endpoint
+    for (let i = 0; i < filesOrUris.length; i++) {
+      const item = filesOrUris[i];
       if (item && typeof item === 'object' && item.uri) {
-        const name = item.name || `photo_${Date.now()}.jpg`;
-        const type = item.type || 'image/jpeg';
-        formData.append('photos', { uri: item.uri, name, type });
-      } else if (typeof item === 'string') {
-        const fallbackName = `photo_${Date.now()}.jpg`;
-        formData.append('photos', { uri: item, name: fallbackName, type: 'image/jpeg' });
+        try {
+          // Convert file to base64
+          const response = await fetch(item.uri);
+          const blob = await response.blob();
+          const base64 = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+          
+          const payload = {
+            file: base64,
+            filename: item.name || `goods_media_${Date.now()}_${i}.jpg`,
+            user_id: userId,
+            category: 'goods_services'
+          };
+
+          const uploadRes = await fetch(`${API_BASE_URL}/upload/goods-storage/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const uploadText = await uploadRes.text();
+          let uploadData;
+          try { uploadData = JSON.parse(uploadText); } catch { uploadData = { raw: uploadText }; }
+          
+          if (uploadRes.ok && uploadData.success) {
+            urls.push(uploadData.data.url);
+          } else {
+            console.error(`Failed to upload file ${i + 1}:`, uploadData.error);
+          }
+        } catch (err) {
+          console.error('Failed to process file:', err);
+          continue;
+        }
       }
     }
 
-    const res = await fetch(`${API_BASE_URL}/upload/multiple-photos/`, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        // Let fetch set multipart boundaries automatically
-      },
-    });
-
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (!res.ok) {
-      return { success: false, error: data?.error || data?.message || `Upload failed (${res.status})` };
-    }
-
-    // Try common shapes
-    const urls = Array.isArray(data) ? data
-      : data?.urls || data?.photos || data?.data || [];
-
-    // Normalize to simple array of strings
-    const normalized = Array.isArray(urls)
-      ? urls.map(u => (typeof u === 'string' ? u : (u?.url || u?.publicUrl || ''))).filter(Boolean)
-      : [];
-
-    return { success: true, urls: normalized };
+    return { success: urls.length > 0, urls };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to upload media' };
   }

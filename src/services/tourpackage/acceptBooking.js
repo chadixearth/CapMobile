@@ -1,17 +1,8 @@
 // API Configuration
+import apiClient from '../apiClient';
+import NotificationService from '../notificationService';
 import { getAccessToken } from '../authService';
-import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from '../networkConfig';
-function getDevServerHost() {
-  try {
-    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
-    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
-    return match ? match[1] : null;
-  } catch (e) {
-    return null;
-  }
-}
-const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`;
+const API_BASE_URL = '/tour-booking';
 
 /**
  * Get all bookings available for drivers to accept
@@ -20,52 +11,46 @@ const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`;
  * @returns {Promise<Object>} Available bookings
  */
 export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    queryParams.append('driver_id', driverId);
-    queryParams.append('status', filters.status || 'waiting_for_driver');
-    
-    Object.keys(filters).forEach(key => {
-      if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        queryParams.append(key, filters[key]);
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      queryParams.append('driver_id', driverId);
+      queryParams.append('status', filters.status || 'waiting_for_driver');
+      
+      Object.keys(filters).forEach(key => {
+        if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+      
+      const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
+      const result = await apiClient.get(endpoint);
+      
+      console.log('Available bookings response:', result.data);
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`Error fetching available bookings (attempt ${attempt}/${maxRetries}):`, error);
+      
+      // If it's a 500 error and we have retries left, wait and retry
+      if (error.message?.includes('500') && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
-    });
-    
-    const url = `${API_BASE_URL}available-for-drivers/?${queryParams.toString()}`;
-    
-    console.log('Fetching available bookings for drivers from:', url);
-    
-    const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+      
+      // For non-500 errors or final attempt, break
+      break;
     }
-    
-    const data = await response.json();
-    console.log('Available bookings response:', data);
-    return data;
-  } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Available bookings request aborted/timeout. Returning empty list.');
-      return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
-    }
-    console.error('Error fetching available bookings for drivers:', error);
-    throw error;
   }
+  
+  console.error('All retry attempts failed for available bookings');
+  return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
 }
 
 /**
@@ -78,33 +63,30 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
  */
 export async function driverAcceptBooking(bookingId, driverData) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
-    const url = `${API_BASE_URL}driver-accept/${bookingId}/`;
-    
     console.log('Accepting booking:', bookingId, 'for driver:', driverData);
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(driverData),
-      signal: controller.signal,
-    });
+    const endpoint = `${API_BASE_URL}/driver-accept/${bookingId}/`;
+    const result = await apiClient.post(endpoint, driverData);
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+    // Notify tourist that booking was accepted
+    if (result.data && result.data.success && result.data.data) {
+      try {
+        console.log('[AcceptBooking] Triggering tourist notification for accepted booking:', result.data.data.id);
+        const notifResult = await NotificationService.notifyTouristOfAcceptedBooking(
+          result.data.data.customer_id,
+          driverData.driver_name || 'Driver',
+          result.data.data
+        );
+        console.log('[AcceptBooking] Tourist notification result:', notifResult);
+      } catch (notifError) {
+        console.warn('[AcceptBooking] Failed to notify tourist (non-critical):', notifError);
+      }
+    } else {
+      console.warn('[AcceptBooking] No valid booking data to notify tourist about');
     }
     
-    const data = await response.json();
-    console.log('Accept booking response:', data);
-    return data;
+    console.log('Accept booking response:', result.data);
+    return result.data;
   } catch (error) {
     console.error('Error accepting booking:', error);
     throw error;
@@ -118,53 +100,43 @@ export async function driverAcceptBooking(bookingId, driverData) {
  * @returns {Promise<Object>} Driver's bookings
  */
 export async function getDriverBookings(driverId, filters = {}) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-        queryParams.append(key, filters[key]);
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          queryParams.append(key, filters[key]);
+        }
+      });
+      
+      const endpoint = `${API_BASE_URL}/driver/${driverId}/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+      const result = await apiClient.get(endpoint);
+      
+      console.log('Driver bookings response:', result.data);
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`Error fetching driver bookings (attempt ${attempt}/${maxRetries}):`, error);
+      
+      // If it's a 500 error and we have retries left, wait and retry
+      if (error.message?.includes('500') && attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
-    });
-    
-    // Fix URL construction to match Django endpoint
-    const baseUrl = `${API_BASE_URL}driver/${driverId}/`;
-    const url = queryParams.toString() ? `${baseUrl}?${queryParams.toString()}` : baseUrl;
-    
-    console.log('Fetching driver bookings from:', url);
-    console.log('Driver ID:', driverId);
-    console.log('API Base URL:', API_BASE_URL);
-    
-    const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+      
+      // For non-500 errors or final attempt, break
+      break;
     }
-    
-    const data = await response.json();
-    console.log('Driver bookings response:', data);
-    return data;
-  } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Driver bookings request aborted/timeout. Returning empty list.');
-      return { success: true, data: [] };
-    }
-    console.error('Error fetching driver bookings:', error);
-    throw error;
   }
+  
+  console.error('All retry attempts failed for driver bookings');
+  return { success: true, data: [] };
 }
 
 /**
@@ -261,38 +233,16 @@ export async function driverCompleteBooking(bookingId, driverId) {
  */
 export async function driverStartBooking(bookingId, driverId) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const url = `${API_BASE_URL}start/${bookingId}/`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ driver_id: driverId }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
-    }
-
-    const data = await response.json();
-    console.log('Driver start booking response:', data);
-    return data;
+    const endpoint = `${API_BASE_URL}/start/${bookingId}/`;
+    const result = await apiClient.post(endpoint, { driver_id: driverId });
+    
+    console.log('Driver start booking response:', result.data);
+    return result.data;
   } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Start booking request aborted/timeout.');
+    console.error('Error starting booking:', error);
+    if (error.message?.includes('timeout')) {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
-    console.error('Error starting booking:', error);
     throw error;
   }
 }
@@ -306,42 +256,16 @@ export async function driverStartBooking(bookingId, driverId) {
  */
 export async function driverCancelBooking(bookingId, driverId, reason = 'Cancelled by driver') {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const url = `${API_BASE_URL}driver-cancel/${bookingId}/`;
-
-    const token = await getAccessToken().catch(() => null);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ driver_id: driverId, reason }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    const text = await response.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    if (!response.ok) {
-      console.error('API Error Response:', text);
-      throw new Error(data?.error || `HTTP ${response.status}`);
-    }
-
-    console.log('Driver cancel booking response:', data);
-    return data;
+    const endpoint = `${API_BASE_URL}/driver-cancel/${bookingId}/`;
+    const result = await apiClient.post(endpoint, { driver_id: driverId, reason });
+    
+    console.log('Driver cancel booking response:', result.data);
+    return result.data;
   } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Cancel booking request aborted/timeout.');
+    console.error('Error cancelling booking:', error);
+    if (error.message?.includes('timeout')) {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
-    console.error('Error cancelling booking:', error);
     throw error;
   }
 }
