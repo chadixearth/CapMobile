@@ -26,6 +26,7 @@ import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
 import * as Routes from '../constants/routes';
 import ChatNavigator from '../chat/navigation/ChatNavigator';
+import Communication from '../communication/navigation/CommunicationNavigator';
 import { useAuth } from '../hooks/useAuth';
 import NotificationManager from '../components/NotificationManager';
 
@@ -104,6 +105,7 @@ export default function RootNavigator() {
           <Stack.Screen name="CompletionPhoto" component={CompletionPhotoScreen} />
           <Stack.Screen name="PaymentReceipt" component={PaymentReceiptScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
+          <Stack.Screen name="Communication" component={Communication} />
         </>
       )}
       </Stack.Navigator>

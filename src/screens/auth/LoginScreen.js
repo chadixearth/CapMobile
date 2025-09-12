@@ -17,7 +17,7 @@ import { loginUser } from '../../services/authService';
 import { apiBaseUrl } from '../../services/networkConfig';
 import AccountDeletionHandler from '../../components/AccountDeletionHandler';
 
-const API_BASE_URL = 'http://192.168.101.78:8000/api';
+const API_BASE_URL = 'http://192.168.101.76:8000/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
