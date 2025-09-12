@@ -998,31 +998,37 @@ export default function BookScreen({ navigation }) {
 
     const expandId = `custom-${r?.id}`;
     const isExpanded = !!expandedMap[expandId];
-    
+<<<<<<< HEAD
     const toggleExpand = () => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
     };
 
-    const statusColor = getStatusColor(r);
-    
-    const getCustomParticipantRole = (r) => {
-      if (r.request_type === 'special_event') {
-        return 'owner';
-      }
-      return 'driver';
-    };
-    
-    const shouldShowMessageButton = (
-      (r.request_type !== 'special_event' && 
-      hasAssignedDriverForCustom(r) && 
-      (status.toLowerCase() === 'driver_assigned' || 
-        status.toLowerCase() === 'in_progress')) 
-      ||
-      (r.request_type === 'special_event' && 
-      (status.toLowerCase() === 'owner_accepted' || 
-        status.toLowerCase() === 'in_progress'))
-    );
+    const statusColor = getStatusColor(r); // Pass the whole object for consistency
+=======
+    const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
+      const getCustomParticipantRole = (r) => {
+        // Use request_type to determine role
+        if (r.request_type === 'special_event') {
+          return 'owner';
+        }
+        return 'driver';
+      };
+      // For custom tours: show when driver_assigned or in_progress
+      // For special events: show when owner_accepted or in_progress
+      const shouldShowMessageButton = (
+        // For custom tours with an assigned driver
+        (r.request_type !== 'special_event' && 
+        hasAssignedDriverForCustom(r) && 
+        (status.toLowerCase() === 'driver_assigned' || 
+          status.toLowerCase() === 'in_progress')) 
+        ||
+        // For special events with owner acceptance
+        (r.request_type === 'special_event' && 
+        (status.toLowerCase() === 'owner_accepted' || 
+          status.toLowerCase() === 'in_progress'))
+      );
+>>>>>>> 79bb525a7300f15cd3a85c3b24ad67cba14df388
 
     return (
       <View key={expandId} style={styles.card}>
