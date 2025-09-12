@@ -23,6 +23,7 @@ import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
 import * as Routes from '../constants/routes';
 import ChatNavigator from '../chat/navigation/ChatNavigator';
+import Communication from '../communication/navigation/CommunicationNavigator';
 import { useAuth } from '../hooks/useAuth';
 
 const Stack = createNativeStackNavigator();
@@ -80,6 +81,7 @@ export default function RootNavigator() {
           <Stack.Screen name="CreateTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
+          <Stack.Screen name="Communication" component={Communication} />
         </>
       )}
     </Stack.Navigator>

@@ -2,13 +2,11 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const MAROON = '#6B2E2B';
-
 export default function ChatBubble({ message }) {
   const isMe = message.sender === 'me';
   const showStatus = isMe && message.status;
   
-  // Enhanced status icon display
+  // Status icon display
   const getStatusIcon = () => {
     switch (message.status) {
       case 'sending': 
@@ -23,46 +21,48 @@ export default function ChatBubble({ message }) {
         return null;
     }
   };
-  
-  // Format the status text
-  const getStatusText = () => {
-    switch (message.status) {
-      case 'sending': return 'Sending...';
-      case 'sent': return 'Sent';
-      case 'delivered': return 'Delivered';
-      case 'read': return 'Read';
-      default: return '';
-    }
-  };
 
   return (
-    <View style={[
-      styles.bubble,
-      isMe ? styles.meBubble : styles.otherBubble
-    ]}>
-      <Text style={styles.bubbleText}>{message.text}</Text>
-      <View style={styles.timeRow}>
-        {message.time && <Text style={styles.timeText}>{message.time}</Text>}
-        {showStatus && (
-          <View style={styles.statusContainer}>
-            {getStatusIcon()}
-            {message.status === 'read' && (
-              <Text style={styles.readStatus}>{getStatusText()}</Text>
-            )}
-          </View>
-        )}
+    <View style={styles.container}>
+      {/* Show sender name for other people's messages */}
+      {!isMe && message.senderName && (
+        <Text style={styles.senderName}>{message.senderName}</Text>
+      )}
+      
+      <View style={[
+        styles.bubble,
+        isMe ? styles.meBubble : styles.otherBubble
+      ]}>
+        <Text style={styles.bubbleText}>{message.text}</Text>
+        <View style={styles.timeRow}>
+          {message.time && <Text style={styles.timeText}>{message.time}</Text>}
+          {showStatus && (
+            <View style={styles.statusContainer}>
+              {getStatusIcon()}
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    marginBottom: 6,
+  },
+  senderName: {
+    fontSize: 10,
+    color: '#666',
+    marginLeft: 12,
+    marginBottom: 2,
+  },
   bubble: {
     maxWidth: '80%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16, 
-    marginBottom: 10,
+    marginBottom: 2,
   },
   meBubble: { 
     backgroundColor: 'rgba(107,46,43,0.18)', 
@@ -92,11 +92,6 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 2,
-  },
-  readStatus: {
-    fontSize: 9,
-    color: '#6BAE6A',
     marginLeft: 2,
   }
 });

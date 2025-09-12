@@ -205,6 +205,7 @@ export default function DriverBookScreen({ navigation }) {
           total_amount: tour.approved_price || tour.estimated_price || null,
           request_type: 'custom_tour',
           booking_reference: tour.booking_reference || tour.reference || tour.ref || `CT-${String(tour.id).slice(0, 8)}`,
+          customer_id: tour.customer_id || tour.requested_by || tour.tourist_id || null,
         }));
 
         setDriverBookings((prev) => {
@@ -525,6 +526,100 @@ export default function DriverBookScreen({ navigation }) {
     return `₱${parseFloat(amount).toFixed(2)}`;
   };
 
+  const getTouristProfile = async (customerId) => {
+    if (!customerId || customerId === 'undefined') {
+      console.warn('No valid customerId provided');
+      return { id: null, name: 'Tourist' };
+    }
+
+    const { data, error } = await supabase
+      .from('public_user_profiles')
+      .select('id, name')
+      .eq('id', customerId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching tourist profile:', error);
+      return { id: customerId, name: 'Tourist' };
+    }
+    return data || { id: customerId, name: 'Tourist' };
+  };
+
+
+const getCustomTitle = (r) => (
+  r?.request_type === 'special_event'
+    ? (r?.event_type || 'Special Event')
+    : (r?.destination || r?.route || 'Custom Tour')
+);
+
+    // Add this function above the renderBookingCard function
+  const renderMessageButton = (booking) => (
+    <TouchableOpacity 
+      style={[styles.acceptButton, styles.messageBtn]} 
+      onPress={async () => {
+        try {
+          // Get tourist profile first
+          const tourist = await getTouristProfile(booking.customer_id);
+          const participantRole = booking.request_type === 'special_event' ? 'owner' : 'driver';
+          let requestType;
+          if (booking.request_type === 'special_event') {
+            requestType = 'special_event_request';
+          } else if (booking.request_type === 'custom_tour') {
+            requestType = 'custom_tour_package';
+          } else {
+            requestType = 'package_booking';  // Standard tour packages
+          }
+          
+          let packageId = null;
+          let eventId = null;
+          
+          if (booking.request_type === 'special_event') {
+            eventId = booking.special_event_request_id || null;
+          } else if (booking.request_type === 'custom_tour') {
+            packageId = booking.custom_tour_package_id || null;
+          }
+        // Format subject line appropriately based on booking type
+        let subject;
+        if (booking.request_type === 'special_event') {
+          subject = `Special Event: ${getCustomTitle(booking)}`;
+        } else if (booking.request_type === 'custom_tour') {
+          subject = `Custom Tour: ${getCustomTitle(booking)}`;
+        } else {
+          subject = `Tour: ${booking.package_name || 'Package'}`;
+        }
+          navigation.navigate('Communication', {
+            screen: 'ChatRoom',
+            params: { 
+              bookingId: booking.id,
+              subject: subject,
+              participantRole: participantRole,
+              requestType: requestType,
+              packageId: packageId || null,
+              eventId: eventId || null,
+              contactName: tourist.name
+            }
+          });
+        } catch (error) {
+          console.error('Error getting tourist info:', error);
+          // Fallback navigation if tourist lookup fails
+          navigation.navigate('Communication', {
+            screen: 'ChatRoom',
+            params: {
+              bookingId: booking.id,
+              subject: `Custom Tour: ${getCustomTitle(booking)}`,
+              participantRole: 'driver',
+              requestType: 'custom_tour_package',
+              packageId: null,
+              eventId: null,
+              contactName: 'Tourist'
+            }
+          });
+        }
+      }}>
+      <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+      <Text style={styles.acceptButtonText}>Message Tourist</Text>
+    </TouchableOpacity>
+  );
   const renderBookingCard = (booking) => (
     <View key={booking.id} style={styles.bookingCard}>
       <View style={styles.bookingHeader}>
@@ -592,35 +687,41 @@ export default function DriverBookScreen({ navigation }) {
           </TouchableOpacity>
         )
       )}
-      {activeTab === 'ongoing' && (booking.status === 'in_progress' || booking.status === 'ongoing') && (
-        <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
-          <Ionicons name="checkmark-done" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Complete Booking</Text>
-        </TouchableOpacity>
-      )}
-      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
-        <>
-          <TouchableOpacity
-            style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
-            onPress={() => canStartToday(booking) && handleStartTrip(booking)}
-            disabled={!canStartToday(booking) || acceptingBooking}
-          >
-            <Ionicons name="play" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>
-              {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
-            </Text>
-          </TouchableOpacity>
+{activeTab === 'ongoing' && (booking.status === 'in_progress' || booking.status === 'ongoing') && (
+  <>
+    <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
+      <Ionicons name="checkmark-done" size={18} color="#fff" />
+      <Text style={styles.acceptButtonText}>Complete Booking</Text>
+    </TouchableOpacity>
+    {/* Use the shared message button function */}
+    {renderMessageButton(booking)}
+  </>
+)}
 
-          <TouchableOpacity
-            style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
-            onPress={() => handleCancelBooking(booking)}
-            disabled={acceptingBooking}
-          >
-            <Ionicons name="close-circle" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>Cancel Booking</Text>
-          </TouchableOpacity>
-        </>
-      )}
+{activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
+  <>
+    <TouchableOpacity
+      style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
+      onPress={() => canStartToday(booking) && handleStartTrip(booking)}
+      disabled={!canStartToday(booking) || acceptingBooking}
+    >
+      <Ionicons name="play" size={18} color="#fff" />
+      <Text style={styles.acceptButtonText}>
+        {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
+      </Text>
+    </TouchableOpacity>
+    {/* Use the shared message button function */}
+    {renderMessageButton(booking)}
+    <TouchableOpacity
+      style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
+      onPress={() => handleCancelBooking(booking)}
+      disabled={acceptingBooking}
+    >
+      <Ionicons name="close-circle" size={18} color="#fff" />
+      <Text style={styles.acceptButtonText}>Cancel Booking</Text>
+    </TouchableOpacity>
+  </>
+)}
     </View>
   );
 
@@ -1263,4 +1364,9 @@ const styles = StyleSheet.create({
   },
   customTourBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   customTourAcceptButton: { backgroundColor: '#9C27B0' },
+    messageBtn: { 
+    backgroundColor: '#1565C0', 
+    marginTop: 8,
+    marginBottom: 8
+  },
 });

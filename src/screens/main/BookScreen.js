@@ -20,6 +20,7 @@ import { getCustomerCustomRequests } from '../../services/specialpackage/customP
 import { createPackageReview, createDriverReview } from '../../services/reviews';
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
+import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
 
 const MAROON = '#6B2E2B';
 
@@ -583,6 +584,41 @@ export default function BookScreen({ navigation }) {
                 ) : null}
               </View>
             )}
+            {/* for tour bookings */}
+            {/* Add communication section */}
+            {(b.status === 'driver_assigned' || 
+              b.status === 'accepted' || 
+              b.status === 'in_progress' || 
+              b.status === 'ongoing') && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Communication</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' }]}
+                    onPress={() => {
+                      navigation.navigate('Communication', { 
+                        screen: 'ChatRoom',
+                        params: { 
+                          bookingId: b.id,
+                          subject: `Tour: ${b.package_name || 'Package'}`,
+                          participantRole: 'driver',
+                          requestType: 'package_booking',
+                          userRole: 'tourist',
+                          contactName: b.driver_name || 'Driver',
+                          contactEmail: b.driver_email
+                        }
+                      });
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="chatbubble-outline" size={16} color="#1976D2" />
+                    <Text style={[styles.actionBtnText, { color: '#1976D2' }]} numberOfLines={1}>
+                      Message Driver
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             <Text style={styles.refText}>Ref: {ref || 'N/A'}</Text>
           </View>
@@ -602,6 +638,28 @@ export default function BookScreen({ navigation }) {
   const getCustomStatus  = (r) => r?.status || 'pending';
   const getCustomDriverName = (r) => r?.driver_name || r?.accepted_driver_name || r?.assigned_driver?.name || null;
   const hasAssignedDriverForCustom = (r) => !!(getCustomDriverName(r) && String(getCustomDriverName(r)).trim());
+  const getCustomOwnerName = (r) => r?.owner_name || r?.event_owner?.name || r?.owner?.name || null;
+  
+    // Utility to clean up email-like names
+  const cleanName = (name) => {
+    if (!name) return null;
+    let trimmed = String(name).trim();
+    // If it's an email, keep only the part before "@"
+    if (trimmed.includes('@')) {
+      trimmed = trimmed.split('@')[0];
+    }
+    return trimmed;
+  };
+  const getCustomContactName = (r) => {
+    let name;
+
+  if (r.request_type === 'special_event') {
+      name = getCustomOwnerName(r) || 'Event Owner';
+    } else {
+      name = getCustomDriverName(r) || 'Driver';
+    }
+    return cleanName(name);
+  };
 
   // ---------- custom request card (same design as booking)
   const renderCustomRequestCard = (r) => {
@@ -616,6 +674,27 @@ export default function BookScreen({ navigation }) {
     const expandId = `custom-${r?.id}`;
     const isExpanded = !!expandedMap[expandId];
     const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
+      const getCustomParticipantRole = (r) => {
+        // Use request_type to determine role
+        if (r.request_type === 'special_event') {
+          return 'owner';
+        }
+        return 'driver';
+      };
+      // For custom tours: show when driver_assigned or in_progress
+      // For special events: show when owner_accepted or in_progress
+      const shouldShowMessageButton = (
+        // For custom tours with an assigned driver
+        (r.request_type !== 'special_event' && 
+        hasAssignedDriverForCustom(r) && 
+        (status.toLowerCase() === 'driver_assigned' || 
+          status.toLowerCase() === 'in_progress')) 
+        ||
+        // For special events with owner acceptance
+        (r.request_type === 'special_event' && 
+        (status.toLowerCase() === 'owner_accepted' || 
+          status.toLowerCase() === 'in_progress'))
+      );
 
     return (
       <View key={expandId} style={styles.card}>
@@ -678,6 +757,68 @@ export default function BookScreen({ navigation }) {
             {!!r?.special_requests && (
               <Row icon="chatbubble-ellipses-outline" label="Special Requests" value={r.special_requests} />
             )}
+            {/* custom request */}
+            {/* Add this new section */}
+            {shouldShowMessageButton && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Communication</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' }]}
+                    onPress={() => {
+                      // Correctly determine participant role based on request type
+                      const participantRole = r.request_type === 'special_event' ? 'owner' : 'driver';
+                      
+                      // Correctly determine request type based on request_type field
+                      const requestType = r.request_type === 'special_event' 
+                        ? 'special_event_request' 
+                        : 'custom_tour_package';
+                      
+                      // Get the right IDs based on request type
+                      let packageId = null;
+                      let eventId = null;
+                      
+                      if (r.request_type === 'special_event') {
+                        // For special events, use special_event_request_id
+                        eventId = r.special_event_request_id || null;
+                      } else {
+                        // For custom tours, use custom_tour_package_id
+                        packageId = r.custom_tour_package_id || null;
+                      }
+                      
+                      console.log('Debug chat params:', {
+                        requestType,
+                        participantRole,
+                        packageId,
+                        eventId
+                      });
+                      
+                      navigation.navigate('Communication', { 
+                        screen: 'ChatRoom',
+                        params: { 
+                          bookingId: r.id,
+                          subject: r.request_type === 'special_event'
+                            ? `Special Event: ${getCustomTitle(r)}`
+                            : `Custom Tour: ${getCustomTitle(r).replace(/^Custom Tour:\s*/, '')}`,
+                          participantRole: participantRole,
+                          requestType: requestType,
+                          packageId: packageId || null, // Ensure null if undefined
+                          eventId: eventId || null,     // Ensure null if undefined
+                          contactName: getCustomContactName(r) || null,
+                        }
+                      });
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="chatbubble-outline" size={16} color="#1976D2" />
+                    <Text style={[styles.actionBtnText, { color: '#1976D2' }]} numberOfLines={1}>
+                      Message 
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            
             <Text style={styles.refText}>Req ID: {r?.id}</Text>
           </View>
         )}
