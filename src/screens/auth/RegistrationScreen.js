@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,10 @@ import {
   ScrollView,
   Modal,
   Keyboard,
+  Animated,
+  Easing,
+  LayoutAnimation,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerUser } from '../../services/authService';
@@ -19,21 +23,111 @@ import { colors, spacing, card } from '../../styles/global';
 import { useError } from '../../components/ErrorProvider';
 import ErrorHandlingService from '../../services/errorHandlingService';
 
+const ACCENT = '#6B2E2B';
+
+const ROLE_META = {
+  tourist: {
+    icon: 'person',
+    label: 'Tourist',
+    subtitle: 'Create an account to start booking rides',
+  },
+  driver: {
+    icon: 'car',
+    label: 'Driver',
+    subtitle: 'Apply to drive a tartanilla',
+  },
+  owner: {
+    icon: 'business',
+    label: 'Owner',
+    subtitle: 'Offer your tartanilla for rent',
+  },
+};
+
+/* =========================================================
+   ModernInput (memoized) — refined visual
+   ========================================================= */
+const ModernInput = memo(function ModernInput({
+  label,
+  nextField,
+  registerRef,
+  onFocusScroll,
+  style,
+  styles,
+  ACCENT,
+  colors,
+  leftIcon, // optional Ionicons name
+  ...props
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const localRef = useRef(null);
+
+  return (
+    <View style={styles.fieldWrap}>
+      {label && <Text style={styles.inputLabel}>{label}</Text>}
+      <View
+        style={[
+          styles.inputSurface,
+          isFocused && { borderColor: ACCENT + '80', shadowOpacity: 0.15 },
+          style,
+        ]}
+      >
+        {leftIcon ? (
+          <Ionicons
+            name={leftIcon}
+            size={18}
+            color={isFocused ? ACCENT : colors.textSecondary}
+            style={{ marginRight: 10, marginLeft: 2 }}
+          />
+        ) : null}
+
+        <TextInput
+          {...props}
+          ref={(ref) => {
+            localRef.current = ref;
+            registerRef?.(ref);
+          }}
+          style={[styles.modernInput]}
+          placeholderTextColor={colors.textSecondary}
+          selectionColor={ACCENT}
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          underlineColorAndroid="transparent"
+          blurOnSubmit={false}
+          returnKeyType={nextField ? 'next' : 'done'}
+          onFocus={() => {
+            setIsFocused(true);
+            onFocusScroll?.(localRef.current);
+          }}
+          onBlur={() => setIsFocused(false)}
+          onSubmitEditing={() => {
+            if (typeof nextField === 'function') nextField();
+            else Keyboard.dismiss();
+          }}
+        />
+      </View>
+    </View>
+  );
+});
+
+/* =========================================================
+   Registration Screen
+   ========================================================= */
 const RegistrationScreen = ({ navigation, route }) => {
   const role = route?.params?.role || 'tourist';
-  const { showError, showSuccess } = useError();
+  const { icon: heroIcon, label: heroLabel, subtitle: heroSubtitle } =
+    ROLE_META[role] ?? ROLE_META.tourist;
 
-  // Set navigation reference for error handling
-  React.useEffect(() => {
+  const { showError } = useError();
+
+  useEffect(() => {
     ErrorHandlingService.setNavigationRef(navigation);
   }, [navigation]);
 
-  // Core fields
+  // ===== Data =====
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Common profile fields
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName]   = useState('');
   const [phone, setPhone]         = useState('');
@@ -45,91 +139,88 @@ const RegistrationScreen = ({ navigation, route }) => {
 
   // Owner
   const [businessName, setBusinessName] = useState('');
-  const [businessPermit, setBusinessPermit] = useState('');
+  const [businessPermit, setBusinessPermit] = useState(''); // kept for future use
   const [drivesOwnTartanilla, setDrivesOwnTartanilla] = useState(false);
 
-  // UI state
+  // UI
   const [agree, setAgree] = useState(false);
   const [showTC, setShowTC] = useState(false);
   const [loading, setLoading] = useState(false);
-  // Removed error and success states - using ErrorProvider instead
+
+  // ===== Stepper (Fabric-safe animations) =====
+  const isFabric = global?.nativeFabricUIManager != null;
+  const canUseLayoutAnimation =
+    Platform.OS === 'ios' || (Platform.OS === 'android' && !isFabric);
+  const withLayoutAnimation = (cb) => {
+    if (canUseLayoutAnimation) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    cb?.();
+  };
+
+  const [step, setStep] = useState(1);
+  const goNext = () => withLayoutAnimation(() => setStep(2));
+  const goBackStep = () => withLayoutAnimation(() => setStep(1));
+
+  // Pending-approval modal (driver/owner)
+  const [pendingVisible, setPendingVisible] = useState(false);
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (pendingVisible) {
+      Animated.loop(
+        Animated.timing(spin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+    } else {
+      spin.stopAnimation();
+      spin.setValue(0);
+    }
+  }, [pendingVisible, spin]);
+  const spinStyle = {
+    transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+  };
 
   const handleRegister = async () => {
     if (!agree) {
-      showError('Please agree with Terms & Conditions.', {
-        title: 'Terms Required',
-        type: 'warning',
-      });
+      showError('Please agree to the Terms & Conditions.', { title: 'Terms Required', type: 'warning' });
       return;
     }
-
-    // Email is always required
     if (!email) {
-      showError('Please enter your email address.', {
-        title: 'Email Required',
-        type: 'warning',
-      });
+      showError('Please enter your email address.', { title: 'Email Required', type: 'warning' });
       return;
     }
 
-    // Password validation - required for tourists, optional for driver/owner
     if (role === 'tourist') {
       if (!password || !confirmPassword) {
-        showError('Please enter password and confirm your password.', {
-          title: 'Password Required',
-          type: 'warning',
-        });
+        showError('Please create and confirm your password.', { title: 'Password Required', type: 'warning' });
         return;
       }
       if (password !== confirmPassword) {
-        showError('Passwords do not match.', {
-          title: 'Password Mismatch',
-          type: 'warning',
-        });
+        showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
         return;
       }
-    } else {
-      // For driver/owner, password is optional but if provided must match
-      if ((password || confirmPassword) && password !== confirmPassword) {
-        showError('Passwords do not match.', {
-          title: 'Password Mismatch',
-          type: 'warning',
-        });
-        return;
-      }
+    } else if ((password || confirmPassword) && password !== confirmPassword) {
+      showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
+      return;
     }
 
-    // Validate role-specific required fields
     if (role === 'driver' || role === 'owner') {
       if (!firstName || !lastName || !phone) {
-        showError('Please fill in all required fields.', {
-          title: 'Missing Information',
-          type: 'warning',
-        });
+        showError('Please fill in all required fields.', { title: 'Missing Information', type: 'warning' });
         return;
       }
       if (role === 'driver' && !licenseNumber) {
-        showError('License number is required for drivers.', {
-          title: 'License Required',
-          type: 'warning',
-        });
+        showError('License number is required for drivers.', { title: 'License Required', type: 'warning' });
         return;
       }
       if (role === 'owner' && !businessName) {
-        showError('Business name is required for owners.', {
-          title: 'Business Information Required',
-          type: 'warning',
-        });
+        showError('Business name is required for owners.', { title: 'Business Information Required', type: 'warning' });
         return;
       }
     }
 
     const validRoles = ['tourist', 'driver', 'owner'];
     if (!validRoles.includes(role)) {
-      showError(`Invalid role. Please select: ${validRoles.join(', ')}`, {
-        title: 'Invalid Role',
-        type: 'error',
-      });
+      showError(`Invalid role. Please select: ${validRoles.join(', ')}`, { title: 'Invalid Role', type: 'error' });
       return;
     }
 
@@ -154,16 +245,13 @@ const RegistrationScreen = ({ navigation, route }) => {
           drives_own_tartanilla: !!drivesOwnTartanilla,
         };
       } else {
-        additionalData = {
-          first_name: firstName,
-          last_name:  lastName,
-        };
+        additionalData = { first_name: firstName, last_name: lastName };
       }
 
       const result = await registerUser(
-        email, 
+        email,
         role === 'tourist' ? password : null,
-        role, 
+        role,
         additionalData
       );
       setLoading(false);
@@ -172,16 +260,16 @@ const RegistrationScreen = ({ navigation, route }) => {
         const okAction = () => navigation.navigate('Login');
 
         if (result.status === 'pending_approval') {
-          const approvalMessage = password 
-            ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved.`
-            : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and emailed to you upon approval.`;
-          
-          Alert.alert(
-            'Application Submitted',
-            result.message || approvalMessage,
-            [{ text: 'OK', onPress: okAction }],
-            { cancelable: false }
-          );
+          if (role === 'driver' || role === 'owner') {
+            setPendingVisible(true);
+          } else {
+            Alert.alert(
+              'Application Submitted',
+              result.message || 'Please check your email to verify your account.',
+              [{ text: 'OK', onPress: okAction }],
+              { cancelable: false }
+            );
+          }
         } else {
           Alert.alert(
             'Registration Successful',
@@ -201,27 +289,64 @@ const RegistrationScreen = ({ navigation, route }) => {
       console.error('Registration error:', e);
     }
   };
+
+  // ===== Keyboard-aware scrolling =====
   const scrollRef = useRef(null);
   const inputRefs = useRef({});
+  const scrollOffsetRef = useRef(0); // track current scroll Y
 
-  const ModernInput = ({ label, ...props }) => (
-    <View style={styles.inputContainer}>
-      {label && <Text style={styles.inputLabel}>{label}</Text>}
-      <TextInput
-        {...props}
-        style={[styles.modernInput, props.style]}
-        placeholderTextColor={colors.textSecondary}
-        autoCorrect={false}
-        autoComplete="off"
-      />
-    </View>
-  );
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKbHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
-  // Render helper for section with icon
+  const reg = (key) => (ref) => { if (ref) inputRefs.current[key] = ref; };
+  const focus = (key) => () => inputRefs.current[key]?.focus();
+
+  const screenH = Dimensions.get('window').height;
+  const scrollToInput = (inputRef) => {
+    if (!inputRef || !scrollRef.current) return;
+    requestAnimationFrame(() => {
+      try {
+        inputRef.measureInWindow((x, y, w, h) => {
+          const keyboardPadding = 20;
+          const visibleBottom = screenH - kbHeight - keyboardPadding;
+          const inputBottom = y + h;
+          if (inputBottom > visibleBottom) {
+            const delta = inputBottom - visibleBottom;
+            const nextY = Math.max(0, scrollOffsetRef.current + delta + 12);
+            scrollRef.current.scrollTo({ y: nextY, animated: true });
+          }
+        });
+      } catch {}
+    });
+  };
+
+  const keyboardOffset = Platform.select({ ios: 0, android: 0 });
+  const isKeyboardOpen = kbHeight > 0;
+
+  // footer slide animation
+  const footerAnim = useRef(new Animated.Value(1)).current; // 1 visible, 0 hidden
+  useEffect(() => {
+    Animated.timing(footerAnim, {
+      toValue: isKeyboardOpen ? 0 : 1,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isKeyboardOpen, footerAnim]);
+
   const SectionHeader = ({ icon, title, subtitle }) => (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionIconContainer}>
-        <Ionicons name={icon} size={20} color={colors.primary} />
+        <Ionicons name={icon} size={18} color={ACCENT} />
       </View>
       <View style={styles.sectionTextContainer}>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -230,323 +355,383 @@ const RegistrationScreen = ({ navigation, route }) => {
     </View>
   );
 
+  const ProgressPills = () => (
+    <View style={styles.pillsRow}>
+      <View style={[styles.pill, step === 1 ? styles.pillActive : styles.pillInactive]} />
+      <View style={[styles.pill, step === 2 ? styles.pillActive : styles.pillInactive]} />
+    </View>
+  );
+
+  const primaryLabel =
+    step === 1 ? 'Next' :
+    loading ? 'Creating Account...' : `Register as ${role}`;
+
+  const primaryOnPress = step === 1 ? goNext : handleRegister;
+  const primaryDisabled = step === 1 ? false : (loading || !agree);
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
+    <KeyboardAvoidingView
       style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={keyboardOffset}
     >
-        {/* Header with back button */}
-        <View style={styles.header}>
-          <BackButton onPress={() => navigation.goBack()} />
-        </View>
-
-        {/* Welcome Section */}
-        <View style={styles.welcomeSection}>
-          <View style={styles.roleIconContainer}>
-            <Ionicons 
-              name={role === 'tourist' ? 'person' : role === 'driver' ? 'car' : 'business'} 
-              size={32} 
-              color={colors.primary} 
-            />
-          </View>
-          <Text style={styles.title}>Join as {role.charAt(0).toUpperCase() + role.slice(1)}</Text>
-          <Text style={styles.subtitle}>
-            {role === 'tourist' 
-              ? 'Create your account to start booking rides'
-              : 'Submit your application for admin approval'
-            }
-          </Text>
-        </View>
-
-        {/* Registration Form */}
-        <View style={styles.formContainer}>
-          {/* Tourist Fields */}
-          {role === 'tourist' && (
-            <>
-              <SectionHeader 
-                icon="person-outline" 
-                title="Personal Information" 
-                subtitle="Enter your basic details"
-              />
-              <ModernInput 
-                label="First Name" 
-                placeholder="Enter your first name" 
-                value={firstName} 
-                onChangeText={setFirstName}
-                refKey="firstName"
-                nextField="lastName"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Last Name" 
-                placeholder="Enter your last name" 
-                value={lastName} 
-                onChangeText={setLastName}
-                refKey="lastName"
-                nextField="email"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Email Address" 
-                placeholder="Enter your email" 
-                value={email} 
-                onChangeText={setEmail}
-                refKey="email"
-                nextField="password"
-                autoCapitalize="none" 
-                keyboardType="email-address"
-              />
-              
-              <SectionHeader 
-                icon="lock-closed-outline" 
-                title="Security" 
-                subtitle="Create a secure password"
-              />
-              <ModernInput 
-                label="Password" 
-                placeholder="Enter your password" 
-                value={password} 
-                onChangeText={setPassword}
-                refKey="password"
-                nextField="confirmPassword"
-                secureTextEntry
-              />
-              <ModernInput 
-                label="Confirm Password" 
-                placeholder="Re-enter your password" 
-                value={confirmPassword} 
-                onChangeText={setConfirmPassword}
-                refKey="confirmPassword"
-                secureTextEntry
-              />
-            </>
-          )}
-
-          {/* Driver/Owner Fields */}
-          {(role === 'driver' || role === 'owner') && (
-            <>
-              <SectionHeader 
-                icon="person-outline" 
-                title="Personal Information" 
-                subtitle="Enter your basic details"
-              />
-              <ModernInput 
-                label="First Name" 
-                placeholder="Enter your first name" 
-                value={firstName} 
-                onChangeText={setFirstName}
-                refKey="firstName"
-                nextField="lastName"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Last Name" 
-                placeholder="Enter your last name" 
-                value={lastName} 
-                onChangeText={setLastName}
-                refKey="lastName"
-                nextField="email"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Email Address" 
-                placeholder="Enter your email" 
-                value={email} 
-                onChangeText={setEmail}
-                refKey="email"
-                nextField="phone"
-                autoCapitalize="none" 
-                keyboardType="email-address"
-              />
-              <ModernInput 
-                label="Phone Number" 
-                placeholder="Enter your phone number" 
-                value={phone} 
-                onChangeText={setPhone}
-                refKey="phone"
-                nextField={role === 'driver' ? 'license' : 'business'}
-                keyboardType="phone-pad"
-              />
-            </>
-          )}
-
-          {/* Driver Specific Fields */}
-          {role === 'driver' && (
-            <>
-              <SectionHeader 
-                icon="car-outline" 
-                title="Driver Information" 
-                subtitle="Professional driving details"
-              />
-              <ModernInput 
-                label="Driver's License Number" 
-                placeholder="Enter your license number" 
-                value={licenseNumber} 
-                onChangeText={setLicenseNumber}
-                refKey="license"
-                nextField={ownsTartanilla ? 'ownedCount' : null}
-                autoCapitalize="characters"
-              />
-              
-              <View style={styles.questionContainer}>
-                <Text style={styles.questionLabel}>Do you also own a tartanilla?</Text>
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, ownsTartanilla && styles.toggleSelected]}
-                    onPress={() => setOwnsTartanilla(true)}
-                  >
-                    <Ionicons 
-                      name={ownsTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={ownsTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, ownsTartanilla && styles.toggleTextSelected]}>Yes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, !ownsTartanilla && styles.toggleSelected]}
-                    onPress={() => setOwnsTartanilla(false)}
-                  >
-                    <Ionicons 
-                      name={!ownsTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={!ownsTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, !ownsTartanilla && styles.toggleTextSelected]}>No</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              {ownsTartanilla && (
-                <ModernInput 
-                  label="Number of Tartanillas Owned" 
-                  placeholder="Enter number" 
-                  value={ownedCount} 
-                  onChangeText={setOwnedCount}
-                  refKey="ownedCount"
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              )}
-            </>
-          )}
-
-          {/* Owner Specific Fields */}
-          {role === 'owner' && (
-            <>
-              <SectionHeader 
-                icon="business-outline" 
-                title="Business Information" 
-                subtitle="Enter your business details"
-              />
-              <ModernInput 
-                label="Business Name" 
-                placeholder="Enter your business name" 
-                value={businessName} 
-                onChangeText={setBusinessName}
-                refKey="business"
-                autoCapitalize="words"
-              />
-              
-              <View style={styles.questionContainer}>
-                <Text style={styles.questionLabel}>Do you also drive your tartanilla?</Text>
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, drivesOwnTartanilla && styles.toggleSelected]}
-                    onPress={() => setDrivesOwnTartanilla(true)}
-                  >
-                    <Ionicons 
-                      name={drivesOwnTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={drivesOwnTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, drivesOwnTartanilla && styles.toggleTextSelected]}>Yes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, !drivesOwnTartanilla && styles.toggleSelected]}
-                    onPress={() => setDrivesOwnTartanilla(false)}
-                  >
-                    <Ionicons 
-                      name={!drivesOwnTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={!drivesOwnTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, !drivesOwnTartanilla && styles.toggleTextSelected]}>No</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </>
-          )}
-
-          {/* Terms and Conditions */}
-          <SectionHeader 
-            icon="document-text-outline" 
-            title="Terms & Conditions" 
-            subtitle="Please review and accept our terms"
-          />
-          
-          <TouchableOpacity 
-            style={styles.termsContainer}
-            onPress={() => setAgree(!agree)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.checkboxContainer}>
-              <Ionicons 
-                name={agree ? "checkmark-circle" : "ellipse-outline"} 
-                size={24} 
-                color={agree ? colors.primary : colors.textSecondary} 
-              />
-            </View>
-            <View style={styles.termsTextContainer}>
-              <Text style={styles.termsMainText}>
-                I agree to the{' '}
-                <Text style={styles.termsLink} onPress={() => setShowTC(true)}>
-                  Terms & Conditions
-                </Text>
-              </Text>
-              <Text style={styles.termsSubtext}>
-                By registering, you accept our terms of service and privacy policy
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Register Button */}
-        <TouchableOpacity
-          style={[styles.registerButton, (loading || !agree) && styles.registerButtonDisabled]}
-          onPress={handleRegister}
-          disabled={loading || !agree}
-          activeOpacity={0.8}
-        >
-          <View style={styles.buttonContent}>
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <Ionicons name="refresh" size={20} color="#fff" />
-              </View>
-            )}
-            <Text style={styles.registerButtonText}>
-              {loading ? 'Creating Account...' : `Register as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Already have an account?{' '}
-            <Text style={styles.footerLink} onPress={() => navigation.navigate('Login')}>
-              Sign In
-            </Text>
-          </Text>
-        </View>
-      {/* Terms & Conditions Modal */}
-      <Modal
-        visible={showTC}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowTC(false)}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: isKeyboardOpen ? spacing.md : spacing.xl * 6 }, // reduce padding while typing
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={false}
+        nestedScrollEnabled
+        onScroll={(e) => { // track current offset
+          scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+        automaticallyAdjustKeyboardInsets={true} // iOS: prevent content jump
       >
+        {/* Minimal app bar */}
+        <View style={styles.appBar}>
+          <View style={[styles.backCircle, { backgroundColor: ACCENT }]}>
+            <BackButton onPress={() => navigation.goBack()} color="#fff" />
+          </View>
+        </View>
+
+        {/* Hero */}
+        <View style={styles.heroHeader}>
+          <View style={styles.heroIconCircle}>
+            <Ionicons name={heroIcon} size={26} color={ACCENT} />
+          </View>
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <View style={styles.roleChip}>
+              <Ionicons name="sparkles-outline" size={14} color={ACCENT} />
+              <Text style={[styles.roleChipText, { color: ACCENT }]}>{heroLabel}</Text>
+            </View>
+            <Text style={styles.heroTitle}>Join as {heroLabel}</Text>
+            <Text style={styles.heroSubtitle}>{heroSubtitle}</Text>
+          </View>
+        </View>
+
+        {/* ====== STEP 1 ====== */}
+        {step === 1 && (
+          <View style={styles.sectionSurface}>
+            <SectionHeader icon="person-outline" title="Personal Information" subtitle="Tell us about you" />
+
+            {role === 'tourist' && (
+              <>
+                <ModernInput
+                  leftIcon="person-outline"
+                  placeholder="First name"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  registerRef={reg('firstName')}
+                  nextField={focus('lastName')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="words"
+                />
+                <ModernInput
+                  leftIcon="person-circle-outline"
+                  placeholder="Last name"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  registerRef={reg('lastName')}
+                  nextField={focus('email')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="words"
+                />
+                <ModernInput
+                  leftIcon="mail-outline"
+                  placeholder="Email address"
+                  value={email}
+                  onChangeText={setEmail}
+                  registerRef={reg('email')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </>
+            )}
+
+            {(role === 'driver' || role === 'owner') && (
+              <>
+                <ModernInput
+                  leftIcon="person-outline"
+                  placeholder="First name"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  registerRef={reg('firstName')}
+                  nextField={focus('lastName')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="words"
+                />
+                <ModernInput
+                  leftIcon="person-circle-outline"
+                  placeholder="Last name"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  registerRef={reg('lastName')}
+                  nextField={focus('email')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="words"
+                />
+                <ModernInput
+                  leftIcon="mail-outline"
+                  placeholder="Email address"
+                  value={email}
+                  onChangeText={setEmail}
+                  registerRef={reg('email')}
+                  nextField={focus('phone')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+                <ModernInput
+                  leftIcon="call-outline"
+                  placeholder="Phone number"
+                  value={phone}
+                  onChangeText={setPhone}
+                  registerRef={reg('phone')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  keyboardType="phone-pad"
+                />
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ====== STEP 2 ====== */}
+        {step === 2 && (
+          <View style={styles.sectionSurface}>
+            {role === 'tourist' && (
+              <>
+                <SectionHeader icon="lock-closed-outline" title="Security" subtitle="Create a strong password" />
+                <ModernInput
+                  leftIcon="key-outline"
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  registerRef={reg('password')}
+                  nextField={focus('confirmPassword')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  secureTextEntry
+                />
+                <ModernInput
+                  leftIcon="checkmark-done-outline"
+                  placeholder="Confirm password"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  registerRef={reg('confirmPassword')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  secureTextEntry
+                />
+              </>
+            )}
+
+            {role === 'driver' && (
+              <>
+                <SectionHeader icon="car-outline" title="Driver details" subtitle="We’ll review your application" />
+                <ModernInput
+                  leftIcon="card-outline"  // safe Ionicons name
+                  placeholder="Driver’s license number"
+                  value={licenseNumber}
+                  onChangeText={setLicenseNumber}
+                  registerRef={reg('license')}
+                  nextField={ownsTartanilla ? focus('ownedCount') : undefined}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="characters"
+                />
+
+                <View style={styles.questionBox}>
+                  <Text style={styles.questionTitle}>Do you own a tartanilla?</Text>
+                  <View style={styles.toggleRow}>
+                    <TouchableOpacity
+                      style={[styles.toggle, ownsTartanilla && styles.toggleOn]}
+                      onPress={() => setOwnsTartanilla(true)}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name={ownsTartanilla ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={ownsTartanilla ? '#fff' : colors.textSecondary} />
+                      <Text style={[styles.toggleTxt, ownsTartanilla && styles.toggleTxtOn]}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.toggle, !ownsTartanilla && styles.toggleOn]}
+                      onPress={() => setOwnsTartanilla(false)}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name={!ownsTartanilla ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={!ownsTartanilla ? '#fff' : colors.textSecondary} />
+                      <Text style={[styles.toggleTxt, !ownsTartanilla && styles.toggleTxtOn]}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {ownsTartanilla && (
+                  <ModernInput
+                    leftIcon="grid-outline"
+                    label="How many tartanillas do you own?"
+                    placeholder="Enter number"
+                    value={ownedCount}
+                    onChangeText={setOwnedCount}
+                    registerRef={reg('ownedCount')}
+                    onFocusScroll={scrollToInput}
+                    styles={styles}
+                    ACCENT={ACCENT}
+                    colors={colors}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                )}
+              </>
+            )}
+
+            {role === 'owner' && (
+              <>
+                <SectionHeader icon="business-outline" title="Business details" subtitle="We’ll verify your information" />
+                <ModernInput
+                  leftIcon="briefcase-outline"  // safe Ionicons name
+                  label="Business name"
+                  placeholder="Your business name"
+                  value={businessName}
+                  onChangeText={setBusinessName}
+                  registerRef={reg('business')}
+                  onFocusScroll={scrollToInput}
+                  styles={styles}
+                  ACCENT={ACCENT}
+                  colors={colors}
+                  autoCapitalize="words"
+                />
+
+                <View style={styles.questionBox}>
+                  <Text style={styles.questionTitle}>Do you also drive your tartanilla?</Text>
+                  <View style={styles.toggleRow}>
+                    <TouchableOpacity
+                      style={[styles.toggle, drivesOwnTartanilla && styles.toggleOn]}
+                      onPress={() => setDrivesOwnTartanilla(true)}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name={drivesOwnTartanilla ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={drivesOwnTartanilla ? '#fff' : colors.textSecondary} />
+                      <Text style={[styles.toggleTxt, drivesOwnTartanilla && styles.toggleTxtOn]}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.toggle, !drivesOwnTartanilla && styles.toggleOn]}
+                      onPress={() => setDrivesOwnTartanilla(false)}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons name={!drivesOwnTartanilla ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={!drivesOwnTartanilla ? '#fff' : colors.textSecondary} />
+                      <Text style={[styles.toggleTxt, !drivesOwnTartanilla && styles.toggleTxtOn]}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+
+            <Text style={styles.helperCaption}>Review and accept our terms to continue</Text>
+            <TouchableOpacity style={styles.termsRow} onPress={() => setAgree(!agree)} activeOpacity={0.85}>
+              <Ionicons
+                name={agree ? 'checkbox' : 'square-outline'}
+                size={20}
+                color={agree ? ACCENT : colors.textSecondary}
+                style={{ marginRight: 8 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.termsMain}>
+                  I agree to the{' '}
+                  <Text style={[styles.termsLink, { color: ACCENT }]} onPress={() => { Keyboard.dismiss(); setShowTC(true); }}>
+                    Terms & Conditions
+                  </Text>
+                </Text>
+                <Text style={styles.termsSub}>By registering, you accept our terms and privacy policy</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={{ marginTop: 4 }}>
+              <TouchableOpacity onPress={goBackStep} activeOpacity={0.8} style={{ paddingVertical: 8 }}>
+                <Text style={[styles.backLink, { color: ACCENT }]}>Back to personal info</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Sticky bottom bar — animated hide on keyboard open */}
+      {!isKeyboardOpen && (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            styles.stickyFooter,
+            {
+              opacity: footerAnim,
+              transform: [
+                {
+                  translateY: footerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [40, 0],
+                  }),
+                },
+              ],
+              paddingBottom: 12 + 18,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              styles.btnLarge,
+              primaryDisabled && styles.btnDisabled,
+            ]}
+            onPress={primaryOnPress}
+            disabled={primaryDisabled}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.primaryBtnText}>{primaryLabel}</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.footerText, { marginTop: 10, textAlign: 'center' }]}>
+            Already have an account?{' '}
+            <Text
+              style={[styles.footerLink, { color: ACCENT }]}
+              onPress={() => navigation.navigate('Login')}
+            >
+              Login
+            </Text>
+          </Text>
+
+          <ProgressPills />
+        </Animated.View>
+      )}
+
+      {/* Terms Modal */}
+      <Modal visible={showTC} animationType="slide" transparent onRequestClose={() => setShowTC(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
@@ -557,393 +742,262 @@ const RegistrationScreen = ({ navigation, route }) => {
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Replace with your real T&C text */}
-              <Text style={styles.tcParagraph}>
-                Welcome to TarTrack. By creating an account, you agree to comply with these Terms & Conditions.
-                Please read them carefully.
-              </Text>
+              <Text style={styles.tcParagraph}>Welcome to TarTrack. By creating an account, you agree to comply with these Terms & Conditions. Please read them carefully.</Text>
               <Text style={styles.tcHeading}>1. Account</Text>
-              <Text style={styles.tcParagraph}>
-                You are responsible for safeguarding your password and for any activities or actions under your account.
-              </Text>
+              <Text style={styles.tcParagraph}>You are responsible for safeguarding your password and for any activities or actions under your account.</Text>
               <Text style={styles.tcHeading}>2. Data & Privacy</Text>
-              <Text style={styles.tcParagraph}>
-                We process your personal data in accordance with our Privacy Policy. You consent to the collection and
-                processing of your information for registration, verification, and service delivery.
-              </Text>
+              <Text style={styles.tcParagraph}>We process your personal data in accordance with our Privacy Policy. You consent to the collection and processing of your information for registration, verification, and service delivery.</Text>
               <Text style={styles.tcHeading}>3. Acceptable Use</Text>
-              <Text style={styles.tcParagraph}>
-                Do not misuse the service. You agree not to engage in fraudulent activities or violate applicable laws.
-              </Text>
+              <Text style={styles.tcParagraph}>Do not misuse the service. You agree not to engage in fraudulent activities or violate applicable laws.</Text>
               <Text style={styles.tcHeading}>4. Role-Specific Requirements</Text>
               <Text style={styles.tcParagraph}>
-                Drivers and Owners may be required to submit additional documents for verification (e.g., license,
-                business permits). Providing inaccurate information may lead to account suspension.
-                {"\n\n"}
-                Driver and Owner registrations require admin approval. Upon approval, you will receive login credentials via email.
-                You may optionally provide your own password during registration, or have a secure password generated for you.
+                Drivers and Owners may be required to submit additional documents for verification (e.g., license, business permits). Providing inaccurate information may lead to account suspension.{'\n\n'}
+                Driver and Owner registrations require admin approval. Upon approval, you will receive login credentials via email. You may optionally provide your own password during registration, or have a secure password generated for you.
               </Text>
               <Text style={styles.tcHeading}>5. Changes</Text>
-              <Text style={styles.tcParagraph}>
-                We may update these terms from time to time. Continued use after updates constitutes acceptance.
-              </Text>
-              <Text style={styles.tcParagraph}>
-                If you do not agree with these terms, please decline and do not proceed with registration.
-              </Text>
+              <Text style={styles.tcParagraph}>We may update these terms from time to time. Continued use after updates constitutes acceptance.</Text>
+              <Text style={styles.tcParagraph}>If you do not agree with these terms, please decline and do not proceed with registration.</Text>
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.footerBtn, styles.declineBtn]}
-                onPress={() => { setShowTC(false); setAgree(false); }}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity style={[styles.footerBtn, styles.declineBtn]} onPress={() => { setShowTC(false); setAgree(false); }} activeOpacity={0.85}>
                 <Text style={[styles.footerBtnText, { color: colors.text }]}>Decline</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.footerBtn, styles.acceptBtn]}
-                onPress={() => { setAgree(true); setShowTC(false); }}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity style={[styles.footerBtn, styles.acceptBtn, { backgroundColor: ACCENT }]} onPress={() => { setAgree(true); setShowTC(false); }} activeOpacity={0.85}>
                 <Text style={[styles.footerBtnText, { color: '#fff' }]}>Accept & Close</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+
+      {/* Pending approval modal */}
+      <Modal visible={pendingVisible} transparent animationType="fade" onRequestClose={() => setPendingVisible(false)}>
+        <View style={styles.pendingBackdrop}>
+          <View style={styles.pendingCard}>
+            <Animated.View style={[styles.spinnerWrap, spinStyle]}>
+              <Ionicons name="refresh" size={28} color={ACCENT} />
+            </Animated.View>
+            <Text style={styles.pendingTitle}>Processing</Text>
+            <Text style={styles.pendingText}>
+              Please wait for admin approval to log in to your account.{'\n'}
+              We’ll notify you once you’re approved. Thank you!
+            </Text>
+            <TouchableOpacity
+              onPress={() => { setPendingVisible(false); navigation.navigate('Login'); }}
+              style={[styles.primaryBtn, { backgroundColor: ACCENT, marginTop: 12 }]}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.primaryBtnText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  
-  // Header
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: spacing.md,
-  },
-  
-  // Welcome Section
-  welcomeSection: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  roleIconContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    ...card,
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: spacing.md,
-  },
-  
-  // Form Container
-  formContainer: {
-    gap: spacing.lg,
-  },
-  
-  // Section Header
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
-    marginTop: spacing.md,
-  },
-  sectionIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: `${colors.primary}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  sectionTextContainer: {
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    lineHeight: 22,
-  },
-  
-  // Input Styles
-  inputContainer: {
-    marginBottom: spacing.md,
-  },
-  inputLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 10,
-    marginLeft: 4,
-  },
-  modernInput: {
-    backgroundColor: colors.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    fontSize: 16,
-    color: colors.text,
-    ...card,
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    minHeight: 56,
-  },
-  
-  // Question/Toggle Styles
-  questionContainer: {
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...card,
-    shadowOpacity: 0.03,
-  },
-  questionLabel: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.md,
-    lineHeight: 26,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  toggleOption: {
-    flex: 1,
+  // Page
+  root: { flex: 1, backgroundColor: colors.background },
+  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+
+  // Minimal app bar
+  appBar: {
+    marginTop: Platform.OS === 'ios' ? 14 : 8,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 2,
-    borderColor: colors.border,
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
-    minHeight: 60,
+    justifyContent: 'space-between',
   },
-  toggleSelected: {
-    backgroundColor: `${colors.primary}10`,
-    borderColor: colors.primary,
+  backCircle: {
+    marginLeft: -20,
+    marginTop: 50,
   },
-  toggleText: {
-    fontSize: 20,
-    fontWeight: '700',
+  appBarTitle: {
+    fontSize: 14,
+    letterSpacing: 0.5,
     color: colors.textSecondary,
-  },
-  toggleTextSelected: {
-    color: colors.primary,
-  },
-  
-  // Terms & Conditions
-  termsContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...card,
-    shadowOpacity: 0.03,
-  },
-  checkboxContainer: {
-    marginRight: spacing.md,
-    paddingTop: 2,
-  },
-  termsTextContainer: {
-    flex: 1,
-  },
-  termsMainText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 6,
-    lineHeight: 24,
-  },
-  termsSubtext: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    lineHeight: 22,
-  },
-  termsLink: {
-    color: colors.primary,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
-  
-  // Register Button
-  registerButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    paddingVertical: 22,
-    marginTop: spacing.lg,
-    marginBottom: spacing.lg,
-    ...card,
-    shadowColor: colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-    minHeight: 70,
-  },
-  registerButtonDisabled: {
-    backgroundColor: colors.textSecondary,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  loadingContainer: {
-    transform: [{ rotate: '360deg' }],
-  },
-  registerButtonText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-  },
-  
-  // Footer
-  footer: {
-    alignItems: 'center',
-    paddingTop: spacing.lg,
-  },
-  footerText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  footerLink: {
-    fontSize: 16,
-    color: colors.primary,
     fontWeight: '700',
   },
 
-  
-  // Modal styles
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    maxHeight: '85%',
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: spacing.md,
-    ...card,
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-  },
-  modalHeader: {
+  // Hero
+  heroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    marginTop: 18,
+    marginLeft: 50,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
-  modalTitle: {
-    flex: 1,
-    fontSize: 20,
+  roleChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: ACCENT + '12',
+    borderWidth: 1,
+    borderColor: ACCENT + '33',
+    marginBottom: 6,
+  },
+  roleChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  heroIconCircle: {
+    width: 46, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#00000008',
+  },
+  heroTitle: {
+    fontSize: 24,
     fontWeight: '800',
     color: colors.text,
+    letterSpacing: 0.2,
   },
-  modalCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBody: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  tcHeading: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  tcParagraph: {
+  heroSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
     color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: spacing.sm,
   },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+
+  // Section header
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  sectionIconContainer: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: `${ACCENT}15`,
+    borderWidth: 1, borderColor: `${ACCENT}33`,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10,
   },
-  footerBtn: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  declineBtn: {
-    backgroundColor: colors.background,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  acceptBtn: {
-    backgroundColor: colors.primary,
+  sectionTextContainer: { flex: 1 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 2 },
+  sectionSubtitle: { fontSize: 12, color: colors.textSecondary },
+
+  // Section surface (card-like container)
+  sectionSurface: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.card,
     ...card,
-    shadowColor: colors.primary,
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    marginTop: 8,
+  },
+
+  // Inputs
+  fieldWrap: { marginBottom: 10 },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 },
+  inputSurface: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    ...card,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
   },
-  footerBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
+  modernInput: {
+    flex: 1,
+    paddingVertical: 1,
+    fontSize: 15,
+    color: colors.text,
   },
+
+  // Toggle block
+  questionBox: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: 14,
+    backgroundColor: colors.background, padding: 12, marginTop: 6,
+  },
+  questionTitle: { fontSize: 13, fontWeight: '800', color: colors.text, marginBottom: 10 },
+  toggleRow: { flexDirection: 'row', gap: 10 },
+  toggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border, borderRadius: 999,
+    paddingVertical: 12, gap: 6,
+    backgroundColor: colors.card,
+  },
+  toggleOn: {
+    backgroundColor: ACCENT,
+    borderColor: ACCENT,
+  },
+  toggleTxt: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+  toggleTxtOn: { color: '#fff' },
+
+  // Terms
+  helperCaption: { fontSize: 11, color: colors.textSecondary, marginTop: 8, marginBottom: 6 },
+  termsRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 4, paddingHorizontal: 0, marginBottom: 4 },
+  termsMain: { fontSize: 13, fontWeight: '700', color: colors.text, lineHeight: 18 },
+  termsSub: { fontSize: 12, color: colors.textSecondary, marginTop: 6 },
+  termsLink: { fontWeight: '800', textDecorationLine: 'underline' },
+
+  // Buttons
+  primaryBtn: {
+    backgroundColor: ACCENT,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 6,
+  },
+  btnLarge: { marginTop: 6 },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.2 },
+  btnDisabled: { backgroundColor: colors.textSecondary },
+
+  // Progress
+  pillsRow: { flexDirection: 'row', gap: 8, alignSelf: 'center', marginTop: 10, marginBottom: 2 },
+  pill: { height: 6, borderRadius: 999, width: 54 },
+  pillActive: { backgroundColor: ACCENT },
+  pillInactive: { backgroundColor: '#00000014' },
+
+  backLink: { fontSize: 12, fontWeight: '800' },
+
+  // Sticky footer (elevated)
+  stickyFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 10,
+    backgroundColor: colors.background,
+  },
+
+  footerText: { fontSize: 13, color: colors.textSecondary },
+  footerLink: { fontSize: 13, fontWeight: '900' },
+
+  // T&C modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { maxHeight: '85%', backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: spacing.md },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md },
+  modalTitle: { flex: 1, fontSize: 18, fontWeight: '800', color: colors.text },
+  modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  modalBody: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  tcHeading: { fontSize: 14, fontWeight: '700', color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
+  tcParagraph: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.sm },
+  modalFooter: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
+  footerBtn: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  declineBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+  acceptBtn: { backgroundColor: ACCENT },
+  footerBtnText: { fontSize: 13, fontWeight: '700' },
+
+  // Pending modal
+  pendingBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  pendingCard: {
+    width: '84%', backgroundColor: colors.card, borderRadius: 16, padding: 18,
+    alignItems: 'center', ...card, shadowOpacity: 0.15, shadowRadius: 16,
+  },
+  spinnerWrap: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: `${ACCENT}10`, marginBottom: 10 },
+  pendingTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 6 },
+  pendingText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18 },
 });
 
 export default RegistrationScreen;

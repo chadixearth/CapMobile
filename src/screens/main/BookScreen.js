@@ -24,7 +24,6 @@ import { getCustomerCustomRequests } from '../../services/specialpackage/customP
 import { createPackageReview, createDriverReview, checkExistingReviews } from '../../services/reviews';
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
-import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
 
 const MAROON = '#6B2E2B';
 
@@ -40,10 +39,9 @@ export default function BookScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
 
-  // filters & search
+  // filters
   const [activeFilter, setActiveFilter] = useState('all'); // all | upcoming | completed | cancelled | pending | confirmed
   const [showFilterPicker, setShowFilterPicker] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   // expand map
   const [expandedMap, setExpandedMap] = useState({});
@@ -965,7 +963,7 @@ export default function BookScreen({ navigation }) {
   const hasAssignedDriverForCustom = (r) => !!(getCustomDriverName(r) && String(getCustomDriverName(r)).trim());
   const getCustomOwnerName = (r) => r?.owner_name || r?.event_owner?.name || r?.owner?.name || null;
   
-    // Utility to clean up email-like names
+  // Utility to clean up email-like names
   const cleanName = (name) => {
     if (!name) return null;
     let trimmed = String(name).trim();
@@ -978,7 +976,7 @@ export default function BookScreen({ navigation }) {
   const getCustomContactName = (r) => {
     let name;
 
-  if (r.request_type === 'special_event') {
+    if (r.request_type === 'special_event') {
       name = getCustomOwnerName(r) || 'Event Owner';
     } else {
       name = getCustomDriverName(r) || 'Driver';
@@ -999,27 +997,28 @@ export default function BookScreen({ navigation }) {
     const expandId = `custom-${r?.id}`;
     const isExpanded = !!expandedMap[expandId];
     const toggleExpand = () => setExpandedMap((p) => ({ ...p, [expandId]: !p[expandId] }));
-      const getCustomParticipantRole = (r) => {
-        // Use request_type to determine role
-        if (r.request_type === 'special_event') {
-          return 'owner';
-        }
-        return 'driver';
-      };
-      // For custom tours: show when driver_assigned or in_progress
-      // For special events: show when owner_accepted or in_progress
-      const shouldShowMessageButton = (
-        // For custom tours with an assigned driver
-        (r.request_type !== 'special_event' && 
+    const getCustomParticipantRole = (r) => {
+      // Use request_type to determine role
+      if (r.request_type === 'special_event') {
+        return 'owner';
+      }
+      return 'driver';
+    };
+
+    // For custom tours: show when driver_assigned or in_progress
+    // For special events: show when owner_accepted or in_progress
+    const shouldShowMessageButton = (
+      // For custom tours with an assigned driver
+      (r.request_type !== 'special_event' && 
         hasAssignedDriverForCustom(r) && 
         (status.toLowerCase() === 'driver_assigned' || 
           status.toLowerCase() === 'in_progress')) 
-        ||
-        // For special events with owner acceptance
-        (r.request_type === 'special_event' && 
+      ||
+      // For special events with owner acceptance
+      (r.request_type === 'special_event' && 
         (status.toLowerCase() === 'owner_accepted' || 
           status.toLowerCase() === 'in_progress'))
-      );
+    );
 
     return (
       <View key={expandId} style={styles.card}>
@@ -1041,7 +1040,7 @@ export default function BookScreen({ navigation }) {
             {formatDate(date)}{time ? ` • ${formatTime(time)}` : ''}{pax != null ? ` • ${pax} pax` : ''}
           </Text>
 
-          {/* Mini driver line (unchanged logic) */}
+          {/* Mini driver line */}
           <View style={styles.simpleMidRow}>
             <View style={styles.simpleDriverRow}>
               {hasAssignedDriverForCustom(r) ? (
@@ -1146,18 +1145,9 @@ export default function BookScreen({ navigation }) {
     return true;
   };
 
-  const searchMatches = (b) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.trim().toLowerCase();
-    const composite = [
-      b?.booking_reference, b?.package_name, b?.tour_package_name, b?.packageTitle, b?.name,
-      b?.id, b?.request_type, b?.destination, b?.event_type, b?.status
-    ].filter(Boolean).join(' ').toLowerCase();
-    return composite.includes(q);
-  };
-
-  const filteredBookings = bookings.filter((b) => filterMatches(b) && searchMatches(b));
-  const filteredCustom   = customRequests.filter((r) => filterMatches(r) && searchMatches(r));
+  // Search removed: use only filterMatches
+  const filteredBookings = bookings.filter((b) => filterMatches(b));
+  const filteredCustom   = customRequests.filter((r) => filterMatches(r));
 
   const statusCounts = (() => {
     const allItems = bookings; // counts are for tour bookings only (as before)
@@ -1195,22 +1185,7 @@ export default function BookScreen({ navigation }) {
   // ---------- render
   return (
     <View style={styles.container}>
-      {/* Search */}
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={18} color="#fff" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by reference or package"
-          placeholderTextColor="#fff"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color="#fff" />
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* Search bar removed */}
 
       <View style={styles.content}>
         {/* Title + actions */}
@@ -1228,6 +1203,7 @@ export default function BookScreen({ navigation }) {
             </TouchableOpacity>
           )}
         </View>
+
         {/* Filters */}
         <View style={styles.filtersRow}>
           <Text style={styles.filtersLabel}>Filters</Text>
@@ -1459,7 +1435,7 @@ export default function BookScreen({ navigation }) {
                   <TouchableOpacity 
                     style={[
                       styles.pillBtn, 
-                      { backgroundColor: ackCancel ? '#C62828' : '#C62828', flex: 1, opacity: ackCancel && !cancelling ? 1 : 0.6 }
+                      { backgroundColor: '#C62828', flex: 1, opacity: ackCancel && !cancelling ? 1 : 0.6 }
                     ]} 
                     onPress={confirmCancelBooking}
                     disabled={!ackCancel || cancelling}
@@ -1537,19 +1513,6 @@ export default function BookScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   content: { flex: 1, paddingHorizontal: 16 },
-
-  // search
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    borderRadius: 18,
-    marginHorizontal: 16,
-    paddingHorizontal: 12,
-    height: 36,
-    marginTop: 18,
-  },
-  searchInput: { flex: 1, color: '#fff', marginLeft: 6, fontSize: 13 },
 
   // top header
   header: { 

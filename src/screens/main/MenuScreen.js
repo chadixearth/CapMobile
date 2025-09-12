@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import ProfileItem from '../../components/ProfileItem';
 import * as Routes from '../../constants/routes';
 import Button from '../../components/Button';
@@ -35,8 +36,6 @@ export default function MenuScreen({ navigation }) {
   const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const auth = useAuth();
-  
-  // Get authenticated data
   const { bookings, userCarriages, earnings, hasData } = useAuthData();
 
   const fetchUser = async () => {
@@ -100,16 +99,13 @@ export default function MenuScreen({ navigation }) {
     setDeletingAccount(true);
     try {
       const result = await requestAccountDeletion(user.id, 'User requested account deletion from mobile app');
-      
+
       if (result.success) {
-        // Account deletion is scheduled for 7 days
-        // User will be logged out immediately
         const days = result.days_remaining || 7;
-        const deletionDate = result.scheduled_deletion_at 
+        const deletionDate = result.scheduled_deletion_at
           ? new Date(result.scheduled_deletion_at).toLocaleDateString()
           : 'in 7 days';
-        
-        // Show success message about the 7-day deletion schedule
+
         alert(
           `Account Deletion Scheduled\n\n` +
           `Your account will be permanently deleted on ${deletionDate}.\n\n` +
@@ -117,8 +113,7 @@ export default function MenuScreen({ navigation }) {
           `To cancel the deletion, simply log in again and your account will be automatically reactivated.\n\n` +
           `You will now be logged out.`
         );
-        
-        // Logout user immediately as required by the API
+
         setTimeout(async () => {
           await auth.logout();
         }, 100);
@@ -138,33 +133,27 @@ export default function MenuScreen({ navigation }) {
     user?.name || user?.full_name || user?.user_metadata?.name || '';
   const email = user?.email || '';
   const avatarUrl = name
-    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        name
-      )}&background=6B2E2B&color=fff&size=128`
+    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`
     : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        {/* Top icons row */}
-        <View style={styles.headerIconsRow}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack?.()}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate(Routes.NOTIFICATIONS || 'NotificationScreen')
-            }
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="notifications-outline" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
+      {/* TOP APP BAR: Back (left) + Notifications (right) ONLY */}
+      <TARTRACKHeader
+        showBack
+        onBackPress={() => navigation.goBack?.()}
+        showMessage={false}
+        showNotification
+        onNotificationPress={() =>
+          navigation.navigate(Routes.NOTIFICATIONS || 'Notification')
+        }
+        containerStyle={{ backgroundColor: MAROON }}
+        headerStyle={{ backgroundColor: MAROON, borderBottomWidth: 0 }}
+        tint="#fff"
+      />
 
+      {/* User banner (kept) */}
+      <View style={styles.header}>
         <View style={styles.avatarRow}>
           <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           <View style={styles.userInfo}>
@@ -231,21 +220,13 @@ export default function MenuScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.card}>
           <ProfileItem
-            icon={
-              <Ionicons
-                name="information-circle-outline"
-                size={22}
-                color={MAROON}
-              />
-            }
+            icon={<Ionicons name="information-circle-outline" size={22} color={MAROON} />}
             label="About TarTrack"
             onPress={() => navigation.navigate(Routes.ABOUT || 'About')}
           />
           <Divider />
           <ProfileItem
-            icon={
-              <Ionicons name="help-circle-outline" size={22} color={MAROON} />
-            }
+            icon={<Ionicons name="help-circle-outline" size={22} color={MAROON} />}
             label="Help Center"
             onPress={() => navigation.navigate(Routes.HELP || 'Help')}
           />
@@ -261,17 +242,13 @@ export default function MenuScreen({ navigation }) {
           />
           <Divider />
           <ProfileItem
-            icon={
-              <MaterialIcons name="privacy-tip" size={22} color={MAROON} />
-            }
+            icon={<MaterialIcons name="privacy-tip" size={22} color={MAROON} />}
             label="Privacy Policy"
             onPress={() => navigation.navigate(Routes.PRIVACY || 'Privacy')}
           />
           <Divider />
           <ProfileItem
-            icon={
-              <MaterialIcons name="delete-forever" size={22} color="#DC3545" />
-            }
+            icon={<MaterialIcons name="delete-forever" size={22} color="#DC3545" />}
             label="Delete Account"
             onPress={openDeleteAccountConfirm}
             textStyle={{ color: '#DC3545' }}
@@ -291,7 +268,7 @@ export default function MenuScreen({ navigation }) {
             )}
           </View>
         )}
-        
+
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
 
@@ -380,9 +357,7 @@ export default function MenuScreen({ navigation }) {
 
             <Text style={styles.modalTitle}>Delete Account</Text>
             <Text style={styles.modalDesc}>
-              Your account will be scheduled for deletion in 7 days. During this time,{' '}
-              you can change your mind and cancel the deletion by simply logging in again.{' '}
-              After 7 days, all your data will be permanently deleted and cannot be recovered.
+              Your account will be scheduled for deletion in 7 days. During this time, you can change your mind and cancel the deletion by simply logging in again. After 7 days, all your data will be permanently deleted and cannot be recovered.
             </Text>
             <Text style={[styles.modalDesc, { fontWeight: '600', color: '#DC3545', marginTop: 4 }]}>
               You will be logged out immediately after confirming.
@@ -436,19 +411,14 @@ function Divider() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
 
+  // Maroon banner holding avatar + name (icons row removed)
   header: {
     backgroundColor: MAROON,
-    paddingTop: 28,
+    paddingTop: 12,
     paddingBottom: 20,
     paddingHorizontal: 16,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-  },
-  headerIconsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
   },
   avatarRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {
@@ -518,7 +488,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
-  /* Modal */
+  /* Modals */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
