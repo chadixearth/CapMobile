@@ -726,12 +726,15 @@ const getCustomTitle = (r) => (
           </TouchableOpacity>
         )
       )}
-<<<<<<< HEAD
+
       {activeTab === 'ongoing' && (booking.status === 'in_progress' || booking.status === 'ongoing') && (
-        <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
-          <Ionicons name="checkmark-done" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Complete Booking</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
+            <Ionicons name="checkmark-done" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Complete Booking</Text>
+          </TouchableOpacity>
+          {renderMessageButton(booking)}
+        </>
       )}
       {activeTab === 'ongoing' && (booking.status === 'confirmed' || booking.status === 'driver_assigned') && booking.payment_status !== 'paid' && (
         <View style={[styles.acceptButton, styles.disabledButton]}>
@@ -739,7 +742,7 @@ const getCustomTitle = (r) => (
           <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
         </View>
       )}
-      {activeTab === 'ongoing' && booking.payment_status === 'paid' && booking.status === 'driver_assigned' && (
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
         <>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
@@ -751,43 +754,17 @@ const getCustomTitle = (r) => (
               {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
             </Text>
           </TouchableOpacity>
-=======
-{activeTab === 'ongoing' && (booking.status === 'in_progress' || booking.status === 'ongoing') && (
-  <>
-    <TouchableOpacity style={[styles.acceptButton, styles.completeBtn]} onPress={() => handleCompleteBooking(booking)}>
-      <Ionicons name="checkmark-done" size={18} color="#fff" />
-      <Text style={styles.acceptButtonText}>Complete Booking</Text>
-    </TouchableOpacity>
-    {/* Use the shared message button function */}
-    {renderMessageButton(booking)}
-  </>
-)}
->>>>>>> 79bb525a7300f15cd3a85c3b24ad67cba14df388
-
-{activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
-  <>
-    <TouchableOpacity
-      style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
-      onPress={() => canStartToday(booking) && handleStartTrip(booking)}
-      disabled={!canStartToday(booking) || acceptingBooking}
-    >
-      <Ionicons name="play" size={18} color="#fff" />
-      <Text style={styles.acceptButtonText}>
-        {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
-      </Text>
-    </TouchableOpacity>
-    {/* Use the shared message button function */}
-    {renderMessageButton(booking)}
-    <TouchableOpacity
-      style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
-      onPress={() => handleCancelBooking(booking)}
-      disabled={acceptingBooking}
-    >
-      <Ionicons name="close-circle" size={18} color="#fff" />
-      <Text style={styles.acceptButtonText}>Cancel Booking</Text>
-    </TouchableOpacity>
-  </>
-)}
+          {renderMessageButton(booking)}
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
+            onPress={() => handleCancelBooking(booking)}
+            disabled={acceptingBooking}
+          >
+            <Ionicons name="close-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 
