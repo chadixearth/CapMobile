@@ -3,7 +3,7 @@
  * Run this with: node debug_profile_api.js
  */
 
-const API_BASE_URL = 'http://192.168.1.9:8000/api';
+const API_BASE_URL = 'http://192.168.101.76:8000/api';
 
 async function testProfileUpdateAPI() {
   console.log('=== Profile Update API Debug ===\n');

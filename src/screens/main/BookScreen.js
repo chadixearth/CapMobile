@@ -770,9 +770,9 @@ export default function BookScreen({ navigation }) {
             <Text style={styles.simpleTitle} numberOfLines={1} ellipsizeMode="tail">
               {title}
             </Text>
-            <View style={[styles.simpleBadge, { borderColor: statusColor }]}>
-              <Ionicons name={getStatusIcon(status)} size={14} color={statusColor} />
-              <Text style={[styles.simpleBadgeText, { color: statusColor }]} numberOfLines={1}>
+            <View style={[styles.simpleBadge, { borderColor: getStatusColor(status) }]}>
+              <Ionicons name={getStatusIcon(status)} size={14} color={getStatusColor(status)} />
+              <Text style={[styles.simpleBadgeText, { color: getStatusColor(status) }]} numberOfLines={1}>
                 {prettyStatus(status)}
               </Text>
             </View>
