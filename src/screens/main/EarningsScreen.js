@@ -8,7 +8,6 @@ import {
   TextInput,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -18,47 +17,18 @@ import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 
 import {
-  getDriverEarnings,
   getDriverEarningsStats,
-  getEarningsPercentageChange,
-  getDailyIncome,                 // daily totals (finalized only)
-  getPendingPayoutAmount,         // admin pending payout by user id
-  getLatestFinalizedEarnings,     // latest 5 finalized (fallback)
-  getNotifications,               // 🔔 notifications feed
+  getPendingPayoutAmount, // admin pending payout by user id
   formatCurrency,
-  formatPercentage,
 } from '../../services/earningsService';
 
-// --- Helpers ----------------------------------------------------
+/* ---------- Helpers ---------- */
 
 const peso = (n) =>
   `₱ ${Number(n || 0).toLocaleString('en-PH', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-
-// Render timestamps in Asia/Manila regardless of device timezone
-function formatMnlDateTime(iso) {
-  if (!iso) return '';
-  try {
-    return new Intl.DateTimeFormat('en-PH', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      timeZone: 'Asia/Manila',
-    }).format(new Date(iso));
-  } catch {
-    return new Date(iso).toLocaleString();
-  }
-}
-
-function todayISO() {
-  return new Date().toISOString().split('T')[0];
-}
-function addDaysISO(d, delta) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + delta);
-  return x.toISOString().split('T')[0];
-}
 
 const PERIOD_BY_FREQ = {
   Daily: 'today',
@@ -98,7 +68,7 @@ function useDriverId(route) {
   return id;
 }
 
-// --- Component --------------------------------------------------
+/* ---------- Component ---------- */
 
 export default function EarningsScreen({ navigation, route }) {
   useLayoutEffect(() => {
@@ -117,11 +87,8 @@ export default function EarningsScreen({ navigation, route }) {
   const [bookings, setBookings] = useState('5');
 
   // API-backed state
-  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState(null);
-  const [trend, setTrend] = useState({ up: true, pct: '0.0%' });
-  const [feed, setFeed] = useState([]); // 🔔 unified feed (notifications first; fallback: finalized earnings)
   const [errorText, setErrorText] = useState('');
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0);
 
@@ -137,76 +104,10 @@ export default function EarningsScreen({ navigation, route }) {
     return totalRevenue - exp;
   }, [totalRevenue, expenses]);
 
-  const incomeTitle =
-    frequency === 'Daily' ? 'Daily Income' : frequency === 'Weekly' ? 'Weekly Income' : 'Monthly Income';
-
-  // --- Fetchers -------------------------------------------------
-
-  // Daily trend using base API (today vs yesterday)
-  const fetchDailyTrend = useCallback(
-    async (drvId) => {
-      try {
-        const today = todayISO();
-        const yesterday = addDaysISO(new Date(), -1);
-
-        const [curr, prev] = await Promise.all([
-          getDriverEarnings(drvId, { date_from: today }),                  // today from 00:00 → now
-          getDriverEarnings(drvId, { date_from: yesterday, date_to: today }), // yesterday full day
-        ]);
-
-        const currAmt = curr?.success ? curr?.data?.statistics?.total_driver_earnings || 0 : 0;
-        const prevAmt = prev?.success ? prev?.data?.statistics?.total_driver_earnings || 0 : 0;
-
-        let pct = 0;
-        let up = true;
-        if (prevAmt > 0) {
-          pct = ((currAmt - prevAmt) / prevAmt) * 100;
-          up = pct >= 0;
-        } else if (currAmt > 0) {
-          pct = 100;
-          up = true;
-        }
-        return { up, pct: `${Math.abs(pct).toFixed(1)}%` };
-      } catch {
-        return { up: true, pct: '0.0%' };
-      }
-    },
-    []
-  );
-
-  const fetchFeed = useCallback(async (drvId) => {
-    // 1) Try notifications
-    const notif = await getNotifications(drvId, 5).catch(() => ({ success: false, data: [] }));
-    if (notif?.success && Array.isArray(notif.data) && notif.data.length > 0) {
-      return notif.data.map(n => ({
-        __kind: 'notification',
-        id: n.id,
-        type: n.type,                     // payout_released | payout_pending_updated | earning_added
-        title: n.title,
-        message: n.message,
-        amount: n.amount,
-        ts: n.generated_at,               // Asia/Manila ISO from API
-        meta: n.meta || {},
-      }));
-    }
-
-    // 2) Fallback to latest finalized earnings
-    const latest = await getLatestFinalizedEarnings(drvId, 5).catch(() => ({ success: false, data: [] }));
-    return (latest?.data || []).map(e => ({
-      __kind: 'earning',
-      id: e.id,
-      amount: e.driver_earnings || e.amount || 0,
-      package_name: e.package_name,
-      ts: e.earning_date,
-      raw: e,
-    }));
-  }, []);
-
   const fetchAll = useCallback(
     async (drvId, currentFrequency) => {
       if (!drvId) return;
       setErrorText('');
-      setLoading(true);
 
       try {
         const period = PERIOD_BY_FREQ[currentFrequency];
@@ -214,53 +115,16 @@ export default function EarningsScreen({ navigation, route }) {
         // Base stats for the selected period
         const base = await getDriverEarningsStats(drvId, period);
         const baseData = base?.success ? base.data : null;
+        setStats(baseData || null);
 
         // Pending payout for this driver (Admin → Pending)
         const pending = await getPendingPayoutAmount(drvId);
         setPendingPayoutAmount(pending?.data?.amount || 0);
-
-        // 🔔 Unified FEED (notifications → fallback finalized)
-        const f = await fetchFeed(drvId);
-        setFeed(f);
-
-        if (currentFrequency === 'Daily') {
-          // Exact daily (finalized only) for the top card
-          const daily = await getDailyIncome(drvId);
-          const di = daily?.data || { amount: 0, count: 0, earnings: [] };
-
-          const merged = {
-            ...(baseData || {}),
-            period: 'today',
-            total_driver_earnings: di.amount,
-            earnings_today: di.amount,
-            completed_bookings_today: di.count,
-          };
-
-          setStats(merged);
-
-          // trend for daily
-          const t = await fetchDailyTrend(drvId);
-          setTrend({ up: t.up, pct: t.pct });
-        } else {
-          // Weekly / Monthly: stick to base stats
-          setStats(baseData || null);
-
-          // trend via % change endpoint
-          const pc = await getEarningsPercentageChange(
-            drvId,
-            currentFrequency === 'Weekly' ? 'week' : 'month'
-          );
-          const up = !!pc?.data?.is_increase;
-          const pct = formatPercentage(pc?.data?.percentage_change || 0);
-          setTrend({ up, pct });
-        }
       } catch (e) {
         setErrorText((e && (e.message || e.toString())) || 'Failed to load earnings. Please try again.');
-      } finally {
-        setLoading(false);
       }
     },
-    [fetchDailyTrend, fetchFeed]
+    []
   );
 
   // Initial + on frequency change
@@ -284,60 +148,19 @@ export default function EarningsScreen({ navigation, route }) {
     setRefreshing(false);
   }, [driverId, frequency, fetchAll]);
 
-  // Amount on the card — driven by getDailyIncome for Daily
-  const incomeAmount = useMemo(() => {
-    if (!stats) return 0;
-    return stats.total_driver_earnings ?? stats.earnings_today ?? 0;
-  }, [stats]);
-
-  const incomeSubtitle = useMemo(() => {
-    if (!stats) {
-      return frequency === 'Daily' ? 'From recent tours' : 'Right on track—keep going!';
-    }
-    if (stats.period === 'today') {
-      const n = stats.completed_bookings_today || 0;
-      return n === 1 ? '1 completed booking today' : `${n} completed bookings today`;
-    }
-    const ct = stats.count || 0;
-    const avg = stats.avg_earning_per_booking || 0;
-    return `${ct} completed · ${formatCurrency(avg)} avg/booking`;
-  }, [stats, frequency]);
-
-  // To be paid — Admin uses pending payout amount for this user
+  // Kept for logic, UI intentionally removed previously
   const toBePaid = [
     { label: 'Admin', amount: pendingPayoutAmount, status: pendingPayoutAmount > 0 ? 'Pending' : '—' },
     { label: 'Owner', amount: stats?.total_driver_earnings ?? 0, status: 'Paid' },
   ];
 
-  // --- Feed render helpers ---------------------------------------------------
+  const profitPositive = profit >= 0;
 
-  function iconForItem(it) {
-    if (it.__kind === 'notification') {
-      switch (it.type) {
-        case 'payout_released':        return 'check-circle-outline';
-        case 'payout_pending_updated': return 'progress-clock';
-        case 'earning_added':          return 'calendar-account';
-        default:                       return 'bell-circle';
-      }
-    }
-    // fallback earnings row
-    return 'calendar-account';
-  }
-
-  function textForItem(it) {
-    if (it.__kind === 'notification') {
-      // Prefer server-sent message; fallback to title
-      return it.message || it.title || 'New update';
-    }
-    // fallback earnings row message
-    const amt = peso(it.amount || 0);
-    const pkg = it.package_name ? ` from ${it.package_name}` : ' from your tour';
-    return `You’ve earned ${amt}${pkg}`;
-  }
-
-  function timeForItem(it) {
-    return formatMnlDateTime(it.ts);
-  }
+  const onResetInputs = () => {
+    setExpenses('1500.00');
+    setFare('500.00');
+    setBookings('5');
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -351,113 +174,22 @@ export default function EarningsScreen({ navigation, route }) {
         style={styles.container}
         contentContainerStyle={{ paddingBottom: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
       >
         {/* Error banner */}
         {!!errorText && (
-          <View style={{ marginHorizontal: 20, marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: '#fdecea' }}>
-            <Text style={{ color: '#b3261e', fontWeight: '600' }}>{errorText}</Text>
+          <View style={styles.errorBanner}>
+            <Ionicons name="warning-outline" size={16} color="#B3261E" style={{ marginRight: 6 }} />
+            <Text style={styles.errorText}>{errorText}</Text>
           </View>
         )}
 
-        {/* INCOME */}
-        <View style={[card, styles.incomeCard]}>
-          <View style={styles.incomeTopRow}>
-            <Text style={styles.incomeTitle}>
-              {incomeTitle}
-            </Text>
-            <View style={[styles.trendChip, { backgroundColor: trend.up ? '#EAF7EE' : '#FDEEEE' }]}>
-              <Ionicons
-                name={trend.up ? 'trending-up-outline' : 'trending-down-outline'}
-                size={14}
-                color={trend.up ? '#2E7D32' : '#C62828'}
-              />
-              <Text style={[styles.trendText, { color: trend.up ? '#2E7D32' : '#C62828' }]}>{trend.pct}</Text>
-            </View>
+        {/* Section header (dropdown only) */}
+        <View style={styles.sectionRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="calculator-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Break Even Calculator</Text>
           </View>
-
-          <View style={styles.incomeMainRow}>
-            <View style={{ flex: 1 }}>
-              {loading ? (
-                <ActivityIndicator />
-              ) : (
-                <Text style={styles.incomeAmount}>{peso(incomeAmount)}</Text>
-              )}
-              <Text style={styles.incomeSub}>
-                {incomeSubtitle}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.detailBtn}
-              activeOpacity={0.8}
-              onPress={onRefresh}
-              accessibilityLabel="Refresh earnings"
-            >
-              <Ionicons name="refresh" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.segmentRow}>
-            {['Daily', 'Weekly', 'Monthly'].map((f) => (
-              <TouchableOpacity
-                key={f}
-                onPress={() => setFrequency(f)}
-                style={[styles.segmentBtn, frequency === f && styles.segmentBtnActive]}
-              >
-                <Text style={[styles.segmentText, frequency === f && styles.segmentTextActive]}>{f}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* TO BE PAID */}
-        <Text style={styles.sectionTitle}>To be Paid</Text>
-        <View style={[card, styles.cardTight]}>
-          {toBePaid.map((item, idx) => (
-            <View key={`${item.label}-${idx}`}>
-              <View style={styles.toBePaidRow}>
-                <Text style={styles.toBePaidLabel}>{item.label}</Text>
-                <Text style={styles.toBePaidAmount}>{peso(item.amount)}</Text>
-                <View style={[styles.statusPill, item.status === 'Paid' ? styles.pillPaid : styles.pillPending]}>
-                  <Text style={[styles.statusText, item.status === 'Paid' ? styles.paid : styles.pending]}>
-                    {item.status}
-                  </Text>
-                </View>
-              </View>
-              {idx < toBePaid.length - 1 && <View style={styles.rowDivider} />}
-            </View>
-          ))}
-        </View>
-
-        {/* EARNINGS FEED (notifications first; fallback to latest finalized) */}
-        <Text style={styles.sectionTitle}>Earnings</Text>
-        <View style={[card, styles.cardTight]}>
-          {(feed || []).map((it, i, arr) => (
-            <View key={it.id || i} style={[styles.earningRow, i < arr.length - 1 && styles.feedDivider]}>
-              <View style={styles.feedIcon}>
-                <MaterialCommunityIcons name={iconForItem(it)} size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.earningMsg}>{textForItem(it)}</Text>
-                {it.ts ? (
-                  <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 2 }}>
-                    {timeForItem(it)}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-          ))}
-          {!loading && (!feed || feed.length === 0) && (
-            <Text style={{ color: colors.textSecondary, paddingVertical: spacing.md, textAlign: 'center' }}>
-              No recent notifications yet.
-            </Text>
-          )}
-          {loading && <ActivityIndicator style={{ paddingVertical: spacing.md }} />}
-        </View>
-
-        {/* BREAK-EVEN */}
-        <View style={styles.breakEvenHeader}>
-          <Text style={styles.sectionTitle}>Break Even Calculator</Text>
 
           <View style={styles.dropdownWrap}>
             <TouchableOpacity
@@ -497,9 +229,13 @@ export default function EarningsScreen({ navigation, route }) {
           </View>
         </View>
 
-        <View style={[card, styles.cardTight]}>
+        {/* Inputs Card */}
+        <View style={[card, styles.elevatedCard]}>
+          <Text style={styles.cardSubtitle}>Enter your assumptions</Text>
+
           <Text style={styles.inputLabel}>Total Expenses</Text>
           <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="cash-multiple" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
             <Text style={styles.inputPrefix}>₱</Text>
             <TextInput
               style={styles.input}
@@ -513,6 +249,7 @@ export default function EarningsScreen({ navigation, route }) {
 
           <Text style={styles.inputLabel}>Fare per rent</Text>
           <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="timetable" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
             <Text style={styles.inputPrefix}>₱</Text>
             <TextInput
               style={styles.input}
@@ -524,8 +261,9 @@ export default function EarningsScreen({ navigation, route }) {
             />
           </View>
 
-          <Text style={styles.inputLabel}>Booking you need to accept</Text>
+          <Text style={styles.inputLabel}>Bookings you need to accept</Text>
           <View style={styles.inputWrap}>
+            <MaterialCommunityIcons name="calendar-check-outline" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
             <TextInput
               style={[styles.input, { paddingLeft: 0 }]}
               value={bookings}
@@ -536,31 +274,63 @@ export default function EarningsScreen({ navigation, route }) {
             />
           </View>
 
-          <Text style={styles.inputLabel}>Total Revenue</Text>
-          <View style={styles.inputWrapDisabled}>
-            <Text style={styles.inputPrefix}>₱</Text>
-            <Text style={styles.inputDisabledText}>
-              {Number(totalRevenue).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
+          {/* Metric tiles */}
+          <View style={styles.metricsRow}>
+            <View style={[styles.metricCard, styles.shadowSoft]}>
+              <View style={styles.metricHeader}>
+                <View style={styles.iconBubble}>
+                  <Ionicons name="wallet-outline" size={16} color={colors.primary} />
+                </View>
+                <Text style={styles.metricLabel}>Total Revenue</Text>
+              </View>
+              <Text style={styles.metricValue}>
+                {Number(totalRevenue).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2, })}
+              </Text>
+            </View>
+
+            <View style={[styles.metricCard, styles.shadowSoft]}>
+              <View style={styles.metricHeader}>
+                <View style={[styles.iconBubble, { backgroundColor: profitPositive ? '#EAF7EE' : '#FDEEEE' }]}>
+                  <Ionicons
+                    name={profitPositive ? 'trending-up-outline' : 'trending-down-outline'}
+                    size={16}
+                    color={profitPositive ? '#2E7D32' : '#C62828'}
+                  />
+                </View>
+                <Text style={styles.metricLabel}>Profit</Text>
+              </View>
+              <Text style={[styles.metricValue, { color: profitPositive ? colors.text : '#C62828' }]}>
+                {Number(profit).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2, })}
+              </Text>
+            </View>
           </View>
 
-          <Text style={styles.inputLabel}>Profit</Text>
-          <View style={styles.inputWrapDisabled}>
-            <Text style={styles.inputPrefix}>₱</Text>
-            <Text style={styles.inputDisabledText}>
-              {Number(profit).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
+          {/* Actions */}
+          <View style={styles.actionsRow}>
+            <TouchableOpacity onPress={onResetInputs} style={styles.btnOutline} activeOpacity={0.85}>
+              <Ionicons name="refresh" size={14} color={colors.primary} />
+              <Text style={styles.btnOutlineText}>Reset</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={onRefresh} style={styles.btnPrimary} activeOpacity={0.9}>
+              <Ionicons name="sparkles-outline" size={14} color="#fff" />
+              <Text style={styles.btnPrimaryText}>Calculate</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* REPORTS */}
-        <View style={styles.breakEvenHeader}>
-          <Text style={styles.sectionTitle}>Breakeven Reports</Text>
+        {/* Reports */}
+        <View style={styles.sectionRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <MaterialCommunityIcons name="chart-areaspline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Breakeven Reports</Text>
+          </View>
           <TouchableOpacity onPress={onRefresh}>
             <Text style={styles.viewAllText}>Refresh</Text>
           </TouchableOpacity>
         </View>
-        <View style={[card, styles.cardTight]}>
+
+        <View style={[card, styles.elevatedCard, styles.cardTight]}>
           {[
             {
               id: 1,
@@ -571,7 +341,7 @@ export default function EarningsScreen({ navigation, route }) {
           ].map((r, idx, arr) => (
             <View key={r.id} style={[styles.reportRow, idx < arr.length - 1 && styles.feedDivider]}>
               <View style={styles.feedIcon}>
-                <MaterialCommunityIcons name="chart-areaspline" size={18} color={colors.primary} />
+                <MaterialCommunityIcons name="lightning-bolt-outline" size={18} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.reportTitle}>{r.title}</Text>
@@ -590,9 +360,80 @@ export default function EarningsScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
 
-  /* Income card */
-  incomeCard: {
-    marginTop: spacing.md,
+  /* Error */
+  errorBanner: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#FDECEA',
+    borderWidth: 1,
+    borderColor: '#F6C4C0',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  errorText: { color: '#B3261E', fontWeight: '600', fontSize: 12 },
+
+  /* Section header */
+  sectionRow: {
+    marginTop: 10,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+
+  /* Dropdown (kept) */
+  dropdownWrap: { position: 'relative' },
+  frequencyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: '#EDEDED',
+  },
+  frequencyText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+  dropdown: {
+    position: 'absolute',
+    top: 42,
+    right: 0,
+    minWidth: 150,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    paddingVertical: 6,
+    zIndex: 10,
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownItemActive: { backgroundColor: '#F7F7F7' },
+  dropdownText: { color: colors.text, fontSize: 13 },
+  dropdownTextActive: { color: colors.primary, fontWeight: '700' },
+
+  /* Cards */
+  elevatedCard: {
+    marginHorizontal: 20,
+    marginTop: 10,
     padding: spacing.md,
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
@@ -600,136 +441,114 @@ const styles = StyleSheet.create({
     borderColor: '#F0E7E3',
     shadowColor: '#000',
     shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    marginLeft: 20,
-    marginRight: 20,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
   },
-  incomeTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  incomeTitle: { color: colors.text, fontWeight: '800', fontSize: 14 },
-  trendChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
-  trendText: { fontWeight: '800', fontSize: 12 },
-  incomeMainRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  incomeAmount: { fontSize: 28, fontWeight: '900', color: colors.text, letterSpacing: 0.2 },
-  incomeSub: { color: colors.textSecondary, marginTop: 2, fontSize: 12 },
-  detailBtn: {
-    backgroundColor: '#6B2E2B',
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center',
-    marginLeft: spacing.sm,
-  },
-
-  segmentRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F7F7F7',
-    borderRadius: 999,
-    padding: 4,
-    marginTop: 8,
-    alignSelf: 'flex-end',
-  },
-  segmentBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  segmentBtnActive: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E5E5' },
-  segmentText: { fontSize: 12, color: colors.textSecondary, fontWeight: '700' },
-  segmentTextActive: { color: colors.text },
-
-  /* Section headings */
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginLeft: 20,
-    marginBottom: 5,
-  },
-
-  /* Cards list spacing */
   cardTight: {
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
-    marginLeft: 20,
-    marginRight: 20,
   },
-
-  /* To be Paid */
-  toBePaidRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm },
-  rowDivider: { height: 1, backgroundColor: colors.border, opacity: 0.6 },
-  toBePaidLabel: { flex: 1, color: colors.text, fontWeight: '500', fontSize: 13 },
-  toBePaidAmount: { color: colors.text, fontWeight: '800', marginRight: spacing.md, fontSize: 13 },
-  statusPill: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
-  statusText: { fontWeight: '800', fontSize: 12 },
-  pillPaid: { backgroundColor: '#E8F5E9', borderColor: '#E8F5E9' },
-  pillPending: { backgroundColor: '#E5E5E5', borderColor:'#E5E5E5' },
-  paid: { color: colors.accent },
-  pending: { color: colors.primary },
-
-  /* Feed */
-  earningRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.md },
-  feedDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  feedIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: '#F4ECE8',
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: spacing.md,
+  cardSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: '600',
   },
-  earningMsg: { color: colors.text, fontSize: 13, fontWeight: '500' },
-  earningTime: { color: colors.textSecondary, fontSize: 12, marginLeft: spacing.sm },
-
-  /* Break-even header + dropdown */
-  breakEvenHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  dropdownWrap: { position: 'relative', marginRight: 20 },
-  frequencyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  frequencyText: { color: colors.primary, fontWeight: '600', fontSize: 13 },
-  dropdown: {
-    position: 'absolute',
-    top: 40, right: 0,
-    minWidth: 150, backgroundColor: '#fff',
-    borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 6 },
-    paddingVertical: 6, zIndex: 10,
-  },
-  dropdownItem: {
-    paddingHorizontal: 12, paddingVertical: 10,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  dropdownItemActive: { backgroundColor: '#F7F7F7' },
-  dropdownText: { color: colors.text, fontSize: 13 },
-  dropdownTextActive: { color: colors.primary, fontWeight: '700' },
 
   /* Inputs */
-  inputLabel: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm, marginBottom: 4 },
+  inputLabel: { color: colors.textSecondary, fontSize: 12, marginTop: spacing.sm, marginBottom: 6, fontWeight: '700' },
   inputWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.background, borderRadius: 10,
-    borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  inputPrefix: { color: colors.textSecondary, marginRight: 6 },
-  input: { flex: 1, fontSize: 13, color: colors.text, paddingVertical: 0 },
+  inputPrefix: { color: colors.textSecondary, marginRight: 6, fontWeight: '700' },
+  input: { flex: 1, fontSize: 14, color: colors.text, paddingVertical: 0 },
 
-  inputWrapDisabled: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F7F7F7', borderRadius: 10,
-    borderWidth: 1, borderColor: '#ECECEC',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  /* Metric tiles */
+  metricsRow: {
+    flexDirection: 'row',
+    marginTop: 12,
   },
-  inputDisabledText: { fontSize: 13, color: colors.textSecondary },
+  metricCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#F1EAE6',
+    padding: 12,
+    marginRight: 10,
+  },
+  shadowSoft: {
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  metricHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  iconBubble: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#F4ECE8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  metricLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  metricValue: { color: colors.text, fontSize: 20, fontWeight: '900', letterSpacing: 0.2 },
+
+  /* Actions */
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+  },
+  btnOutline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: '#fff',
+    marginRight: 8,
+  },
+  btnOutlineText: { color: colors.primary, fontWeight: '800', fontSize: 12, marginLeft: 6 },
+  btnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+  },
+  btnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 12, marginLeft: 6 },
 
   /* Reports */
-  viewAllText: { color: colors.primary, fontWeight: '600', fontSize: 13, marginRight: 20 },
+  viewAllText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
   reportRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.md },
+  feedDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  feedIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F4ECE8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
   reportTitle: { color: colors.text, fontSize: 13, fontWeight: '800' },
   reportDesc: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  earningTime: { color: colors.textSecondary, fontSize: 12, marginLeft: spacing.sm },
 });
