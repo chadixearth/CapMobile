@@ -18,7 +18,7 @@ const CARD = '#FFFFFF';
 
 export default function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState(user?.role === 'driver' || user?.role === 'owner' ? 'received' : 'given');
+  const [activeTab, setActiveTab] = useState(user?.role === 'tourist' ? 'given' : 'received');
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,9 +131,9 @@ export default function ReviewsScreen({ navigation }) {
         <Text style={styles.headerTitle}>Reviews</Text>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        {canReceiveReviews && (
+      {/* Tabs - Only show for tourists who can both give and receive reviews */}
+      {user?.role === 'tourist' && (
+        <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'received' && styles.activeTab]}
             onPress={() => setActiveTab('received')}
@@ -142,16 +142,16 @@ export default function ReviewsScreen({ navigation }) {
               Received
             </Text>
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'given' && styles.activeTab]}
-          onPress={() => setActiveTab('given')}
-        >
-          <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
-            Given
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'given' && styles.activeTab]}
+            onPress={() => setActiveTab('given')}
+          >
+            <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
+              Given
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Content */}
       <ScrollView

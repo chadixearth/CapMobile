@@ -162,7 +162,7 @@ const RegistrationScreen = ({ navigation, route }) => {
 
       const result = await registerUser(
         email, 
-        role === 'tourist' ? password : null,
+        role === 'tourist' ? password : (password && password.trim() !== '' ? password : null),
         role, 
         additionalData
       );
@@ -172,8 +172,8 @@ const RegistrationScreen = ({ navigation, route }) => {
         const okAction = () => navigation.navigate('Login');
 
         if (result.status === 'pending_approval') {
-          const approvalMessage = password 
-            ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved.`
+          const approvalMessage = password && password.trim() !== ''
+            ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved. You can login with the password you provided.`
             : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and emailed to you upon approval.`;
           
           Alert.alert(
@@ -366,9 +366,35 @@ const RegistrationScreen = ({ navigation, route }) => {
                 value={phone} 
                 onChangeText={setPhone}
                 refKey="phone"
-                nextField={role === 'driver' ? 'license' : 'business'}
+                nextField="password"
                 keyboardType="phone-pad"
               />
+              
+              <SectionHeader 
+                icon="lock-closed-outline" 
+                title="Security (Optional)" 
+                subtitle="Provide your own password or let us generate one"
+              />
+              <ModernInput 
+                label="Password (Optional)" 
+                placeholder="Leave blank to auto-generate" 
+                value={password} 
+                onChangeText={setPassword}
+                refKey="password"
+                nextField="confirmPassword"
+                secureTextEntry
+              />
+              {password && password.trim() !== '' && (
+                <ModernInput 
+                  label="Confirm Password" 
+                  placeholder="Re-enter your password" 
+                  value={confirmPassword} 
+                  onChangeText={setConfirmPassword}
+                  refKey="confirmPassword"
+                  nextField={role === 'driver' ? 'license' : 'business'}
+                  secureTextEntry
+                />
+              )}
             </>
           )}
 

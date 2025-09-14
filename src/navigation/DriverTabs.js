@@ -6,6 +6,7 @@ import DriverHomeScreen from '../screens/main/DriverHomeScreen';
 import EarningsScreen from '../screens/main/EarningsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import DriverBookScreen from '../screens/main/DriverBookScreen';
+import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
 import { useAuth } from '../hooks/useAuth';
@@ -49,7 +50,10 @@ export default function DriverTabs({ setRole }) {
       <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.EARNINGS} component={EarningsScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
-      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name="Schedule" component={DriverScheduleScreen} options={{ 
+        header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} />,
+        tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />
+      }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

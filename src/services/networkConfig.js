@@ -2,7 +2,7 @@ import { Platform, NativeModules } from 'react-native';
 
 // Set this to your backend host IP or hostname
 // Update this IP to match your Django server's IP address
-export const API_HOST_OVERRIDE = '192.168.3.23';
+export const API_HOST_OVERRIDE = '10.30.165.23';
 
 export function resolveApiHost() {
   try {

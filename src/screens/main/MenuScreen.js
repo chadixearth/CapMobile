@@ -217,6 +217,16 @@ export default function MenuScreen({ navigation }) {
                 label="My Tour Packages"
                 onPress={() => navigation.navigate('MyTourPackages')}
               />
+              {auth.user?.role === 'driver' && (
+                <>
+                  <Divider />
+                  <ProfileItem
+                    icon={<Ionicons name="calendar-outline" size={22} color={MAROON} />}
+                    label="My Schedule"
+                    onPress={() => navigation.navigate('DriverSchedule')}
+                  />
+                </>
+              )}
             </>
           )}
           <Divider />

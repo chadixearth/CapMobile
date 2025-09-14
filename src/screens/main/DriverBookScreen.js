@@ -308,6 +308,35 @@ export default function DriverBookScreen({ navigation }) {
   };
 
   const handleAcceptBooking = async (booking) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    // Check for schedule conflicts first
+    try {
+      const { driverScheduleService } = require('../../services/driverScheduleService');
+      const conflictCheck = await driverScheduleService.checkAvailability(
+        user.id,
+        booking.booking_date,
+        booking.pickup_time || '09:00'
+      );
+
+      if (!conflictCheck.available) {
+        Alert.alert(
+          'Schedule Conflict',
+          conflictCheck.conflict_reason || 'You have a conflict at this time',
+          [
+            { text: 'OK' },
+            { text: 'View Schedule', onPress: () => navigation.navigate('DriverSchedule') }
+          ]
+        );
+        return;
+      }
+    } catch (error) {
+      console.log('Schedule check failed, proceeding with booking:', error);
+    }
+
     setSelectedBooking(booking);
     setShowAcceptModal(true);
   };
