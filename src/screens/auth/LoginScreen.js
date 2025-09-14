@@ -225,7 +225,7 @@ export default function LoginScreen({ navigation }) {
               style={styles.registerLink}
               onPress={() => navigation.navigate(Routes.REGISTRATION, { role: 'tourist' })}
             >
-              Create Account
+              Sign Up
             </Text>
           </Text>
         </View>
@@ -248,6 +248,7 @@ const styles = StyleSheet.create({
   topBar: {
     height: 40,
     justifyContent: 'center',
+    marginLeft:-20
   },
   logo: {
     alignSelf: 'center',

@@ -11,14 +11,18 @@ const TARTRACKHeader = ({
   onNotificationPress,
   onMessagePress,
   containerStyle,
+  headerStyle,
   logoSource,
+  showMessage = true,
+  showNotification = true,
+  tint = '#6B2E2B',
 }) => {
   const defaultLogo = require('../../assets/TarTrack Logo_sakto.png');
   const { unreadCount } = useNotifications();
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, containerStyle]}>
-      <View style={styles.header}>
+      <View style={[styles.header, headerStyle]}>
         {/* Left: Back button OR logo */}
         <View style={styles.leftCluster}>
           {showBack ? (
@@ -29,7 +33,7 @@ const TARTRACKHeader = ({
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >
-              <Ionicons name="arrow-back" size={26} color="#6B2E2B" />
+              <Ionicons name="arrow-back" size={26} color={tint} />
             </TouchableOpacity>
           ) : (
             <Image
@@ -40,38 +44,44 @@ const TARTRACKHeader = ({
           )}
         </View>
 
-        {/* Right: Message + Notification */}
+        {/* Right: (optional) Message + Notification */}
         <View style={styles.rightCluster}>
-          <TouchableOpacity
-            onPress={onMessagePress}
-            style={styles.iconBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="Open messages"
-          >
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={24}
-              color="#6B2E2B"
-            />
-          </TouchableOpacity>
+          {showMessage && (
+            <TouchableOpacity
+              onPress={onMessagePress}
+              style={styles.iconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Open messages"
+            >
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={24}
+                color={tint}
+              />
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity
-            onPress={onNotificationPress}
-            style={styles.iconBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="Open notifications"
-          >
-            <View style={styles.notificationContainer}>
-              <Ionicons name="notifications-outline" size={24} color="#6B2E2B" />
-              {unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+          {showNotification && (
+            <TouchableOpacity
+              onPress={onNotificationPress}
+              style={styles.iconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Open notifications"
+            >
+              <View style={styles.notificationContainer}>
+                <Ionicons name="notifications-outline" size={24} color={tint} />
+                {unreadCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </SafeAreaView>

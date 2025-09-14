@@ -1,3 +1,4 @@
+// screens/DriverHomeScreen.js
 import React, { useEffect, useState, useLayoutEffect } from 'react';
 import {
   Alert,
@@ -18,6 +19,7 @@ import { supabase } from '../../services/supabase';
 import {
   getDriverEarningsStats,
   getEarningsPercentageChange,
+  getPendingPayoutAmount,
   formatCurrency,
   formatPercentage,
 } from '../../services/earningsService';
@@ -90,17 +92,14 @@ function ActivityMiniChart({
 
   return (
     <View style={{ width: '100%' }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
-      {/* SVG area with fixed height */}
       <View style={{ width: '100%', height }}>
         {width > 0 && (
           <Svg width={width} height={height}>
-            {/* grid */}
             <G opacity={0.12}>
               <Line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="#000" />
               <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#000" />
             </G>
 
-            {/* bars */}
             {data.map((d, i) => {
               const x = xFor(i);
               const y = yTrips(d.trips || 0);
@@ -119,13 +118,11 @@ function ActivityMiniChart({
               );
             })}
 
-            {/* driver line + dots */}
             <Polyline points={driverPoints} fill="none" stroke={driverColor} strokeWidth={2} />
             {driverDots.map((p, idx) => (
               <Circle key={`dpt-${idx}`} cx={p.cx} cy={p.cy} r={3.5} fill={driverColor} stroke="#fff" strokeWidth={1} />
             ))}
 
-            {/* org line + dots */}
             <Polyline points={orgPoints} fill="none" stroke={orgColor} strokeWidth={2} />
             {orgDots.map((p, idx) => (
               <Circle key={`opt-${idx}`} cx={p.cx} cy={p.cy} r={3.5} fill={orgColor} stroke="#fff" strokeWidth={1} />
@@ -134,7 +131,6 @@ function ActivityMiniChart({
         )}
       </View>
 
-      {/* legend BELOW the SVG so it isn’t clipped */}
       <View style={styles.legendRow}>
         <View style={[styles.legendItem, { marginRight: 16 }]}>
           <View style={[styles.legendBox, { backgroundColor: barColor }]} />
@@ -165,6 +161,7 @@ export default function DriverHomeScreen({ navigation }) {
   const [earningsData, setEarningsData] = useState(null);
   const [percentageChange, setPercentageChange] = useState(null);
   const [notifications, setNotifications] = useState(defaultNotifications);
+  const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0); // admin pending
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -230,6 +227,7 @@ export default function DriverHomeScreen({ navigation }) {
           fetchEarningsData(userId),
           fetchPercentageChange(userId),
           fetchRecentNotifications(userId),
+          fetchPending(userId),
         ]);
       }
     } catch (error) {
@@ -264,6 +262,15 @@ export default function DriverHomeScreen({ navigation }) {
       setPercentageChange(data?.success ? data.data : { percentage_change: 0, is_increase: true });
     } catch {
       setPercentageChange({ percentage_change: 0, is_increase: true });
+    }
+  };
+
+  const fetchPending = async (driverId) => {
+    try {
+      const res = await getPendingPayoutAmount(driverId);
+      setPendingPayoutAmount(res?.data?.amount || 0);
+    } catch {
+      setPendingPayoutAmount(0);
     }
   };
 
@@ -358,6 +365,15 @@ export default function DriverHomeScreen({ navigation }) {
     { label: 'Sun', trips: 7,  gross: 560 },
   ];
 
+  // To-Be-Paid
+  // Admin uses backend "pending" payouts.
+  // Owner is demo-only: fixed ₱500.00 (no backend connection).
+  const OWNER_DEMO_AMOUNT = 500;
+  const toBePaidRows = [
+    { label: 'Admin', amount: pendingPayoutAmount, status: pendingPayoutAmount > 0 ? 'Pending' : '—' },
+    { label: 'Owner', amount: OWNER_DEMO_AMOUNT, status: '—' },
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <NotificationManager navigation={navigation} />
@@ -437,6 +453,25 @@ export default function DriverHomeScreen({ navigation }) {
               </View>
             </View>
           )}
+        </View>
+
+        {/* To be Paid — Owner demo, Admin from backend */}
+        {/* <Text style={styles.section}>To be Paid</Text> */}
+        <View style={styles.toBePaidCard}>
+          {toBePaidRows.map((item, idx) => (
+            <View key={`${item.label}-${idx}`}>
+              <View style={styles.toBePaidRow}>
+                <Text style={styles.toBePaidLabel}>{item.label}</Text>
+                <Text style={styles.toBePaidAmount}>{formatCurrency(item.amount)}</Text>
+                <View style={[styles.statusPill, item.status === 'Paid' ? styles.pillPaid : styles.pillPending]}>
+                  <Text style={[styles.statusText, item.status === 'Paid' ? styles.paid : styles.pending]}>
+                    {item.status}
+                  </Text>
+                </View>
+              </View>
+              {idx < toBePaidRows.length - 1 && <View style={styles.rowDivider} />}
+            </View>
+          ))}
         </View>
 
         {/* Latest Activity */}
@@ -519,6 +554,27 @@ const styles = StyleSheet.create({
   splitLabel: { color: MUTED, fontSize: 11, marginBottom: 2 },
   splitValue: { color: TEXT, fontSize: 13, fontWeight: '800' },
 
+  /* To be Paid */
+  toBePaidCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+  },
+  toBePaidRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
+  rowDivider: { height: 1, backgroundColor: '#EAEAEA', marginHorizontal: 14 },
+  toBePaidLabel: { flex: 1, color: TEXT, fontWeight: '500', fontSize: 13 },
+  toBePaidAmount: { color: TEXT, fontWeight: '800', marginRight: 10, fontSize: 13 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  statusText: { fontWeight: '800', fontSize: 12 },
+  pillPaid: { backgroundColor: '#E8F5E9', borderColor: '#E8F5E9' },
+  pillPending: { backgroundColor: '#E5E5E5', borderColor:'#E5E5E5' },
+  paid: { color: '#2E7D32' },
+  pending: { color: MAROON },
+
   sectionHeader: {
     marginHorizontal: 16,
     marginTop: 18,
@@ -526,7 +582,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
   },
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: TEXT },
+  section:{fontSize: 14, fontWeight: '800', color: TEXT, marginLeft: 18, marginTop:10},
+  sectionTitle: { fontSize: 14, fontWeight: '800', color: TEXT},
   sectionMeta: { fontSize: 11, color: MUTED },
 
   cardList: {
@@ -568,18 +625,18 @@ const styles = StyleSheet.create({
   analyticsTitle: { color: TEXT, fontSize: 14, fontWeight: '800', marginBottom: 10 },
   chartBox: {
     width: '100%',
-    minHeight: 180,          // a bit more room so legend never overlaps/gets clipped
+    minHeight: 180,
     backgroundColor: '#ededed',
     borderRadius: 10,
     overflow: 'hidden',
     justifyContent: 'center',
-    paddingBottom: 8,        // breathing room under the SVG
-    paddingHorizontal: 10,   // so legend text doesn’t touch edges
+    paddingBottom: 8,
+    paddingHorizontal: 10,
   },
 
   legendRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',        // allow wrapping on small screens
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,

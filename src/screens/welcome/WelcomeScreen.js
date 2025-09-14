@@ -50,7 +50,7 @@ const WelcomeScreen = ({ navigation }) => {
 
       <View style={styles.linksContainer}>
         <Text style={styles.linkText}>
-          Have an account?{' '}
+          Already have an account?{' '}
           <Text style={styles.link} onPress={handleLogin}>Login</Text>
         </Text>
       </View>
