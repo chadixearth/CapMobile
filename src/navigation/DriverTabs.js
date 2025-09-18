@@ -50,10 +50,7 @@ export default function DriverTabs({ setRole }) {
       <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.EARNINGS} component={EarningsScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
-      <Tab.Screen name="Schedule" component={DriverScheduleScreen} options={{ 
-        header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} />,
-        tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />
-      }} />
+      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

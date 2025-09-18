@@ -249,15 +249,9 @@ const RegistrationScreen = ({ navigation, route }) => {
       }
 
       const result = await registerUser(
-<<<<<<< HEAD
-        email, 
-        role === 'tourist' ? password : (password && password.trim() !== '' ? password : null),
-        role, 
-=======
         email,
-        role === 'tourist' ? password : null,
+        role === 'tourist' ? password : (password && password.trim() !== '' ? password : null),
         role,
->>>>>>> 3c089584682651f4bf1f38f70c7d62a748127695
         additionalData
       );
       setLoading(false);
@@ -266,29 +260,20 @@ const RegistrationScreen = ({ navigation, route }) => {
         const okAction = () => navigation.navigate('Login');
 
         if (result.status === 'pending_approval') {
-<<<<<<< HEAD
-          const approvalMessage = password && password.trim() !== ''
-            ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved. You can login with the password you provided.`
-            : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and emailed to you upon approval.`;
-          
-          Alert.alert(
-            'Application Submitted',
-            result.message || approvalMessage,
-            [{ text: 'OK', onPress: okAction }],
-            { cancelable: false }
-          );
-=======
           if (role === 'driver' || role === 'owner') {
             setPendingVisible(true);
           } else {
+            const approvalMessage = password && password.trim() !== ''
+              ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved. You can login with the password you provided.`
+              : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and emailed to you upon approval.`;
+            
             Alert.alert(
               'Application Submitted',
-              result.message || 'Please check your email to verify your account.',
+              result.message || approvalMessage,
               [{ text: 'OK', onPress: okAction }],
               { cancelable: false }
             );
           }
->>>>>>> 3c089584682651f4bf1f38f70c7d62a748127695
         } else {
           Alert.alert(
             'Registration Successful',
@@ -394,343 +379,6 @@ const RegistrationScreen = ({ navigation, route }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={keyboardOffset}
     >
-<<<<<<< HEAD
-        {/* Header with back button */}
-        <View style={styles.header}>
-          <BackButton onPress={() => navigation.goBack()} />
-        </View>
-
-        {/* Welcome Section */}
-        <View style={styles.welcomeSection}>
-          <View style={styles.roleIconContainer}>
-            <Ionicons 
-              name={role === 'tourist' ? 'person' : role === 'driver' ? 'car' : 'business'} 
-              size={32} 
-              color={colors.primary} 
-            />
-          </View>
-          <Text style={styles.title}>Join as {role.charAt(0).toUpperCase() + role.slice(1)}</Text>
-          <Text style={styles.subtitle}>
-            {role === 'tourist' 
-              ? 'Create your account to start booking rides'
-              : 'Submit your application for admin approval'
-            }
-          </Text>
-        </View>
-
-        {/* Registration Form */}
-        <View style={styles.formContainer}>
-          {/* Tourist Fields */}
-          {role === 'tourist' && (
-            <>
-              <SectionHeader 
-                icon="person-outline" 
-                title="Personal Information" 
-                subtitle="Enter your basic details"
-              />
-              <ModernInput 
-                label="First Name" 
-                placeholder="Enter your first name" 
-                value={firstName} 
-                onChangeText={setFirstName}
-                refKey="firstName"
-                nextField="lastName"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Last Name" 
-                placeholder="Enter your last name" 
-                value={lastName} 
-                onChangeText={setLastName}
-                refKey="lastName"
-                nextField="email"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Email Address" 
-                placeholder="Enter your email" 
-                value={email} 
-                onChangeText={setEmail}
-                refKey="email"
-                nextField="password"
-                autoCapitalize="none" 
-                keyboardType="email-address"
-              />
-              
-              <SectionHeader 
-                icon="lock-closed-outline" 
-                title="Security" 
-                subtitle="Create a secure password"
-              />
-              <ModernInput 
-                label="Password" 
-                placeholder="Enter your password" 
-                value={password} 
-                onChangeText={setPassword}
-                refKey="password"
-                nextField="confirmPassword"
-                secureTextEntry
-              />
-              <ModernInput 
-                label="Confirm Password" 
-                placeholder="Re-enter your password" 
-                value={confirmPassword} 
-                onChangeText={setConfirmPassword}
-                refKey="confirmPassword"
-                secureTextEntry
-              />
-            </>
-          )}
-
-          {/* Driver/Owner Fields */}
-          {(role === 'driver' || role === 'owner') && (
-            <>
-              <SectionHeader 
-                icon="person-outline" 
-                title="Personal Information" 
-                subtitle="Enter your basic details"
-              />
-              <ModernInput 
-                label="First Name" 
-                placeholder="Enter your first name" 
-                value={firstName} 
-                onChangeText={setFirstName}
-                refKey="firstName"
-                nextField="lastName"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Last Name" 
-                placeholder="Enter your last name" 
-                value={lastName} 
-                onChangeText={setLastName}
-                refKey="lastName"
-                nextField="email"
-                autoCapitalize="words"
-              />
-              <ModernInput 
-                label="Email Address" 
-                placeholder="Enter your email" 
-                value={email} 
-                onChangeText={setEmail}
-                refKey="email"
-                nextField="phone"
-                autoCapitalize="none" 
-                keyboardType="email-address"
-              />
-              <ModernInput 
-                label="Phone Number" 
-                placeholder="Enter your phone number" 
-                value={phone} 
-                onChangeText={setPhone}
-                refKey="phone"
-                nextField="password"
-                keyboardType="phone-pad"
-              />
-              
-              <SectionHeader 
-                icon="lock-closed-outline" 
-                title="Security (Optional)" 
-                subtitle="Provide your own password or let us generate one"
-              />
-              <ModernInput 
-                label="Password (Optional)" 
-                placeholder="Leave blank to auto-generate" 
-                value={password} 
-                onChangeText={setPassword}
-                refKey="password"
-                nextField="confirmPassword"
-                secureTextEntry
-              />
-              {password && password.trim() !== '' && (
-                <ModernInput 
-                  label="Confirm Password" 
-                  placeholder="Re-enter your password" 
-                  value={confirmPassword} 
-                  onChangeText={setConfirmPassword}
-                  refKey="confirmPassword"
-                  nextField={role === 'driver' ? 'license' : 'business'}
-                  secureTextEntry
-                />
-              )}
-            </>
-          )}
-
-          {/* Driver Specific Fields */}
-          {role === 'driver' && (
-            <>
-              <SectionHeader 
-                icon="car-outline" 
-                title="Driver Information" 
-                subtitle="Professional driving details"
-              />
-              <ModernInput 
-                label="Driver's License Number" 
-                placeholder="Enter your license number" 
-                value={licenseNumber} 
-                onChangeText={setLicenseNumber}
-                refKey="license"
-                nextField={ownsTartanilla ? 'ownedCount' : null}
-                autoCapitalize="characters"
-              />
-              
-              <View style={styles.questionContainer}>
-                <Text style={styles.questionLabel}>Do you also own a tartanilla?</Text>
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, ownsTartanilla && styles.toggleSelected]}
-                    onPress={() => setOwnsTartanilla(true)}
-                  >
-                    <Ionicons 
-                      name={ownsTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={ownsTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, ownsTartanilla && styles.toggleTextSelected]}>Yes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, !ownsTartanilla && styles.toggleSelected]}
-                    onPress={() => setOwnsTartanilla(false)}
-                  >
-                    <Ionicons 
-                      name={!ownsTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={!ownsTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, !ownsTartanilla && styles.toggleTextSelected]}>No</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              {ownsTartanilla && (
-                <ModernInput 
-                  label="Number of Tartanillas Owned" 
-                  placeholder="Enter number" 
-                  value={ownedCount} 
-                  onChangeText={setOwnedCount}
-                  refKey="ownedCount"
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              )}
-            </>
-          )}
-
-          {/* Owner Specific Fields */}
-          {role === 'owner' && (
-            <>
-              <SectionHeader 
-                icon="business-outline" 
-                title="Business Information" 
-                subtitle="Enter your business details"
-              />
-              <ModernInput 
-                label="Business Name" 
-                placeholder="Enter your business name" 
-                value={businessName} 
-                onChangeText={setBusinessName}
-                refKey="business"
-                autoCapitalize="words"
-              />
-              
-              <View style={styles.questionContainer}>
-                <Text style={styles.questionLabel}>Do you also drive your tartanilla?</Text>
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, drivesOwnTartanilla && styles.toggleSelected]}
-                    onPress={() => setDrivesOwnTartanilla(true)}
-                  >
-                    <Ionicons 
-                      name={drivesOwnTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={drivesOwnTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, drivesOwnTartanilla && styles.toggleTextSelected]}>Yes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, !drivesOwnTartanilla && styles.toggleSelected]}
-                    onPress={() => setDrivesOwnTartanilla(false)}
-                  >
-                    <Ionicons 
-                      name={!drivesOwnTartanilla ? "checkmark-circle" : "ellipse-outline"} 
-                      size={20} 
-                      color={!drivesOwnTartanilla ? colors.primary : colors.textSecondary} 
-                    />
-                    <Text style={[styles.toggleText, !drivesOwnTartanilla && styles.toggleTextSelected]}>No</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </>
-          )}
-
-          {/* Terms and Conditions */}
-          <SectionHeader 
-            icon="document-text-outline" 
-            title="Terms & Conditions" 
-            subtitle="Please review and accept our terms"
-          />
-          
-          <TouchableOpacity 
-            style={styles.termsContainer}
-            onPress={() => setAgree(!agree)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.checkboxContainer}>
-              <Ionicons 
-                name={agree ? "checkmark-circle" : "ellipse-outline"} 
-                size={24} 
-                color={agree ? colors.primary : colors.textSecondary} 
-              />
-            </View>
-            <View style={styles.termsTextContainer}>
-              <Text style={styles.termsMainText}>
-                I agree to the{' '}
-                <Text style={styles.termsLink} onPress={() => setShowTC(true)}>
-                  Terms & Conditions
-                </Text>
-              </Text>
-              <Text style={styles.termsSubtext}>
-                By registering, you accept our terms of service and privacy policy
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Register Button */}
-        <TouchableOpacity
-          style={[styles.registerButton, (loading || !agree) && styles.registerButtonDisabled]}
-          onPress={handleRegister}
-          disabled={loading || !agree}
-          activeOpacity={0.8}
-        >
-          <View style={styles.buttonContent}>
-            {loading && (
-              <View style={styles.loadingContainer}>
-                <Ionicons name="refresh" size={20} color="#fff" />
-              </View>
-            )}
-            <Text style={styles.registerButtonText}>
-              {loading ? 'Creating Account...' : `Register as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Already have an account?{' '}
-            <Text style={styles.footerLink} onPress={() => navigation.navigate('Login')}>
-              Sign In
-            </Text>
-          </Text>
-        </View>
-      {/* Terms & Conditions Modal */}
-      <Modal
-        visible={showTC}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowTC(false)}
-=======
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[
@@ -747,7 +395,6 @@ const RegistrationScreen = ({ navigation, route }) => {
         }}
         scrollEventThrottle={16}
         automaticallyAdjustKeyboardInsets={true} // iOS: prevent content jump
->>>>>>> 3c089584682651f4bf1f38f70c7d62a748127695
       >
         {/* Minimal app bar */}
         <View style={styles.appBar}>

@@ -43,10 +43,14 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
         endpoint: `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`
       });
       
-      // If it's a 500 error and we have retries left, wait and retry
-      if (error.message?.includes('500') && attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
-        console.log(`[getAvailableBookingsForDrivers] Retrying in ${delay}ms...`);
+      // Handle rate limiting (429) and server errors (500) with exponential backoff
+      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
+      const isServerError = error.message?.includes('500');
+      
+      if ((isRateLimited || isServerError) && attempt < maxRetries) {
+        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
+        console.log(`[getAvailableBookingsForDrivers] ${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -133,10 +137,14 @@ export async function getDriverBookings(driverId, filters = {}) {
       lastError = error;
       console.error(`Error fetching driver bookings (attempt ${attempt}/${maxRetries}):`, error);
       
-      // If it's a 500 error and we have retries left, wait and retry
-      if (error.message?.includes('500') && attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
-        console.log(`Retrying in ${delay}ms...`);
+      // Handle rate limiting (429) and server errors (500) with exponential backoff
+      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
+      const isServerError = error.message?.includes('500');
+      
+      if ((isRateLimited || isServerError) && attempt < maxRetries) {
+        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
+        console.log(`${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }

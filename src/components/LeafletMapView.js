@@ -29,7 +29,9 @@ const LeafletMapView = ({
       title: marker.title || marker.name || 'Location',
       description: marker.description || '',
       color: marker.iconColor || marker.color || '#FF0000',
-      type: marker.pointType || marker.type || 'default'
+      type: marker.pointType || marker.type || 'default',
+      image_urls: marker.image_urls || [],
+      id: marker.id
     })));
 
     // Convert roads to JSON string
@@ -186,17 +188,17 @@ const LeafletMapView = ({
           // Function to get marker color
           function getMarkerIcon(color, type) {
             var iconColors = {
-              '#FF0000': 'red',
-              '#00FF00': 'green',
-              '#0000FF': 'blue',
-              '#FFFF00': 'gold',
-              '#FF6600': 'orange',
-              '#800080': 'violet',
-              '#00AA00': 'green',
-              '#0066CC': 'blue'
+              '#FF0000': 'red', '#ff0000': 'red',
+              '#00FF00': 'green', '#00ff00': 'green', '#00ff33': 'green',
+              '#0000FF': 'blue', '#0000ff': 'blue', '#007bff': 'blue',
+              '#FFFF00': 'gold', '#ffff00': 'gold',
+              '#FF6600': 'orange', '#ff6600': 'orange',
+              '#800080': 'violet', '#ba1abc': 'violet',
+              '#00AA00': 'green', '#00aa00': 'green',
+              '#0066CC': 'blue', '#0066cc': 'blue'
             };
             
-            var colorName = iconColors[color] || 'red';
+            var colorName = iconColors[color.toLowerCase()] || 'red';
             
             // Create custom icon
             return L.icon({
@@ -227,7 +229,9 @@ const LeafletMapView = ({
                       title: marker.title,
                       description: marker.description,
                       pointType: marker.type,
-                      iconColor: marker.color
+                      iconColor: marker.color,
+                      image_urls: marker.image_urls || [],
+                      id: marker.id
                     }
                   }));
                 }
@@ -247,12 +251,16 @@ const LeafletMapView = ({
             }
           });
 
-          // Add roads/polylines to map
+          // Add roads/polylines to map and collect bounds
+          var allRoadCoords = [];
           roads.forEach(function(road) {
             if (road.coordinates && road.coordinates.length > 0) {
               var latlngs = road.coordinates.map(function(coord) {
                 return [coord.lat, coord.lng];
               });
+              
+              // Collect all coordinates for bounds calculation
+              allRoadCoords = allRoadCoords.concat(latlngs);
               
               var polyline = L.polyline(latlngs, {
                 color: road.color,
@@ -266,6 +274,15 @@ const LeafletMapView = ({
             }
           });
 
+          // Auto-zoom to fit road highlights if available
+          if (allRoadCoords.length > 0) {
+            var group = new L.featureGroup();
+            allRoadCoords.forEach(function(coord) {
+              L.marker(coord).addTo(group);
+            });
+            map.fitBounds(group.getBounds(), { padding: [20, 20] });
+          }
+
           // Send message when map is ready
           setTimeout(function() {
             if (window.ReactNativeWebView) {
@@ -278,8 +295,10 @@ const LeafletMapView = ({
             if (window.ReactNativeWebView) {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'mapClick',
-                latitude: e.latlng.lat,
-                longitude: e.latlng.lng
+                coordinate: {
+                  latitude: e.latlng.lat,
+                  longitude: e.latlng.lng
+                }
               }));
             }
           });
@@ -295,7 +314,7 @@ const LeafletMapView = ({
       if (data.type === 'mapReady') {
         console.log('Leaflet map is ready');
       } else if (data.type === 'mapClick' && onMapPress) {
-        onMapPress({ latitude: data.latitude, longitude: data.longitude });
+        onMapPress({ nativeEvent: data });
       } else if (data.type === 'markerClick' && onMarkerPress) {
         onMarkerPress(data.marker);
       }

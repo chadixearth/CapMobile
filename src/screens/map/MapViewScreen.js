@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TouchableOpacity, RefreshControl, Modal, FlatList } from 'react-native';
 import LeafletMapView from '../../components/LeafletMapView'; // WebView-based Leaflet map
 import BackButton from '../../components/BackButton';
+import PointImageModal from '../../components/PointImageModal';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
+import { getRoutesByPickup } from '../../services/rideHailingService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -27,6 +29,10 @@ const MapViewScreen = ({ navigation, route }) => {
   const [cacheInfo, setCacheInfo] = useState(null);
   const [showSatellite, setShowSatellite] = useState(false);
   const [mapLoadTimeout, setMapLoadTimeout] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [routeData, setRouteData] = useState(null);
+  const [showingRoutes, setShowingRoutes] = useState(false);
   const hasLoadedCache = useRef(false);
   const loadTimeoutRef = useRef(null);
 
@@ -156,16 +162,20 @@ const MapViewScreen = ({ navigation, route }) => {
     
     // Process points
     if (data.points && data.points.length > 0) {
-      let processedMarkers = data.points.map(point => ({
-        latitude: parseFloat(point.latitude || 0),
-        longitude: parseFloat(point.longitude || 0),
-        title: point.name || 'Unknown Point',
-        description: point.description || '',
-        pointType: point.point_type || point.pointType || 'unknown',
-        iconColor: point.icon_color || point.iconColor || '#FF0000',
-        id: point.id || Math.random().toString(),
-        isActive: point.is_active !== false
-      }));
+      let processedMarkers = data.points.map(point => {
+        console.log('Processing point:', point.name, 'images:', point.image_urls);
+        return {
+          latitude: parseFloat(point.latitude || 0),
+          longitude: parseFloat(point.longitude || 0),
+          title: point.name || 'Unknown Point',
+          description: point.description || '',
+          pointType: point.point_type || point.pointType || 'unknown',
+          iconColor: point.icon_color || point.iconColor || '#FF0000',
+          image_urls: point.image_urls || [],
+          id: point.id || Math.random().toString(),
+          isActive: point.is_active !== false
+        };
+      });
       
       // Filter markers based on selection mode
       if (mode === 'selectPickup') {
@@ -247,7 +257,8 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   }, []);
   
-  const handleMarkerPress = (marker) => {
+  const handleMarkerPress = async (marker) => {
+    console.log('Marker pressed:', marker.title, 'images:', marker.image_urls);
     if (mode === 'selectPickup' && onLocationSelect) {
       Alert.alert(
         'Confirm Selection',
@@ -267,6 +278,68 @@ const MapViewScreen = ({ navigation, route }) => {
             }
           }
         ]
+      );
+    } else if (marker.pointType === 'pickup' && marker.id) {
+      // Handle pickup point click for ride hailing
+      try {
+        const result = await getRoutesByPickup(marker.id);
+        if (result.success && result.data) {
+          setRouteData(result.data);
+          setShowingRoutes(true);
+          
+          // Update map to show route highlights and destinations
+          const routeRoads = result.data.road_highlights || [];
+          const routeDestinations = result.data.available_destinations || [];
+          
+          // Convert road highlights to map format
+          const processedRoads = routeRoads.map(road => ({
+            id: road.id,
+            name: road.name,
+            road_coordinates: road.coordinates,
+            stroke_color: result.data.color,
+            stroke_width: 4,
+            stroke_opacity: 0.8,
+            highlight_type: 'route'
+          }));
+          
+          // Convert destinations to markers
+          const destinationMarkers = routeDestinations.map(dest => ({
+            latitude: parseFloat(dest.latitude),
+            longitude: parseFloat(dest.longitude),
+            title: dest.name,
+            description: 'Available destination',
+            pointType: 'dropoff',
+            iconColor: result.data.color,
+            id: dest.id,
+            isActive: true
+          }));
+          
+          // Update roads and markers to show route
+          setRoads(processedRoads);
+          setMarkers(prev => [
+            ...prev.filter(m => m.pointType !== 'dropoff'), // Remove old dropoffs
+            ...destinationMarkers
+          ]);
+          
+          Alert.alert(
+            result.data.pickup_name,
+            `Showing ${routeDestinations.length} available destinations`,
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('Error loading routes:', error);
+      }
+    } else if (marker.image_urls && marker.image_urls.length > 0) {
+      // Show images if available
+      setSelectedPoint(marker);
+      setShowImageModal(true);
+    } else {
+      // Show basic info alert
+      Alert.alert(
+        marker.title,
+        marker.description || 'No additional information available',
+        [{ text: 'OK' }]
       );
     }
   };
@@ -353,7 +426,7 @@ const MapViewScreen = ({ navigation, route }) => {
             roads={roads}
             routes={routes}
             showSatellite={showSatellite}
-            onMarkerPress={mode === 'selectPickup' ? handleMarkerPress : undefined}
+            onMarkerPress={handleMarkerPress}
             onMapPress={mode === 'selectDrop' ? handleMapPress : undefined}
           />
         </View>
@@ -372,12 +445,49 @@ const MapViewScreen = ({ navigation, route }) => {
         
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
+          {/* Clear Routes Button */}
+          {showingRoutes && (
+            <TouchableOpacity 
+              style={[styles.floatingButton, styles.clearRoutesButton]}
+              onPress={() => {
+                setShowingRoutes(false);
+                setRouteData(null);
+                loadMapDataWithCache(); // Reload original data
+              }}
+            >
+              <Text style={styles.floatingButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+          
           {/* Refresh Button */}
           <TouchableOpacity 
             style={[styles.floatingButton, styles.refreshButton]}
             onPress={onRefresh}
           >
             <Text style={styles.floatingButtonText}>🔄</Text>
+          </TouchableOpacity>
+          
+          {/* Force Refresh Button */}
+          <TouchableOpacity 
+            style={[styles.floatingButton, styles.forceRefreshButton]}
+            onPress={() => {
+              Alert.alert(
+                'Force Refresh',
+                'Clear cache and reload fresh data?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Refresh',
+                    onPress: async () => {
+                      await clearMapCache();
+                      loadMapDataWithCache();
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Text style={styles.floatingButtonText}>💾</Text>
           </TouchableOpacity>
           
           {/* Satellite Toggle */}
@@ -500,6 +610,13 @@ const MapViewScreen = ({ navigation, route }) => {
       
       {/* Map Content */}
       {renderContent()}
+      
+      {/* Point Image Modal */}
+      <PointImageModal
+        visible={showImageModal}
+        onClose={() => setShowImageModal(false)}
+        point={selectedPoint}
+      />
     </SafeAreaView>
   );
 };
@@ -588,6 +705,12 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     backgroundColor: '#4CAF50',
+  },
+  clearRoutesButton: {
+    backgroundColor: '#FF5722',
+  },
+  forceRefreshButton: {
+    backgroundColor: '#FF9800',
   },
   
   // Legend overlay

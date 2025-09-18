@@ -111,7 +111,7 @@ class NotificationService {
       }
     });
     
-    // Poll every 5 seconds for new notifications
+    // Poll every 15 seconds for new notifications (reduced frequency to prevent rate limiting)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
@@ -143,7 +143,7 @@ class NotificationService {
       } catch (error) {
         // Ignore polling errors
       }
-    }, 5000);
+    }, 15000);
 
     // Initial load
     this.getNotifications(userId).then(result => {

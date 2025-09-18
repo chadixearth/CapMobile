@@ -153,6 +153,32 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
               <Ionicons name="close" size={20} color="#fff" />
             </TouchableOpacity>
 
+            {/* Navigation arrows */}
+            {photos.length > 1 && (
+              <>
+                <TouchableOpacity
+                  style={[styles.navArrow, styles.navArrowLeft]}
+                  onPress={() => {
+                    const newIndex = activePhoto > 0 ? activePhoto - 1 : photos.length - 1;
+                    setActivePhoto(newIndex);
+                    scrollRef.current?.scrollTo({ x: newIndex * SCREEN_WIDTH, animated: true });
+                  }}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.navArrow, styles.navArrowRight]}
+                  onPress={() => {
+                    const newIndex = activePhoto < photos.length - 1 ? activePhoto + 1 : 0;
+                    setActivePhoto(newIndex);
+                    scrollRef.current?.scrollTo({ x: newIndex * SCREEN_WIDTH, animated: true });
+                  }}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#fff" />
+                </TouchableOpacity>
+              </>
+            )}
+
             {/* Dots */}
             {photos.length > 1 && (
               <View style={styles.dots}>
@@ -253,6 +279,12 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
                 title="Destination"
                 subtitle={packageData?.destination || 'Various locations'}
               />
+              {packageData?.stops_lat && packageData?.stops_lng && packageData.stops_lat.length > 0 && (
+                <InfoRow
+                  title="Stops"
+                  subtitle={`${packageData.stops_lat.length} stop${packageData.stops_lat.length > 1 ? 's' : ''} along the route`}
+                />
+              )}
             </View>
 
             {/* Reviews */}
@@ -403,6 +435,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 3,
+  },
+  navArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  navArrowLeft: {
+    left: 16,
+  },
+  navArrowRight: {
+    right: 16,
   },
   dots: {
     position: 'absolute',
