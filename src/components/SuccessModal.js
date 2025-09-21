@@ -1,20 +1,25 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
+  Pressable,
   Dimensions,
+  Platform,
+  Animated,
+  useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ModalManager from '../services/ModalManager';
 
 const { width } = Dimensions.get('window');
+const CARD_W = Math.min(width * 0.9, 520);
 
-const SuccessModal = ({ 
-  visible, 
-  title = 'Success!', 
+const SuccessModal = ({
+  visible,
+  title = 'Success!',
   message = 'Operation completed successfully.',
   onClose,
   primaryAction,
@@ -23,124 +28,290 @@ const SuccessModal = ({
   secondaryActionText = 'Cancel',
   showIcon = true,
   iconName = 'checkmark-circle',
-  iconColor = '#4CAF50'
+  iconColor = '#22C55E',
+  iconSize = 48,                // 👈 bigger by default; customize as needed
+  autoCloseMs,
+  showClose = true,
+  disableBackdropClose = false,
 }) => {
-  // Register with modal manager for auto-close on session expiry
+  // register for auto-close on session expiry
   useEffect(() => {
     if (visible && onClose) {
       return ModalManager.registerModal(onClose);
     }
   }, [visible, onClose]);
+
+  // theming
+  const scheme = useColorScheme() || 'light';
+  const isDark = scheme === 'dark';
+
+  // animations
+  const fade = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.96)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: 160, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, friction: 7, tension: 90, useNativeDriver: true }),
+      ]).start();
+    } else {
+      fade.setValue(0);
+      scale.setValue(0.96);
+    }
+  }, [visible]);
+
+  // auto-dismiss
+  useEffect(() => {
+    if (!visible || !autoCloseMs || !onClose) return;
+    const t = setTimeout(onClose, autoCloseMs);
+    return () => clearTimeout(t);
+  }, [visible, autoCloseMs, onClose]);
+
+  const handleBackdropPress = () => {
+    if (!disableBackdropClose) onClose?.();
+  };
+
+  const colors = getColors(isDark);
+
   return (
     <Modal
       visible={visible}
-      transparent={true}
-      animationType="fade"
+      transparent
+      animationType="none"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          {showIcon && (
-            <View style={styles.iconContainer}>
-              <Ionicons name={iconName} size={60} color={iconColor} />
-            </View>
-          )}
-          
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{message}</Text>
-          
-          <View style={styles.buttonContainer}>
-            {secondaryAction && (
+      <Pressable style={[styles.overlay, { backgroundColor: colors.overlay }]} onPress={handleBackdropPress}>
+        {/* Prevent closing when tapping inside the card */}
+        <Pressable onPress={() => {}} style={{ width: '100%' }}>
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              {
+                width: CARD_W,
+                backgroundColor: colors.card,
+                borderColor: colors.cardBorder,
+                shadowColor: colors.shadow,
+                opacity: fade,
+                transform: [{ scale }],
+              },
+            ]}
+          >
+            {/* Top subtle indicator bar */}
+            <View style={[styles.accentBar, { backgroundColor: colors.accent }]} />
+
+            {/* Close button */}
+            {showClose && (
               <TouchableOpacity
-                style={[styles.button, styles.secondaryButton]}
-                onPress={secondaryAction}
+                onPress={onClose}
+                hitSlop={10}
+                style={styles.closeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
-                <Text style={styles.secondaryButtonText}>{secondaryActionText}</Text>
+                <Ionicons name="close" size={20} color={colors.accent} />
               </TouchableOpacity>
             )}
-            
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton]}
-              onPress={primaryAction || onClose}
-            >
-              <Text style={styles.primaryButtonText}>{primaryActionText}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+
+            {/* Icon badge (scales with iconSize) */}
+            {showIcon && (
+              <View
+                style={[
+                  styles.badgeOuter,
+                  {
+                    backgroundColor: colors.badgeBg,
+                    height: iconSize + 24,
+                    width: iconSize + 24,
+                    borderRadius: (iconSize + 24) / 2,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.badgeInner,
+                    {
+                      backgroundColor: colors.badgeInnerBg,
+                      height: iconSize + 12,
+                      width: iconSize + 12,
+                      borderRadius: (iconSize + 12) / 2,
+                    },
+                  ]}
+                >
+                  <Ionicons name={iconName} size={iconSize} color={iconColor} />
+                </View>
+              </View>
+            )}
+
+            {/* Text */}
+            <Text style={[styles.title, { color: colors.title }]} numberOfLines={2}>
+              {title}
+            </Text>
+            <Text style={[styles.message, { color: colors.body }]}>
+              {message}
+            </Text>
+
+            {/* Actions */}
+            <View style={styles.buttonRow}>
+              {secondaryAction && (
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnGhost, { borderColor: colors.accent }, styles.btnSpacer]}
+                  onPress={secondaryAction}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.btnGhostText, { color: colors.accent }]}>{secondaryActionText}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary, { backgroundColor: colors.accent, shadowColor: colors.shadow }]}
+                onPress={primaryAction || onClose}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.btnPrimaryText}>{primaryActionText}</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 };
 
+function getColors(isDark) {
+  // brand accent (from your dashboard palette family)
+  const accent = '#6B2E2B';
+  return isDark
+    ? {
+        overlay: 'rgba(2, 6, 23, 0.55)',
+        card: 'rgba(17, 24, 39, 0.92)',            // glassy dark
+        cardBorder: 'rgba(148, 163, 184, 0.14)',    // slate-300/20
+        title: '#F8FAFC',
+        body: 'rgba(226, 232, 240, 0.85)',
+        accent,
+        badgeBg: 'rgba(34,197,94,0.12)',
+        badgeInnerBg: 'rgba(255,255,255,0.08)',
+        shadow: '#000',
+      }
+    : {
+        overlay: 'rgba(17, 24, 39, 0.45)',
+        card: 'rgba(255,255,255,0.96)',            // glassy light
+        cardBorder: 'rgba(2, 6, 23, 0.06)',         // subtle hairline
+        title: '#0F172A',
+        body: 'rgba(15, 23, 42, 0.7)',
+        accent,
+        badgeBg: 'rgba(34,197,94,0.12)',
+        badgeInnerBg: 'rgba(255,255,255,0.9)',
+        shadow: '#000',
+      };
+}
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
   },
   modalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 32,
-    width: width * 0.9,
-    maxWidth: 500,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
+    alignSelf: 'center',
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.18,
+        shadowRadius: 22,
+        shadowOffset: { width: 0, height: 14 },
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
   },
-  iconContainer: {
-    marginBottom: 16,
+  accentBar: {
+    height: 3,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 8,
+    borderRadius: 999,
+  },
+  // base badge styles (sizes are overridden dynamically above)
+  badgeOuter: {
+    alignSelf: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#333',
     textAlign: 'center',
-    marginBottom: 16,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: 6,
+    paddingHorizontal: 6,
   },
   message: {
-    fontSize: 18,
-    color: '#666',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 28,
+    fontSize: 15.5,
+    lineHeight: 22,
+    marginBottom: 18,
+    paddingHorizontal: 8,
   },
-  buttonContainer: {
+  buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
-    width: '100%',
+    alignItems: 'center',
   },
-  button: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 28,
-    borderRadius: 8,
+  btnSpacer: { marginRight: 12 },
+  btn: {
+    minWidth: 100,
+    paddingVertical: 14,
+    paddingHorizontal: 22,
+    borderRadius: 999, // pill
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButton: {
-    backgroundColor: '#6B2E2B',
+  btnPrimary: {
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.22,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 3 },
+    }),
   },
-  secondaryButton: {
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  btnGhost: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#6B2E2B',
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    color: '#6B2E2B',
-    fontSize: 18,
-    fontWeight: '600',
+  btnGhostText: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
 });
 
-export default SuccessModal; 
+export default SuccessModal;
