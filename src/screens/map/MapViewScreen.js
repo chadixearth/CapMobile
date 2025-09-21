@@ -5,6 +5,7 @@ import BackButton from '../../components/BackButton';
 import PointImageModal from '../../components/PointImageModal';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
 import { getRoutesByPickup } from '../../services/rideHailingService';
+import { apiRequest } from '../../services/authService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -33,6 +34,9 @@ const MapViewScreen = ({ navigation, route }) => {
   const [showImageModal, setShowImageModal] = useState(false);
   const [routeData, setRouteData] = useState(null);
   const [showingRoutes, setShowingRoutes] = useState(false);
+  const [routeSummaries, setRouteSummaries] = useState([]);
+  const [allMarkers, setAllMarkers] = useState([]);
+  const [allRoads, setAllRoads] = useState([]);
   const hasLoadedCache = useRef(false);
   const loadTimeoutRef = useRef(null);
 
@@ -82,7 +86,6 @@ const MapViewScreen = ({ navigation, route }) => {
   
   const loadMapDataWithCache = async () => {
     try {
-      // First, load from cache immediately for instant display
       setInitialLoading(true);
       setMapLoadTimeout(false);
       
@@ -93,17 +96,21 @@ const MapViewScreen = ({ navigation, route }) => {
       // Load cached data first (instant)
       const data = await fetchMapData({ cacheOnly: !hasLoadedCache.current });
       
+      // Skip route summaries for public map view - use default colors
+      let routeSummaries = [];
+      console.log('MapViewScreen: Using default colors (no route summaries for public view)');
+      setRouteSummaries([]);
+      
       if (data) {
         console.log('Displaying map data:', {
           points: data.points?.length || 0,
           roads: data.roads?.length || 0,
           routes: data.routes?.length || 0
         });
-        processMapData(data);
+        processMapData(data, routeSummaries);
         hasLoadedCache.current = true;
       } else {
         console.log('No data received, using defaults');
-        // Set default empty data
         processMapData({
           points: [],
           roads: [],
@@ -115,10 +122,9 @@ const MapViewScreen = ({ navigation, route }) => {
             zoom_level: 13
           },
           total_items: {}
-        });
+        }, routeSummaries);
       }
       
-      // Clear timeout if load successful
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
@@ -128,12 +134,10 @@ const MapViewScreen = ({ navigation, route }) => {
     } catch (err) {
       console.error('Error in initial load:', err);
       
-      // Clear timeout
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
       
-      // Use default data on error
       processMapData({
         points: [],
         roads: [],
@@ -147,7 +151,7 @@ const MapViewScreen = ({ navigation, route }) => {
         total_items: {},
         error: true,
         errorMessage: err.message
-      });
+      }, []);
       
       setInitialLoading(false);
       setLoading(false);
@@ -155,25 +159,51 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   };
   
-  const processMapData = (data) => {
+  const processMapData = (data, routeSummaries = []) => {
     if (!data) return;
     
     setMapData(data);
     
-    // Process points
+    // Process points with route color associations
     if (data.points && data.points.length > 0) {
       let processedMarkers = data.points.map(point => {
-        console.log('Processing point:', point.name, 'images:', point.image_urls);
+        // Find associated route color
+        const routeInfo = routeSummaries.find(r => {
+          // Check pickup point
+          if (r.pickup_point_id == point.id) {
+            return true;
+          }
+          
+          // Check dropoff points (handle PostgreSQL array format)
+          if (r.dropoff_point_ids) {
+            let dropoffIds = r.dropoff_point_ids;
+            
+            if (typeof dropoffIds === 'string') {
+              try {
+                dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+              } catch (e) {
+                dropoffIds = [];
+              }
+            }
+            
+            if (Array.isArray(dropoffIds)) {
+              return dropoffIds.includes(parseInt(point.id));
+            }
+          }
+          return false;
+        });
+        
         return {
           latitude: parseFloat(point.latitude || 0),
           longitude: parseFloat(point.longitude || 0),
           title: point.name || 'Unknown Point',
           description: point.description || '',
           pointType: point.point_type || point.pointType || 'unknown',
-          iconColor: point.icon_color || point.iconColor || '#FF0000',
+          iconColor: routeInfo?.color || point.icon_color || point.iconColor || '#FF0000',
           image_urls: point.image_urls || [],
           id: point.id || Math.random().toString(),
-          isActive: point.is_active !== false
+          isActive: point.is_active !== false,
+          routeId: routeInfo?.route_id
         };
       });
       
@@ -182,25 +212,52 @@ const MapViewScreen = ({ navigation, route }) => {
         processedMarkers = processedMarkers.filter(marker => marker.pointType === 'pickup');
       }
       
-      setMarkers(processedMarkers);
+      setAllMarkers(processedMarkers);
+      setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
     }
     
-    // Process roads - handle database format
+    // Process roads with route color associations
     if (data.roads && data.roads.length > 0) {
-      const processedRoads = data.roads.map(road => ({
-        id: road.id || Math.random().toString(),
-        name: road.name || 'Road Highlight',
-        road_coordinates: road.road_coordinates || road.coordinates || null,
-        start_latitude: road.start_latitude,
-        start_longitude: road.start_longitude,
-        end_latitude: road.end_latitude,
-        end_longitude: road.end_longitude,
-        stroke_color: road.stroke_color || road.color || '#007AFF',
-        stroke_width: road.stroke_width || road.weight || 4,
-        stroke_opacity: road.stroke_opacity || road.opacity || 0.7,
-        highlight_type: road.highlight_type || road.type || 'available'
-      }));
-      setRoads(processedRoads);
+      const processedRoads = data.roads.map(road => {
+        // Find associated route color
+        const routeInfo = routeSummaries.find(r => {
+          if (r.road_highlight_ids) {
+            let roadIds = r.road_highlight_ids;
+            
+            if (typeof roadIds === 'string') {
+              try {
+                roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+              } catch (e) {
+                roadIds = [];
+              }
+            }
+            
+            if (Array.isArray(roadIds)) {
+              return roadIds.includes(parseInt(road.id));
+            }
+          }
+          return false;
+        });
+        
+        const finalColor = routeInfo?.color || road.stroke_color || road.color || '#007AFF';
+        
+        return {
+          id: road.id || Math.random().toString(),
+          name: road.name || 'Road Highlight',
+          road_coordinates: road.road_coordinates || road.coordinates || null,
+          start_latitude: road.start_latitude,
+          start_longitude: road.start_longitude,
+          end_latitude: road.end_latitude,
+          end_longitude: road.end_longitude,
+          stroke_color: finalColor,
+          stroke_width: road.stroke_width || road.weight || 4,
+          stroke_opacity: road.stroke_opacity || road.opacity || 0.7,
+          highlight_type: road.highlight_type || road.type || 'available'
+        };
+      });
+      
+      setAllRoads(processedRoads);
+      setRoads([]);
     }
     
     // Process routes and zones
@@ -232,8 +289,12 @@ const MapViewScreen = ({ navigation, route }) => {
       // Force refresh from server
       const data = await fetchMapData({ forceRefresh: true });
       
+      // Skip route summaries for public map view
+      let routeSummaries = [];
+      setRouteSummaries([]);
+      
       if (data) {
-        processMapData(data);
+        processMapData(data, routeSummaries);
         
         // Update cache info
         const info = await getMapCacheInfo();
@@ -280,56 +341,12 @@ const MapViewScreen = ({ navigation, route }) => {
         ]
       );
     } else if (marker.pointType === 'pickup' && marker.id) {
-      // Handle pickup point click for ride hailing
-      try {
-        const result = await getRoutesByPickup(marker.id);
-        if (result.success && result.data) {
-          setRouteData(result.data);
-          setShowingRoutes(true);
-          
-          // Update map to show route highlights and destinations
-          const routeRoads = result.data.road_highlights || [];
-          const routeDestinations = result.data.available_destinations || [];
-          
-          // Convert road highlights to map format
-          const processedRoads = routeRoads.map(road => ({
-            id: road.id,
-            name: road.name,
-            road_coordinates: road.coordinates,
-            stroke_color: result.data.color,
-            stroke_width: 4,
-            stroke_opacity: 0.8,
-            highlight_type: 'route'
-          }));
-          
-          // Convert destinations to markers
-          const destinationMarkers = routeDestinations.map(dest => ({
-            latitude: parseFloat(dest.latitude),
-            longitude: parseFloat(dest.longitude),
-            title: dest.name,
-            description: 'Available destination',
-            pointType: 'dropoff',
-            iconColor: result.data.color,
-            id: dest.id,
-            isActive: true
-          }));
-          
-          // Update roads and markers to show route
-          setRoads(processedRoads);
-          setMarkers(prev => [
-            ...prev.filter(m => m.pointType !== 'dropoff'), // Remove old dropoffs
-            ...destinationMarkers
-          ]);
-          
-          Alert.alert(
-            result.data.pickup_name,
-            `Showing ${routeDestinations.length} available destinations`,
-            [{ text: 'OK' }]
-          );
-        }
-      } catch (error) {
-        console.error('Error loading routes:', error);
-      }
+      // For public map view, show basic info without route connections
+      Alert.alert(
+        marker.title,
+        'This is a pickup point. Sign in to see available routes and book rides.',
+        [{ text: 'OK' }]
+      );
     } else if (marker.image_urls && marker.image_urls.length > 0) {
       // Show images if available
       setSelectedPoint(marker);
@@ -445,19 +462,7 @@ const MapViewScreen = ({ navigation, route }) => {
         
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
-          {/* Clear Routes Button */}
-          {showingRoutes && (
-            <TouchableOpacity 
-              style={[styles.floatingButton, styles.clearRoutesButton]}
-              onPress={() => {
-                setShowingRoutes(false);
-                setRouteData(null);
-                loadMapDataWithCache(); // Reload original data
-              }}
-            >
-              <Text style={styles.floatingButtonText}>✕</Text>
-            </TouchableOpacity>
-          )}
+
           
           {/* Refresh Button */}
           <TouchableOpacity 

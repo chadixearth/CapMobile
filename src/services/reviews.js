@@ -39,7 +39,7 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
     if (include_stats) params.append('include_stats', 'true');
 
     const qs = params.toString();
-    const res = await request(`/package-reviews/${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    const res = await request(`/reviews/${qs ? `?${qs}` : ''}`, { method: 'GET' });
 
     if (res.ok) {
       // Expected shape: { success: true, data: [...], count, stats? }
@@ -60,7 +60,7 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
 export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '' }) {
   try {
     const token = await getAccessToken().catch(() => null);
-    const res = await request(`/package-reviews/`, {
+    const res = await request(`/reviews/`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -131,7 +131,7 @@ export async function checkExistingReviews({ booking_id, reviewer_id }) {
   if (!booking_id || !reviewer_id) return { success: false, error: 'booking_id and reviewer_id are required' };
   
   try {
-    const res = await request(`/package-reviews/check-existing/${booking_id}/?reviewer_id=${encodeURIComponent(reviewer_id)}`, { method: 'GET' });
+    const res = await request(`/reviews/check-existing/${booking_id}/?reviewer_id=${encodeURIComponent(reviewer_id)}`, { method: 'GET' });
     
     if (res.ok && res.data?.success) {
       return {

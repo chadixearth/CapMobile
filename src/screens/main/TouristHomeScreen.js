@@ -28,6 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { createRideBooking, getRoutesByPickup } from '../../services/rideHailingService';
 import { getCurrentUser } from '../../services/authService';
 import { apiBaseUrl } from '../../services/networkConfig';
+import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
 
 const API_BASE_URL = apiBaseUrl();
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
@@ -137,6 +138,27 @@ export default function TouristHomeScreen({ navigation }) {
     }
   }, [sheetVisible, activePicker, pickup, destination]);
 
+  // Auto-refresh when data changes
+  useScreenAutoRefresh('TOURIST_HOME', () => {
+    console.log('[TouristHomeScreen] Auto-refreshing due to data changes');
+    const fetchPackages = async () => {
+      try {
+        setLoadingPackages(true);
+        const packages = await tourPackageService.getAllPackages();
+        const packagesArray = Array.isArray(packages) ? packages : [];
+        setTourPackages(packagesArray);
+        setFilteredPackages(packagesArray);
+        setDataSource('Auto-refreshed');
+        setNetworkStatus('Connected');
+      } catch (error) {
+        console.error('Auto-refresh packages error:', error);
+      } finally {
+        setLoadingPackages(false);
+      }
+    };
+    fetchPackages();
+  });
+
   useEffect(() => {
     const fetchPackages = async () => {
       try {
@@ -164,22 +186,18 @@ export default function TouristHomeScreen({ navigation }) {
         // Load route summaries to get color associations
         let routeSummaries = [];
         try {
-          const routeSummariesUrl = `${API_BASE_URL}/ride-hailing/route-summaries/`;
-          console.log('Fetching route summaries from:', routeSummariesUrl);
-          const routeResponse = await fetch(routeSummariesUrl, {
-            headers: { 'Content-Type': 'application/json' }
-          });
-          console.log('Route summaries response status:', routeResponse.status);
-          if (routeResponse.ok) {
-            const routeData = await routeResponse.json();
-            routeSummaries = routeData.data || [];
+          console.log('Fetching route summaries from API');
+          const { apiRequest } = await import('../../services/authService');
+          const result = await apiRequest('/ride-hailing/route-summaries/');
+          
+          if (result.success && result.data) {
+            routeSummaries = result.data.data || result.data || [];
             console.log('Loaded route summaries:', routeSummaries.length);
             
             // Store route summaries globally for filtering
             setRouteSummaries(routeSummaries);
           } else {
-            const errorText = await routeResponse.text();
-            console.error('Route summaries API failed:', routeResponse.status, errorText);
+            console.error('Route summaries API failed:', result.status, result.data?.error || result.error);
           }
         } catch (error) {
           console.error('Route summaries fetch error:', error);
@@ -302,7 +320,15 @@ export default function TouristHomeScreen({ navigation }) {
         filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
         break;
       case 'rating':
-        filtered.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0));
+        filtered.sort((a, b) => {
+          const ratingA = Number(a.average_rating) || 0;
+          const ratingB = Number(b.average_rating) || 0;
+          // Sort by rating first, then by review count as tiebreaker
+          if (ratingB !== ratingA) {
+            return ratingB - ratingA;
+          }
+          return (b.reviews_count || 0) - (a.reviews_count || 0);
+        });
         break;
       default:
         // Keep original order
@@ -681,6 +707,23 @@ export default function TouristHomeScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Tour Packages</Text>
         </View>
 
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={16} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search tour packages..."
+            value={search}
+            onChangeText={setSearch}
+            placeholderTextColor="#999"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} style={styles.clearSearch}>
+              <Ionicons name="close-circle" size={16} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* Filter Row */}
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>Sort by:</Text>
@@ -719,12 +762,18 @@ export default function TouristHomeScreen({ navigation }) {
         </Text>
 
         {loadingPackages ? (
-          <Text style={{ textAlign: 'center', marginVertical: 16 }}>Loading packages...</Text>
+          <View style={{ alignItems: 'center', marginVertical: 16 }}>
+            <ActivityIndicator size="large" color="#6B2E2B" />
+            <Text style={{ marginTop: 8, color: '#666' }}>Loading packages and reviews...</Text>
+          </View>
         ) : filteredPackages.length === 0 ? (
           <View style={styles.noPackagesContainer}>
-            <Text style={styles.noPackagesText}>No tour packages available</Text>
+            <Text style={styles.noPackagesText}>
+              {search.trim() ? 'No packages match your search' : 'No tour packages available'}
+            </Text>
             <Text style={styles.noPackagesSubtext}>
-              {dataSource === 'No Data' ? 'API endpoint not returning valid data' : 'Please try again later'}
+              {search.trim() ? 'Try a different search term' : 
+               dataSource === 'No Data' ? 'API endpoint not returning valid data' : 'Please try again later'}
             </Text>
           </View>
         ) : (
@@ -774,14 +823,21 @@ export default function TouristHomeScreen({ navigation }) {
                     </View>
                   ) : null}
 
-                  {(typeof pkg.average_rating === 'number' || (pkg.reviews && pkg.reviews.length)) ? (
+                  {(typeof pkg.average_rating === 'number' && pkg.average_rating > 0) ? (
                     <View style={styles.metaInline}>
-                      <Ionicons name="star" size={12} />
+                      <Ionicons name="star" size={12} color="#FFD700" />
                       <Text style={styles.metaInlineText} numberOfLines={1}>
-                        {(Number(pkg.average_rating) || 0).toFixed(1)}
+                        {pkg.average_rating.toFixed(1)} ({pkg.reviews_count || 0})
                       </Text>
                     </View>
-                  ) : null}
+                  ) : (
+                    <View style={styles.metaInline}>
+                      <Ionicons name="star-outline" size={12} color="#CCC" />
+                      <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                        No reviews
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Bottom row: Availability + Book */}
@@ -1062,6 +1118,31 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#222' },
 
   networkStatus: { fontSize: 12, fontWeight: '600' },
+
+  /* Search Bar */
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#333',
+  },
+  clearSearch: {
+    padding: 4,
+  },
 
   /* Filter Row */
   filterRow: {

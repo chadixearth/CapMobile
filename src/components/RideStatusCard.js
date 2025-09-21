@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { checkRideStatus, getDriverLocation } from '../services/rideHailingService';
+import LiveTrackingMap from './LiveTrackingMap';
 
 const RideStatusCard = ({ ride, onRefresh }) => {
   const [driverLocation, setDriverLocation] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
     if (ride.status === 'driver_assigned' && ride.driver_id) {
@@ -115,8 +117,33 @@ const RideStatusCard = ({ ride, onRefresh }) => {
       </View>
 
       {ride.status === 'driver_assigned' && (
-        <Text style={styles.cashNote}>💰 Cash payment on arrival</Text>
+        <>
+          <TouchableOpacity 
+            style={styles.trackButton} 
+            onPress={() => setShowMap(true)}
+          >
+            <Ionicons name="map" size={16} color="#007AFF" />
+            <Text style={styles.trackButtonText}>Track Driver</Text>
+          </TouchableOpacity>
+          <Text style={styles.cashNote}>💰 Cash payment on arrival</Text>
+        </>
       )}
+      
+      <Modal
+        visible={showMap}
+        animationType="slide"
+        onRequestClose={() => setShowMap(false)}
+      >
+        <View style={styles.mapModal}>
+          <View style={styles.mapHeader}>
+            <Text style={styles.mapTitle}>Tracking {ride.driver_name}</Text>
+            <TouchableOpacity onPress={() => setShowMap(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+          <LiveTrackingMap ride={ride} />
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -174,11 +201,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cashNote: {
-    marginTop: 12,
+    marginTop: 8,
     fontSize: 12,
     color: '#FF9500',
     textAlign: 'center',
     fontWeight: '500',
+  },
+  trackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F8FF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  trackButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  mapModal: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 50,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  mapTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
   },
 });
 

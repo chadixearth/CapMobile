@@ -24,6 +24,7 @@ import { getCustomerCustomRequests } from '../../services/specialpackage/customP
 import { createPackageReview, createDriverReview, checkExistingReviews } from '../../services/reviews';
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
+import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
 
 const MAROON = '#6B2E2B';
 
@@ -82,6 +83,12 @@ export default function BookScreen({ navigation }) {
       navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
     }
   }, [auth.loading, auth.isAuthenticated, navigation]);
+
+  // Auto-refresh when data changes
+  useScreenAutoRefresh('BOOK_SCREEN', () => {
+    console.log('[BookScreen] Auto-refreshing due to data changes');
+    if (!auth.loading && auth.isAuthenticated) fetchUserAndBookings();
+  });
 
   useEffect(() => {
     if (!auth.loading && auth.isAuthenticated) fetchUserAndBookings();
@@ -646,6 +653,7 @@ export default function BookScreen({ navigation }) {
         cancelReason
       );
       if (result.success) {
+        invalidateData.bookings(); // Trigger auto-refresh across all screens
         setCancelModal({ visible: false, booking: null, policy: null, loading: false, error: null });
         const refundAmount = result.refund_info?.refund_amount || cancelModal.policy?.refund_amount || 0;
         const processingTime = result.refund_info?.processing_time || '3-5 business days';

@@ -14,7 +14,7 @@ function getDevServerHost() {
   }
 }
 const API_BASE_URL = `${apiBaseUrl()}/tourpackage/`;
-import { getAccessToken } from '../authService';
+import { apiRequest } from '../authService';
 
 // Helper function to create a timeout promise
 const createTimeout = (ms) => {
@@ -111,63 +111,29 @@ const formatCoordinates = (packages) => {
 
 // Test function to check if server is reachable
 export const testConnection = async () => {
-  const base = apiBaseUrl();
-  const testUrls = [API_BASE_URL, `${base}/`, base.replace(/\/api$/, '/')];
+  const testEndpoints = ['/tourpackage/', '/', '/api/'];
 
-  for (const url of testUrls) {
+  for (const endpoint of testEndpoints) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const result = await apiRequest(endpoint);
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const contentType = response.headers.get('content-type');
-      const text = await response.text();
-      
-      // Check if it's JSON
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          const jsonData = JSON.parse(text);
-          return {
-            success: true,
-            status: response.status,
-            url: url,
-            data: jsonData,
-            text: text.substring(0, 200)
-          };
-        } catch (parseError) {
-          // Invalid JSON
-        }
-      } else {
-        // Even if it's not JSON, let's check if it contains API-like content
-        if (text.includes('api') || text.includes('tour') || text.includes('package')) {
-          return {
-            success: true,
-            status: response.status,
-            url: url,
-            warning: 'Endpoint found but returns HTML instead of JSON',
-            text: text.substring(0, 200)
-          };
-        }
+      if (result.success) {
+        return {
+          success: true,
+          status: result.status,
+          endpoint: endpoint,
+          data: result.data
+        };
       }
     } catch (error) {
-      // Error testing URL
+      // Try next endpoint
     }
   }
   
   return {
     success: false,
     error: 'No working API endpoint found. Please check your server configuration.',
-    testedUrls: testUrls
+    testedEndpoints: testEndpoints
   };
 };
 
@@ -175,27 +141,13 @@ export const tourPackageService = {
   // Get all tour packages
   async getAllPackages() {
     try {
-      const token = await getAccessToken();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(API_BASE_URL, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status} at ${API_BASE_URL}`);
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error(`Response is not JSON at ${API_BASE_URL}`);
-      }
-      const data = await response.json();
+      const result = await apiRequest('/tourpackage/');
       
+      if (!result.success) {
+        throw new Error(result.data?.error || result.error || `HTTP error! status: ${result.status}`);
+      }
+      
+      const data = result.data;
       let packages;
       // Handle Django REST Framework response structure
       if (data.success && data.data) {
@@ -214,16 +166,9 @@ export const tourPackageService = {
       // Format coordinates and ensure reviews exist
       let formattedPackages = formatCoordinates(packages);
 
-      // If backend didn't include reviews, try to fetch them per package and merge
-      try {
-        const needsReviews = formattedPackages.some(p => !Array.isArray(p.reviews) || p.reviews.length === 0);
-        if (needsReviews) {
-          formattedPackages = await mergeReviewsIntoPackages(formattedPackages);
-        }
-      } catch (mergeError) {
-        // Non-fatal: proceed without merged reviews
-        console.warn('Could not merge reviews; proceeding without:', mergeError?.message || mergeError);
-      }
+      // Fetch reviews for each package
+      console.log('[getAllPackages] Fetching reviews for packages');
+      formattedPackages = await mergeReviewsIntoPackages(formattedPackages);
 
       return formattedPackages;
     } catch (error) {
@@ -235,27 +180,13 @@ export const tourPackageService = {
   // Get a specific tour package by ID
   async getPackageById(packageId) {
     try {
-      const token = await getAccessToken();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(`${API_BASE_URL}${packageId}/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status} at ${API_BASE_URL}${packageId}/`);
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error(`Response is not JSON at ${API_BASE_URL}${packageId}/`);
-      }
-      const data = await response.json();
+      const result = await apiRequest(`/tourpackage/${packageId}/`);
       
+      if (!result.success) {
+        throw new Error(result.data?.error || result.error || `HTTP error! status: ${result.status}`);
+      }
+      
+      const data = result.data;
       let packageData;
       // Handle Django REST Framework response structure
       if (data.success && data.data) {
@@ -270,22 +201,13 @@ export const tourPackageService = {
       // Format coordinates and ensure reviews for single package
       let formattedPackage = formatCoordinates([packageData])[0];
 
-      // If backend didn't include reviews, fetch them and merge
-      try {
-        if (!Array.isArray(formattedPackage.reviews) || formattedPackage.reviews.length === 0) {
-          const reviews = await fetchPackageReviews(formattedPackage.id);
-          const { normalizedReviews, averageRating } = normalizeReviews(reviews, formattedPackage);
-          formattedPackage = {
-            ...formattedPackage,
-            reviews: normalizedReviews,
-            reviews_count: normalizedReviews.length,
-            average_rating: averageRating,
-          };
-        }
-      } catch (mergeError) {
-        // Non-fatal
-        console.warn('Could not fetch reviews for package', formattedPackage?.id, mergeError?.message || mergeError);
-      }
+      // Fetch reviews for this package
+      console.log('[getPackageById] Fetching reviews for package');
+      const reviews = await fetchPackageReviews(packageId);
+      const { normalizedReviews, averageRating } = normalizeReviews(reviews, formattedPackage);
+      formattedPackage.reviews = normalizedReviews;
+      formattedPackage.reviews_count = normalizedReviews.length;
+      formattedPackage.average_rating = averageRating;
 
       return formattedPackage;
     } catch (error) {
@@ -350,29 +272,25 @@ function extractReviewsFromResponseData(data) {
 }
 
 async function fetchPackageReviews(packageId) {
-  const token = await getAccessToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-
-  const candidates = buildReviewUrlCandidates(packageId);
-
-  for (const url of candidates) {
-    try {
-      const resp = await fetchWithTimeout(url, { method: 'GET', headers }, 8000);
-      if (!resp.ok) continue;
-      const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) continue;
-      const json = await resp.json();
-      const reviews = extractReviewsFromResponseData(json);
-      if (Array.isArray(reviews)) return reviews;
-    } catch (_) {
-      // Try next candidate
+  try {
+    console.log(`[fetchPackageReviews] Fetching reviews for package ${packageId}`);
+    
+    // Use the correct reviews endpoint
+    const result = await apiRequest(`/reviews/package/${packageId}/`);
+    
+    if (result.success && result.data) {
+      const reviewsData = result.data.data || result.data;
+      const reviews = reviewsData.reviews || [];
+      console.log(`[fetchPackageReviews] Found ${reviews.length} reviews for package ${packageId}`);
+      return reviews;
     }
+    
+    console.log(`[fetchPackageReviews] No reviews found for package ${packageId}`);
+    return [];
+  } catch (error) {
+    console.warn(`[fetchPackageReviews] Error fetching reviews for package ${packageId}:`, error.message);
+    return [];
   }
-  return [];
 }
 
 function normalizeReviews(reviews, basePackage = {}) {

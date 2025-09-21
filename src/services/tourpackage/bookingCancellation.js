@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { apiBaseUrl } from '../networkConfig';
+import { invalidateData } from '../dataInvalidationService';
 
 const API_BASE_URL = apiBaseUrl();
 
@@ -75,6 +76,7 @@ export const cancelBooking = async (bookingId, customerId, reason = '') => {
       throw new Error(result.error || `HTTP ${response.status}`);
     }
 
+    invalidateData.bookings(); // Trigger auto-refresh across all screens
     return {
       success: true,
       data: result.data || result,

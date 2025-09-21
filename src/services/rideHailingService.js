@@ -1,6 +1,5 @@
-import { apiBaseUrl } from './networkConfig';
-
-const API_BASE_URL = apiBaseUrl();
+import { apiRequest } from './authService';
+import { invalidateData } from './dataInvalidationService';
 
 // Helper function for API calls with retry logic
 async function apiCall(endpoint, options = {}, maxRetries = 3) {
@@ -8,20 +7,42 @@ async function apiCall(endpoint, options = {}, maxRetries = 3) {
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      const result = await apiRequest(endpoint, options);
+      
+      if (result.success) {
+        // Emit data change events for successful operations (only for write operations)
+        if (options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method.toUpperCase())) {
+          if (endpoint.includes('/ride-hailing/')) {
+            invalidateData.rides();
+            invalidateData.bookings();
+          }
+          if (endpoint.includes('/complete/') || endpoint.includes('/driver-cancel/') || endpoint.includes('/customer-cancel/')) {
+            invalidateData.earnings();
+          }
+          if (endpoint.includes('/payment/') || endpoint.includes('/pay/')) {
+            invalidateData.payments();
+            invalidateData.bookings();
+          }
+          if (endpoint.includes('/profile/') || endpoint.includes('/user/')) {
+            invalidateData.profile();
+          }
+          if (endpoint.includes('/review/') || endpoint.includes('/rating/')) {
+            invalidateData.reviews();
+          }
+          if (endpoint.includes('/custom/') || endpoint.includes('/special/')) {
+            invalidateData.customRequests();
+          }
+          if (endpoint.includes('/carriage/') || endpoint.includes('/vehicle/')) {
+            invalidateData.carriages();
+          }
+          if (endpoint.includes('/map/') || endpoint.includes('/route/')) {
+            invalidateData.mapData();
+          }
+        }
+        return result.data;
+      } else {
+        throw new Error(result.data?.error || result.error || `HTTP ${result.status}`);
       }
-
-      return await response.json();
     } catch (error) {
       lastError = error;
       
@@ -124,6 +145,11 @@ export async function driverCancelRideBooking(bookingId, driverData) {
       body: JSON.stringify(driverData)
     });
     
+    // Emit data invalidation events for cancellation
+    invalidateData.rides();
+    invalidateData.bookings();
+    invalidateData.earnings();
+    
     return result;
   } catch (error) {
     console.error('Error driver cancelling ride booking:', error);
@@ -175,15 +201,34 @@ export async function getMyActiveRides(customerId) {
 // Get driver location for tracking
 export async function getDriverLocation(driverId) {
   try {
-    const result = await apiCall(`/location/drivers/`);
-    // Filter for specific driver
-    if (result.success && result.data) {
-      const driverLocation = result.data.find(loc => loc.driver_id === driverId);
-      return { success: true, data: driverLocation };
+    const result = await apiCall('/location/drivers/');
+    if (result.success && result.data && result.data.length > 0) {
+      const driverLocation = result.data.find(loc => loc.user_id === driverId);
+      return driverLocation ? { success: true, data: driverLocation } : { success: false, error: 'Driver location not found' };
     }
-    return result;
+    return { success: false, error: 'No location data' };
   } catch (error) {
     console.error('Error fetching driver location:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Update driver location
+export async function updateDriverLocation(userId, latitude, longitude, speed = 0, heading = 0) {
+  try {
+    const result = await apiCall('/location/update/', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: userId,
+        latitude,
+        longitude,
+        speed,
+        heading
+      })
+    });
+    return result;
+  } catch (error) {
+    console.error('Error updating driver location:', error);
     return { success: false, error: error.message };
   }
 }

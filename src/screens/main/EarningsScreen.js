@@ -15,6 +15,7 @@ import { colors, spacing, card } from '../../styles/global';
 
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
+import { useScreenAutoRefresh } from '../../services/dataInvalidationService';
 
 import {
   getDriverEarningsStats,
@@ -127,17 +128,23 @@ export default function EarningsScreen({ navigation, route }) {
     []
   );
 
+  // Auto-refresh when earnings data changes
+  useScreenAutoRefresh('EARNINGS', () => {
+    console.log('[EarningsScreen] Auto-refreshing due to data changes');
+    if (driverId) fetchAll(driverId, frequency);
+  });
+
   // Initial + on frequency change
   useEffect(() => {
     fetchAll(driverId, frequency);
   }, [driverId, frequency, fetchAll]);
 
-  // Live polling every 15s
+  // Reduced polling frequency to prevent rate limiting
   useEffect(() => {
     if (!driverId) return;
     const id = setInterval(() => {
       fetchAll(driverId, frequency);
-    }, 15000);
+    }, 30000); // Increased to 30 seconds
     return () => clearInterval(id);
   }, [driverId, frequency, fetchAll]);
 

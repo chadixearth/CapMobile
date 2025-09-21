@@ -1,49 +1,28 @@
 // services/carriageService.js
-// Use your computer's IP address instead of localhost for mobile devices
-// Updated to resolve host dynamically like other services
+// Updated to use centralized API request with JWT expiry handling
 import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from '../networkConfig';
-function getDevServerHost() {
+import { apiRequest } from '../authService';
+
+// Function to set API base URL dynamically (kept for compatibility)
+export const setApiBaseUrl = (newUrl) => {
+  // This function is kept for compatibility but no longer used
+  console.warn('setApiBaseUrl is deprecated - using centralized API configuration');
+};
+
+// Helper function for API calls using centralized request
+async function apiCall(endpoint, options = {}) {
   try {
-    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
-    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
-    return match ? match[1] : null;
-  } catch (e) {
-    return null;
+    const result = await apiRequest(endpoint, options);
+    
+    if (result.success) {
+      return result.data;
+    } else {
+      throw new Error(result.data?.error || result.error || `HTTP ${result.status}: Request failed`);
+    }
+  } catch (error) {
+    throw error;
   }
 }
-let API_BASE_URL = `${apiBaseUrl()}/tartanilla-carriages/`;
-
-// Function to set API base URL dynamically
-export const setApiBaseUrl = (newUrl) => {
-  API_BASE_URL = newUrl;
-};
-
-// Helper: timeout via AbortController
-const withTimeout = async (promiseFactory, ms = 10000) => {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), ms);
-  try {
-    const response = await promiseFactory(controller.signal);
-    return response;
-  } finally {
-    clearTimeout(id);
-  }
-};
-
-// Helper: robust JSON parsing and format handling
-const parseJsonSafely = async (response) => {
-  const contentType = response.headers.get('content-type') || '';
-  const text = await response.text();
-  if (!contentType.includes('application/json')) {
-    throw new Error('Response is not JSON');
-  }
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new Error('Failed to parse JSON');
-  }
-};
 
 // Normalize server response shapes to plain arrays/objects
 const unwrapList = (data) => {
@@ -67,49 +46,42 @@ const unwrapObject = (data) => {
 };
 
 export const testCarriageConnection = async () => {
-  const base = apiBaseUrl();
-  const testUrls = [
-    `${base}/tartanilla-carriages/`,
-    `${base}/carriages/`,
-    base + '/',
-    base.replace(/\/api$/, '/')
+  const testEndpoints = [
+    '/tartanilla-carriages/',
+    '/carriages/',
+    '/api/',
+    '/'
   ];
 
-  for (const url of testUrls) {
+  for (const endpoint of testEndpoints) {
     try {
-      const res = await withTimeout((signal) => fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, signal }), 5000);
-      const contentType = res.headers.get('content-type') || '';
-      const text = await res.text();
-      if (contentType.includes('application/json')) {
-        try {
-          const json = JSON.parse(text);
-          return { success: true, status: res.status, url, data: json, text: text.substring(0, 200) };
-        } catch (_) {
-          // fallthrough
-        }
+      const result = await apiRequest(endpoint);
+      
+      if (result.success) {
+        return {
+          success: true,
+          status: result.status,
+          endpoint: endpoint,
+          data: result.data
+        };
       }
-      if (text.includes('api') || text.includes('carriage') || text.includes('tartanilla')) {
-        return { success: true, status: res.status, url, warning: 'Endpoint found but returns HTML instead of JSON', text: text.substring(0, 200) };
-      }
-    } catch (_) {
-      // continue
+    } catch (error) {
+      // Try next endpoint
     }
   }
-  return { success: false, error: 'No working API endpoint found. Please check your server configuration.', testedUrls: testUrls };
+  
+  return {
+    success: false,
+    error: 'No working API endpoint found. Please check your server configuration.',
+    testedEndpoints: testEndpoints
+  };
 };
 
 export const carriageService = {
   // List all carriages
   async getAllCarriages() {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall('/tartanilla-carriages/');
       return unwrapList(data);
     } catch (error) {
       console.error('Error fetching carriages:', error);
@@ -120,14 +92,7 @@ export const carriageService = {
   // Retrieve a carriage by ID
   async getCarriageById(carriageId) {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}${carriageId}/`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall(`/tartanilla-carriages/${carriageId}/`);
       return unwrapObject(data);
     } catch (error) {
       console.error('Error fetching carriage:', error);
@@ -138,77 +103,13 @@ export const carriageService = {
   // Create a new carriage
   async createCarriage(payload) {
     try {
-      console.log('Sending payload to', API_BASE_URL, ':', JSON.stringify(payload, null, 2));
+      console.log('Sending payload:', JSON.stringify(payload, null, 2));
       
-      const response = await withTimeout(async (signal) => {
-        const res = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'Accept': 'application/json' 
-          },
-          body: JSON.stringify(payload),
-          signal,
-        });
-        
-        // Log response status and headers for debugging
-        console.log('Response status:', res.status);
-        console.log('Response headers:', JSON.stringify([...res.headers.entries()]));
-        
-        // Get response text first to handle both success and error cases
-        const responseText = await res.text();
-        console.log('Raw response:', responseText);
-        
-        // Log the full request details for debugging
-        console.log('Request details:', {
-          url: API_BASE_URL,
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'Accept': 'application/json' 
-          },
-          body: JSON.parse(JSON.stringify(payload)) // Clone the payload to avoid reference issues
-        });
-        
-        // Create a new response with the text for JSON parsing
-        const responseClone = new Response(responseText, {
-          status: res.status,
-          headers: res.headers
-        });
-        
-        if (!res.ok) {
-          let errorMessage = `HTTP error! status: ${res.status}`;
-          let errorDetails = {};
-          
-          try {
-            // Try to parse error response
-            const errorData = JSON.parse(responseText);
-            errorMessage = errorData.detail || errorData.message || JSON.stringify(errorData);
-            console.error('API Error Details:', errorData);
-            
-            // If there are field-specific errors, include them
-            if (typeof errorData === 'object' && errorData !== null) {
-              errorDetails = Object.entries(errorData)
-                .filter(([key]) => key !== 'detail' && key !== 'message')
-                .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-                .join('\n');
-            }
-          } catch (e) {
-            // If not JSON, use the raw text
-            errorMessage = responseText || errorMessage;
-          }
-          
-          if (errorDetails) {
-            errorMessage += `\n\n${errorDetails}`;
-          }
-          
-          throw new Error(errorMessage);
-        }  
-        
-        return responseClone;
+      const data = await apiCall('/tartanilla-carriages/', {
+        method: 'POST',
+        body: JSON.stringify(payload)
       });
       
-      const data = await parseJsonSafely(response);
       console.log('Parsed response data:', data);
       return unwrapObject(data);
     } catch (error) {
@@ -220,15 +121,10 @@ export const carriageService = {
   // Update an existing carriage (PATCH by default)
   async updateCarriage(carriageId, updates) {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}${carriageId}/`, {
+      const data = await apiCall(`/tartanilla-carriages/${carriageId}/`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(updates),
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+        body: JSON.stringify(updates)
+      });
       return unwrapObject(data);
     } catch (error) {
       console.error('Error updating carriage:', error);
@@ -239,15 +135,9 @@ export const carriageService = {
   // Delete a carriage
   async deleteCarriage(carriageId) {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}${carriageId}/`, {
-        method: 'DELETE',
-        headers: { 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok && response.status !== 204) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      await apiCall(`/tartanilla-carriages/${carriageId}/`, {
+        method: 'DELETE'
+      });
       return true;
     } catch (error) {
       console.error('Error deleting carriage:', error);
@@ -258,15 +148,7 @@ export const carriageService = {
   // Get carriages by owner
   async getByOwner(ownerId) {
     try {
-      const url = `${API_BASE_URL}get_by_owner/?owner_id=${encodeURIComponent(ownerId)}`;
-      const response = await withTimeout((signal) => fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall(`/tartanilla-carriages/get_by_owner/?owner_id=${encodeURIComponent(ownerId)}`);
       return unwrapList(data);
     } catch (error) {
       console.error('Error fetching carriages by owner:', error);
@@ -277,15 +159,7 @@ export const carriageService = {
   // Get carriages by driver
   async getByDriver(driverId) {
     try {
-      const url = `${API_BASE_URL}get_by_driver/?driver_id=${encodeURIComponent(driverId)}`;
-      const response = await withTimeout((signal) => fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall(`/tartanilla-carriages/get_by_driver/?driver_id=${encodeURIComponent(driverId)}`);
       return unwrapList(data);
     } catch (error) {
       console.error('Error fetching carriages by driver:', error);
@@ -296,15 +170,7 @@ export const carriageService = {
   // Get available drivers not assigned to any carriage
   async getAvailableDrivers() {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}get_available_drivers/`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
-      // This endpoint returns { success, data: [...] }
+      const data = await apiCall('/tartanilla-carriages/get_available_drivers/');
       return unwrapList(data);
     } catch (error) {
       console.error('Error fetching available drivers:', error);
@@ -315,14 +181,7 @@ export const carriageService = {
   // Get owners
   async getOwners() {
     try {
-      const response = await withTimeout((signal) => fetch(`${API_BASE_URL}get_owners/`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall('/tartanilla-carriages/get_owners/');
       return unwrapList(data);
     } catch (error) {
       console.error('Error fetching owners:', error);
@@ -333,15 +192,7 @@ export const carriageService = {
   // Get user by ID
   async getUserById(userId) {
     try {
-      const url = `${API_BASE_URL}get_user_by_id/?user_id=${encodeURIComponent(userId)}`;
-      const response = await withTimeout((signal) => fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall(`/tartanilla-carriages/get_user_by_id/?user_id=${encodeURIComponent(userId)}`);
       return unwrapObject(data);
     } catch (error) {
       console.error('Error fetching user by id:', error);
@@ -352,15 +203,7 @@ export const carriageService = {
   // Get user by email
   async getUserByEmail(email) {
     try {
-      const url = `${API_BASE_URL}get_user_by_email/?email=${encodeURIComponent(email)}`;
-      const response = await withTimeout((signal) => fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        signal,
-      }));
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await parseJsonSafely(response);
+      const data = await apiCall(`/tartanilla-carriages/get_user_by_email/?email=${encodeURIComponent(email)}`);
       return unwrapObject(data);
     } catch (error) {
       console.error('Error fetching user by email:', error);

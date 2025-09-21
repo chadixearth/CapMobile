@@ -1,47 +1,19 @@
 // API Configuration
 import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from '../networkConfig';
+import { apiRequest } from '../authService';
 import mapCacheService from './mapCacheService';
-
-function getDevServerHost() {
-  try {
-    const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
-    const match = scriptURL.match(/^[^:]+:\/\/([^:/]+)/);
-    return match ? match[1] : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-const API_BASE_URL = apiBaseUrl();
 
 // Helper function for API calls with better error handling
 async function apiCall(endpoint, options = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-  
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      signal: controller.signal,
-    });
+    const result = await apiRequest(endpoint, options);
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText || 'Request failed'}`);
+    if (result.success) {
+      return result.data;
+    } else {
+      throw new Error(result.data?.error || result.error || `HTTP ${result.status}: Request failed`);
     }
-    
-    const data = await response.json();
-    
-    return data;
   } catch (error) {
-    clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       throw new Error('Request timeout - please check your connection');
     }
@@ -83,7 +55,7 @@ export async function fetchMapData(options = {}) {
     
     // Step 3: No cache or force refresh - fetch from server
     console.log('[fetchMapData] Fetching fresh data from server');
-    const result = await apiCall('/map/data/', { method: 'GET' });
+    const result = await apiCall('/map/data/');
     
     console.log('[fetchMapData] Server response:', {
       points: result.data?.total_items?.points || 0,
@@ -150,7 +122,7 @@ async function fetchAndUpdateInBackground() {
     console.log('[Background] Checking for map updates...');
     
     // Fetch latest data from server
-    const result = await apiCall('/map/data/', { method: 'GET' });
+    const result = await apiCall('/map/data/');
     
     if (result && result.data) {
       const processedData = {
@@ -244,7 +216,7 @@ export async function fetchTerminals(params = {}) {
     if (params.active !== undefined) queryParams.append('active', params.active);
     
     const endpoint = `/map/terminals/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-    const result = await apiCall(endpoint, { method: 'GET' });
+    const result = await apiCall(endpoint);
     
     console.log('[fetchTerminals] Success:', {
       total: result.data?.total || 0,
@@ -283,7 +255,7 @@ export async function fetchRoutes(params = {}) {
     if (params.type) queryParams.append('type', params.type);
     
     const endpoint = `/map/routes/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-    const result = await apiCall(endpoint, { method: 'GET' });
+    const result = await apiCall(endpoint);
     
     console.log('[fetchRoutes] Success:', {
       total: result.data?.total || 0

@@ -32,6 +32,7 @@ import { driverStartBooking, driverCancelBooking } from '../../services/tourpack
 import {
   completeBookingWithVerification,
 } from '../../services/tourpackage/bookingVerification';
+import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
 import VerificationPhotoModal from '../../components/VerificationPhotoModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import DriverCancellationModal from '../../components/DriverCancellationModal';
@@ -227,6 +228,12 @@ export default function DriverBookScreen({ navigation }) {
   const acceptAnim = useRef(new Animated.Value(0)).current;
   const completeAnim = useRef(new Animated.Value(0)).current;
 
+  // Auto-refresh when data changes (debounced)
+  useScreenAutoRefresh('DRIVER_BOOK', React.useCallback(() => {
+    console.log('[DriverBookScreen] Auto-refreshing due to data changes');
+    fetchUserAndBookings();
+  }, []));
+
   useEffect(() => {
     fetchUserAndBookings();
     
@@ -305,7 +312,7 @@ export default function DriverBookScreen({ navigation }) {
     }).start();
   }, [showCompleteModal, completeAnim]);
 
-  const fetchUserAndBookings = async () => {
+  const fetchUserAndBookings = React.useCallback(async () => {
     try {
       setLoading(true);
       let currentUser = await getCurrentUser();
@@ -358,7 +365,7 @@ export default function DriverBookScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const fetchAvailableBookings = async (driverId) => {
     try {
@@ -965,11 +972,19 @@ const getCustomTitle = (r) => (
     </TouchableOpacity>
   );
   const renderBookingCard = (booking) => (
-    <View key={booking.id} style={styles.bookingCard}>
+    <View key={booking.id} style={[
+      styles.bookingCard, 
+      booking.request_type === 'ride_hailing' && styles.rideHailingCard
+    ]}>
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
           <Text style={styles.bookingReference}>Ref: {booking.booking_reference || 'N/A'}</Text>
           <Text style={styles.bookingDate}>{formatDate(booking.booking_date)}</Text>
+          {booking.request_type === 'ride_hailing' && (
+            <View style={styles.rideHailingBadge}>
+              <Text style={styles.rideHailingBadgeText}>RIDE HAILING</Text>
+            </View>
+          )}
         </View>
         <View style={[styles.statusContainer, { borderColor: getStatusColor(booking.status) }]}>
           <Ionicons name={getStatusIcon(booking.status)} size={16} color={getStatusColor(booking.status)} />
@@ -1047,7 +1062,7 @@ const getCustomTitle = (r) => (
           <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
         </View>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && booking.request_type !== 'ride_hailing' && (
         <>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
@@ -1067,6 +1082,22 @@ const getCustomTitle = (r) => (
           >
             <Ionicons name="close-circle" size={18} color="#fff" />
             <Text style={styles.acceptButtonText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        </>
+      )}
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && booking.request_type === 'ride_hailing' && (
+        <>
+          <View style={[styles.acceptButton, styles.disabledButton]}>
+            <Ionicons name="car" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Trip Started Automatically</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
+            onPress={() => handleCancelBooking(booking)}
+            disabled={acceptingBooking}
+          >
+            <Ionicons name="close-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Cancel Ride</Text>
           </TouchableOpacity>
         </>
       )}
@@ -1133,10 +1164,16 @@ const getCustomTitle = (r) => (
       )}
       
       {activeTab === 'ongoing' && ride.status === 'driver_assigned' && (
-        <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleCompleteBooking(ride)}>
-          <Ionicons name="checkmark-done" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Complete Ride</Text>
-        </TouchableOpacity>
+        <>
+          <View style={[styles.acceptButton, styles.disabledButton]}>
+            <Ionicons name="car" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Trip In Progress</Text>
+          </View>
+          <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleCompleteBooking(ride)}>
+            <Ionicons name="checkmark-done" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Complete Ride</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -1298,10 +1335,9 @@ const getCustomTitle = (r) => (
   });
 
   const currentBookings =
-    activeTab === 'available' ? availableBookings : activeTab === 'ongoing' ? ongoingBookings : historyBookings;
+    activeTab === 'available' ? [...availableBookings, ...availableRideBookings] : activeTab === 'ongoing' ? ongoingBookings : historyBookings;
 
   const currentCustomTours = activeTab === 'available' ? availableCustomTours : [];
-  const currentRideBookings = activeTab === 'available' ? availableRideBookings : [];
 
   // ====== Animated helpers for modals ======
   const acceptTranslateY = acceptAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
@@ -1352,11 +1388,10 @@ const getCustomTitle = (r) => (
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             showsVerticalScrollIndicator={false}
           >
-            {currentBookings.length > 0 || currentCustomTours.length > 0 || currentRideBookings.length > 0 ? (
+            {currentBookings.length > 0 || currentCustomTours.length > 0 ? (
               <>
                 {currentBookings.map(renderBookingCard)}
                 {currentCustomTours.map(renderCustomTourCard)}
-                {currentRideBookings.map(renderRideHailingCard)}
               </>
             ) : (
               renderEmptyState()
@@ -1558,6 +1593,7 @@ const getCustomTitle = (r) => (
         booking={bookingToCancel}
         driverId={user?.id}
         onCancellationSuccess={handleDriverCancellationSuccess}
+        bookingType={bookingToCancel?.request_type === 'ride_hailing' ? 'ride' : 'tour'}
       />
 
       {/* Ride Map Modal */}

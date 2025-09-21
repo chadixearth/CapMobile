@@ -1,21 +1,13 @@
-import { apiBaseUrl } from './networkConfig';
-
-const API_BASE_URL = apiBaseUrl();
+import { apiRequest } from './authService';
 
 export async function getRoadHighlights() {
   try {
-    const response = await fetch(`${API_BASE_URL}/map/road-highlights/`);
+    const result = await apiRequest('/map/road-highlights/');
     
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      return result.data.roads || [];
+    if (result.success && result.data.success) {
+      return result.data.data.roads || [];
     } else {
-      throw new Error(result.error || 'Failed to fetch road highlights');
+      throw new Error(result.data?.error || result.error || 'Failed to fetch road highlights');
     }
   } catch (error) {
     console.error('Error fetching road highlights:', error);
