@@ -149,7 +149,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = 'Failed to load carriages';
       
       if (err.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.101.76:8000';
+        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.101.80:8000';
       } else if (err.message.includes('HTTP error')) {
         errorMessage = `Server error: ${err.message}`;
       }

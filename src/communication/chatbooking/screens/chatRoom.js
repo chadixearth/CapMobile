@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, 
-  KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard
+  KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,9 +16,11 @@ import {
   subscribeToConversationMessages,
   unsubscribe,
   getContactPersonId,
-  getUserInfo
+  getUserInfo,
+  isBookingActive
 } from '../../services/chatService';
 import { getCurrentUser } from '../../utils/userUtils';
+import { supabase } from '../../../services/supabase';
 
 const MAROON = '#6B2E2B';
 
@@ -28,6 +30,26 @@ function BackBtn({ onPress }) {
       <Ionicons name="arrow-back" size={22} color={MAROON} />
     </TouchableOpacity>
   );
+}
+
+// Add this helper function after the BackBtn component definition
+function formatDisplayName(name) {
+  if (!name) return null;
+  
+  // Check if the name looks like an email address
+  if (name.includes('@')) {
+    // Extract the part before the @ symbol
+    name = name.split('@')[0];
+  }
+  
+  // Replace underscores and dots with spaces
+  name = name.replace(/[._]/g, ' ');
+  
+  // Capitalize the first letter of each word
+  return name
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 export default function ChatRoom({ route, navigation }) {
@@ -53,6 +75,11 @@ export default function ChatRoom({ route, navigation }) {
   const [conversation, setConversation] = useState(null);
   const [user, setUser] = useState(null);
   const [contactInfo, setContactInfo] = useState(null);
+  
+  // Add these states to your component
+  const [conversationActive, setConversationActive] = useState(true);
+  const [conversationEnded, setConversationEnded] = useState(false);
+  const [endedReason, setEndedReason] = useState(null);
   
   const flatListRef = useRef(null);
   const messageSubscriptionRef = useRef(null);
@@ -87,6 +114,42 @@ export default function ChatRoom({ route, navigation }) {
         );
         
         if (isMounted) setConversation(conversationData);
+        
+        // Check if conversation is active
+        if (conversationData.status !== 'active') {
+          if (isMounted) {
+            setConversationActive(false);
+            setConversationEnded(true);
+            setEndedReason('This conversation has ended');
+          }
+        } else {
+          // Check if booking is still active
+          const bookingActive = await isBookingActive(
+            bookingId, 
+            bookingType
+          );
+
+          if (!bookingActive) {
+            // Booking is completed or cancelled
+            if (conversationData.status === 'active') {
+              // Update conversation status to ended
+              await supabase
+                .from('conversations')
+                .update({ 
+                  status: 'ended',
+                  ended_at: new Date().toISOString()
+                })
+                .eq('id', conversationData.id);
+            }
+            
+            if (isMounted) {
+              setConversationActive(false);
+              setConversationEnded(true);
+              setEndedReason('This booking has been completed or cancelled');
+            }
+          }
+        }
+        
         // Determine current user's role based on userRole parameter or stored role
         let currentUserRole = 'tourist'; // Default
         const userRole = route.params?.userRole;
@@ -111,6 +174,16 @@ export default function ChatRoom({ route, navigation }) {
           currentUserRole
         );
         
+        // Determine the role of the other participant based on the current user's role
+        let otherParticipantRole = participantRole;
+        if (currentUserRole === 'driver' || currentUserRole === 'owner') {
+          otherParticipantRole = 'tourist';
+          console.log(`Current user is ${currentUserRole}, other participant role set to tourist`);
+        } else if (currentUserRole === 'tourist') {
+          // Keep the role that was passed in participantRole
+          console.log(`Current user is tourist, other participant role is ${otherParticipantRole}`);
+        }
+        
         // Get contact person ID based on requestType and pass additional context
         const contactPersonId = await getContactPersonId(
           bookingId, 
@@ -122,16 +195,6 @@ export default function ChatRoom({ route, navigation }) {
           }
         );
 
-        // Determine the role of the other participant based on the current user's role
-        let otherParticipantRole = participantRole;
-        if (currentUserRole === 'driver' || currentUserRole === 'owner') {
-          otherParticipantRole = 'tourist';
-          console.log(`Current user is ${currentUserRole}, other participant role set to tourist`);
-        } else if (currentUserRole === 'tourist') {
-          // Keep the role that was passed in participantRole
-          console.log(`Current user is tourist, other participant role is ${otherParticipantRole}`);
-        }
-        
         if (contactPersonId) {
           console.log(`Adding contact person ${contactPersonId} with role ${participantRole}`);
           
@@ -215,10 +278,10 @@ export default function ChatRoom({ route, navigation }) {
       }
       
       // Get sender name using the name field from public_user_profiles
-      let senderName = displayContactName;
-      if (msg.users && msg.users.name) {
-        senderName = msg.users.name;
-      }
+let senderName = displayContactName;
+if (msg.users && msg.users.name) {
+  senderName = formatDisplayName(msg.users.name);
+}
       
       return {
         id: String(msg.id),
@@ -238,6 +301,11 @@ export default function ChatRoom({ route, navigation }) {
     const text = input.trim();
     if (!text || !conversation) return;
     
+    if (!conversationActive) {
+      Alert.alert('Conversation Ended', endedReason || 'This conversation has ended');
+      return;
+    }
+    
     try {
       setSending(true);
       setInput('');
@@ -246,6 +314,15 @@ export default function ChatRoom({ route, navigation }) {
       await sendChatMessage(conversation.id, text);
     } catch (err) {
       console.error('Error sending message:', err);
+      
+      // Check if error is because conversation ended
+      if (err.message.includes('conversation has ended') || 
+          err.message.includes('booking has been completed')) {
+        setConversationActive(false);
+        setConversationEnded(true);
+        setEndedReason(err.message);
+        Alert.alert('Conversation Ended', err.message);
+      }
     } finally {
       setSending(false);
     }
@@ -284,8 +361,8 @@ export default function ChatRoom({ route, navigation }) {
   // Display contact name with appropriate role label
   const contactLabel = getContactLabel();
   const displayContactName = contactInfo ? 
-    contactInfo.name : 
-    contactName || contactLabel;
+    formatDisplayName(contactInfo.name) : 
+    formatDisplayName(contactName) || contactLabel;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
@@ -325,27 +402,33 @@ export default function ChatRoom({ route, navigation }) {
           )}
 
           {/* Input */}
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Type a message..."
-              placeholderTextColor="#999"
-              editable={!sending}
-            />
-            <TouchableOpacity 
-              style={[styles.fab, (!input.trim() || sending) && styles.fabDisabled]} 
-              onPress={handleSendMessage} 
-              disabled={!input.trim() || sending}
-            >
-              {sending ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Ionicons name="send" size={18} color="#fff" />
-              )}
-            </TouchableOpacity>
-          </View>
+          {conversationEnded ? (
+            <View style={styles.endedContainer}>
+              <Text style={styles.endedText}>{endedReason || 'This conversation has ended'}</Text>
+            </View>
+          ) : (
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={input}
+                onChangeText={setInput}
+                placeholder="Type a message..."
+                placeholderTextColor="#999"
+                editable={!sending}
+              />
+              <TouchableOpacity 
+                style={[styles.fab, (!input.trim() || sending) && styles.fabDisabled]} 
+                onPress={handleSendMessage} 
+                disabled={!input.trim() || sending}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Ionicons name="send" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -443,4 +526,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 10,
   },
+  endedContainer: {
+    padding: 16,
+    backgroundColor: '#f8f8f8',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    alignItems: 'center',
+  },
+  endedText: {
+    color: '#888',
+    textAlign: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 16 : 8,
+  }
 });

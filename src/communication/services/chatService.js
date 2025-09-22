@@ -151,6 +151,43 @@ export const sendMessage = async (conversationId, text) => {
       throw new Error('No user logged in');
     }
 
+    // Check conversation status first
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('status, conversation_type, related_id')
+      .eq('id', conversationId)
+      .single();
+      
+    if (convError) {
+      console.error('Error getting conversation:', convError);
+      throw convError;
+    }
+    
+    // Check if conversation is already ended
+    if (conversation.status !== 'active') {
+      throw new Error('This conversation has ended');
+    }
+    
+    // Check if booking is still active
+    const bookingActive = await isBookingActive(
+      conversation.related_id, 
+      conversation.conversation_type
+    );
+    
+    if (!bookingActive) {
+      // Update conversation status to ended
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'ended',
+          ended_at: new Date().toISOString()
+        })
+        .eq('id', conversationId);
+        
+      throw new Error('This booking has been completed or cancelled');
+    }
+
+    // Proceed with sending the message
     const { data, error } = await supabase
       .from('messages')
       .insert([
@@ -400,5 +437,47 @@ export const getUserInfo = async (userId) => {
   } catch (err) {
     console.error('Error in getUserInfo:', err);
     return null;
+  }
+};
+
+/**
+ * Check if a booking is active (not completed or cancelled)
+ * @param {string} bookingId - The booking ID
+ * @param {string} bookingType - Type of booking
+ * @returns {Promise<boolean>} True if booking is active, false otherwise
+ */
+export const isBookingActive = async (bookingId, bookingType) => {
+  try {
+    let table;
+    
+    if (bookingType === 'custom_tour_package') {
+      table = 'custom_tour_requests';
+    } else if (bookingType === 'special_event_request') {
+      table = 'special_event_requests';
+    } else if (bookingType === 'package_booking') {
+      table = 'bookings';
+    } else {
+      return false;
+    }
+    
+    const { data, error } = await supabase
+      .from(table)
+      .select('status')
+      .eq('id', bookingId)
+      .single();
+      
+    if (error) {
+      console.error(`Error checking booking status:`, error);
+      return false;
+    }
+    
+    // Check if status is active (not completed or cancelled)
+    const status = data?.status?.toLowerCase();
+    return status !== 'completed' && 
+           status !== 'cancelled' && 
+           status !== 'rejected';
+  } catch (err) {
+    console.error('Error in isBookingActive:', err);
+    return false;
   }
 };

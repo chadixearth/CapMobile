@@ -106,7 +106,7 @@ export async function apiRequest(endpoint, options = {}) {
     });
     
     if (error.name === 'AbortError') {
-      return { success: false, error: 'Connection timeout. Check if backend server is running on http://192.168.101.76:8000' };
+      return { success: false, error: 'Connection timeout. Check if backend server is running on http://192.168.101.80:8000' };
     }
     
     // Check for specific network errors
