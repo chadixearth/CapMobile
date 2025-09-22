@@ -2,6 +2,7 @@
 import apiClient from '../apiClient';
 import NotificationService from '../notificationService';
 import { getAccessToken } from '../authService';
+import { invalidateData } from '../dataInvalidationService';
 const API_BASE_URL = '/tour-booking';
 
 /**
@@ -43,10 +44,14 @@ export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
         endpoint: `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`
       });
       
-      // If it's a 500 error and we have retries left, wait and retry
-      if (error.message?.includes('500') && attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
-        console.log(`[getAvailableBookingsForDrivers] Retrying in ${delay}ms...`);
+      // Handle rate limiting (429) and server errors (500) with exponential backoff
+      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
+      const isServerError = error.message?.includes('500');
+      
+      if ((isRateLimited || isServerError) && attempt < maxRetries) {
+        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
+        console.log(`[getAvailableBookingsForDrivers] ${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -97,6 +102,9 @@ export async function driverAcceptBooking(bookingId, driverData) {
     }
     
     console.log('Accept booking response:', result.data);
+    if (result.data?.success) {
+      invalidateData.bookings();
+    }
     return result.data;
   } catch (error) {
     console.error('Error accepting booking:', error);
@@ -133,10 +141,14 @@ export async function getDriverBookings(driverId, filters = {}) {
       lastError = error;
       console.error(`Error fetching driver bookings (attempt ${attempt}/${maxRetries}):`, error);
       
-      // If it's a 500 error and we have retries left, wait and retry
-      if (error.message?.includes('500') && attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
-        console.log(`Retrying in ${delay}ms...`);
+      // Handle rate limiting (429) and server errors (500) with exponential backoff
+      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
+      const isServerError = error.message?.includes('500');
+      
+      if ((isRateLimited || isServerError) && attempt < maxRetries) {
+        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
+        console.log(`${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -224,6 +236,10 @@ export async function driverCompleteBooking(bookingId, driverId) {
 
     const data = await response.json();
     console.log('Driver complete booking response:', data);
+    if (data?.success) {
+      invalidateData.bookings();
+      invalidateData.earnings();
+    }
     return data;
   } catch (error) {
     const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
@@ -248,6 +264,9 @@ export async function driverStartBooking(bookingId, driverId) {
     const result = await apiClient.post(endpoint, { driver_id: driverId });
     
     console.log('Driver start booking response:', result.data);
+    if (result.data?.success) {
+      invalidateData.bookings();
+    }
     return result.data;
   } catch (error) {
     console.error('Error starting booking:', error);
@@ -271,6 +290,9 @@ export async function driverCancelBooking(bookingId, driverId, reason = 'Cancell
     const result = await apiClient.post(endpoint, { driver_id: driverId, reason });
     
     console.log('Driver cancel booking response:', result.data);
+    if (result.data?.success) {
+      invalidateData.bookings();
+    }
     return result.data;
   } catch (error) {
     console.error('Error cancelling booking:', error);

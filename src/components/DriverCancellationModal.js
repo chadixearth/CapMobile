@@ -12,13 +12,15 @@ import {
 } from 'react-native';
 
 import { getCancellationReasons, driverCancelBooking } from '../services/tourpackage/driverCancellation';
+import { driverCancelRideBooking } from '../services/rideHailingService';
 
 const DriverCancellationModal = ({ 
   visible, 
   onClose, 
   booking, 
   driverId, 
-  onCancellationSuccess 
+  onCancellationSuccess,
+  bookingType = 'tour' // 'tour' or 'ride'
 }) => {
   const [selectedReason, setSelectedReason] = useState('');
   const [customReason, setCustomReason] = useState('');
@@ -61,7 +63,10 @@ const DriverCancellationModal = ({
         reason: reason
       });
       
-      const result = await driverCancelBooking(booking.id, driverId, reason);
+      // Use appropriate cancellation service based on booking type
+      const result = bookingType === 'ride' 
+        ? await driverCancelRideBooking(booking.id, { driver_id: driverId, reason })
+        : await driverCancelBooking(booking.id, driverId, reason);
       
       console.log('[CANCELLATION] API Response:', result);
       

@@ -25,9 +25,15 @@ import TourPackageModal from '../../components/TourPackageModal';
 
 import { fetchMapData } from '../../services/map/fetchMap';
 import { useFocusEffect } from '@react-navigation/native';
-import { requestRide } from '../../services/api';
+import { createRideBooking, getRoutesByPickup } from '../../services/rideHailingService';
+import { getCurrentUser } from '../../services/authService';
+import { apiBaseUrl } from '../../services/networkConfig';
+import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
+
+const API_BASE_URL = apiBaseUrl();
 import { tourPackageService, testConnection } from '../../services/tourpackage/fetchPackage';
 import { supabase } from '../../services/supabase';
+import { getRoadHighlights, findNearestRoadPoint } from '../../services/roadHighlightsService';
 
 import * as Routes from '../../constants/routes';
 
@@ -38,7 +44,7 @@ const TERMINALS = [
   { id: '4', name: 'Plaza Independencia Gate', latitude: 10.2929, longitude: 123.9055 },
 ];
 
-const CEBU_CITY_REGION = { latitude: 10.295, longitude: 123.89, latitudeDelta: 0.018, longitudeDelta: 0.018 };
+const CEBU_CITY_REGION = { latitude: 10.295, longitude: 123.89, latitudeDelta: 0.008, longitudeDelta: 0.008, zoom: 15 };
 
 export default function TouristHomeScreen({ navigation }) {
   useLayoutEffect(() => {
@@ -57,14 +63,20 @@ export default function TouristHomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
 
   // ---------- Sheet state ----------
-  const SHEET_H = 540;
+  const SHEET_H = 720;
   const [sheetVisible, setSheetVisible] = useState(false);
   const sheetY = useRef(new Animated.Value(SHEET_H)).current;
   const [activePicker, setActivePicker] = useState('pickup'); // 'pickup' | 'destination'
   const [requesting, setRequesting] = useState(false);
   const [mapRegion, setMapRegion] = useState(CEBU_CITY_REGION);
   const [roads, setRoads] = useState([]);
+  const [roadHighlights, setRoadHighlights] = useState([]);
   const [markers, setMarkers] = useState([]);
+  const [routeData, setRouteData] = useState(null);
+  const [showingRoutes, setShowingRoutes] = useState(false);
+  const [routeSummaries, setRouteSummaries] = useState([]);
+  const [allMarkers, setAllMarkers] = useState([]);
+  const [allRoads, setAllRoads] = useState([]);
   const [filteredPackages, setFilteredPackages] = useState([]);
   const [sortBy, setSortBy] = useState('default'); // 'default', 'price_low', 'price_high', 'rating'
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -86,10 +98,66 @@ export default function TouristHomeScreen({ navigation }) {
       setMapRegion((r) => ({ ...r, latitude: pickup.latitude, longitude: pickup.longitude }));
     } else if (activePicker === 'destination' && destination) {
       setMapRegion((r) => ({ ...r, latitude: destination.latitude, longitude: destination.longitude }));
+    } else if (roadHighlights.length > 0) {
+      // Calculate bounds of all road highlights
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+      
+      roadHighlights.forEach(road => {
+        if (road.coordinates && Array.isArray(road.coordinates)) {
+          road.coordinates.forEach(coord => {
+            const lat = coord[0] || coord.lat || coord.latitude;
+            const lng = coord[1] || coord.lng || coord.longitude;
+            if (lat && lng) {
+              minLat = Math.min(minLat, lat);
+              maxLat = Math.max(maxLat, lat);
+              minLng = Math.min(minLng, lng);
+              maxLng = Math.max(maxLng, lng);
+            }
+          });
+        }
+      });
+      
+      if (minLat !== Infinity) {
+        const centerLat = (minLat + maxLat) / 2;
+        const centerLng = (minLng + maxLng) / 2;
+        const deltaLat = Math.max((maxLat - minLat) * 1.2, 0.005);
+        const deltaLng = Math.max((maxLng - minLng) * 1.2, 0.005);
+        
+        setMapRegion({
+          latitude: centerLat,
+          longitude: centerLng,
+          latitudeDelta: deltaLat,
+          longitudeDelta: deltaLng,
+          zoom: 16
+        });
+      } else {
+        setMapRegion(CEBU_CITY_REGION);
+      }
     } else {
       setMapRegion(CEBU_CITY_REGION);
     }
   }, [sheetVisible, activePicker, pickup, destination]);
+
+  // Auto-refresh when data changes
+  useScreenAutoRefresh('TOURIST_HOME', () => {
+    console.log('[TouristHomeScreen] Auto-refreshing due to data changes');
+    const fetchPackages = async () => {
+      try {
+        setLoadingPackages(true);
+        const packages = await tourPackageService.getAllPackages();
+        const packagesArray = Array.isArray(packages) ? packages : [];
+        setTourPackages(packagesArray);
+        setFilteredPackages(packagesArray);
+        setDataSource('Auto-refreshed');
+        setNetworkStatus('Connected');
+      } catch (error) {
+        console.error('Auto-refresh packages error:', error);
+      } finally {
+        setLoadingPackages(false);
+      }
+    };
+    fetchPackages();
+  });
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -114,15 +182,115 @@ export default function TouristHomeScreen({ navigation }) {
     const loadMapData = async () => {
       try {
         const mapData = await fetchMapData({ cacheOnly: true });
-        if (mapData?.roads) setRoads(mapData.roads);
-        if (mapData?.points) {
-          setMarkers(mapData.points.map(point => ({
-            latitude: parseFloat(point.latitude || 0),
-            longitude: parseFloat(point.longitude || 0),
-            title: point.name || 'Point',
-            id: point.id || Math.random().toString()
-          })));
+        
+        // Load route summaries to get color associations
+        let routeSummaries = [];
+        try {
+          console.log('Fetching route summaries from API');
+          const { apiRequest } = await import('../../services/authService');
+          const result = await apiRequest('/ride-hailing/route-summaries/');
+          
+          if (result.success && result.data) {
+            routeSummaries = result.data.data || result.data || [];
+            console.log('Loaded route summaries:', routeSummaries.length);
+            
+            // Store route summaries globally for filtering
+            setRouteSummaries(routeSummaries);
+          } else {
+            console.error('Route summaries API failed:', result.status, result.data?.error || result.error);
+          }
+        } catch (error) {
+          console.error('Route summaries fetch error:', error);
         }
+        
+        if (mapData?.roads) {
+          const processedRoads = mapData.roads.map(road => {
+            // Find associated route color
+            const routeInfo = routeSummaries.find(r => {
+              if (r.road_highlight_ids) {
+                let roadIds = r.road_highlight_ids;
+                
+                // Handle PostgreSQL array format {1,2,3}
+                if (typeof roadIds === 'string') {
+                  try {
+                    roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+                  } catch (e) {
+                    console.warn('Failed to parse road_highlight_ids:', roadIds);
+                    roadIds = [];
+                  }
+                }
+                
+                if (Array.isArray(roadIds)) {
+                  const match = roadIds.includes(parseInt(road.id));
+                  if (match) {
+                    console.log(`Road ${road.id} matched with color ${r.color}`);
+                  }
+                  return match;
+                }
+              }
+              return false;
+            });
+            
+            const finalColor = routeInfo?.color || road.stroke_color || road.color || '#007AFF';
+            console.log(`Road ${road.id} (${road.name}) using color: ${finalColor}`);
+            
+            return {
+              ...road,
+              color: finalColor,
+              weight: road.stroke_width || road.weight || 4,
+              opacity: road.stroke_opacity || road.opacity || 0.7
+            };
+          });
+          setAllRoads(processedRoads);
+          setRoads([]);
+        }
+        
+        if (mapData?.points) {
+          const processedMarkers = mapData.points.map(point => {
+            // Find associated route color
+            const routeInfo = routeSummaries.find(r => {
+              // Check pickup point
+              if (r.pickup_point_id == point.id) {
+                return true;
+              }
+              
+              // Check dropoff points (handle PostgreSQL array format)
+              if (r.dropoff_point_ids) {
+                let dropoffIds = r.dropoff_point_ids;
+                
+                // Handle PostgreSQL array format {1,2,3}
+                if (typeof dropoffIds === 'string') {
+                  try {
+                    dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+                  } catch (e) {
+                    dropoffIds = [];
+                  }
+                }
+                
+                if (Array.isArray(dropoffIds)) {
+                  return dropoffIds.includes(parseInt(point.id));
+                }
+              }
+              return false;
+            });
+            
+            return {
+              latitude: parseFloat(point.latitude || 0),
+              longitude: parseFloat(point.longitude || 0),
+              title: point.name || 'Point',
+              id: point.id || Math.random().toString(),
+              pointType: point.point_type || 'unknown',
+              iconColor: routeInfo?.color || point.icon_color || '#FF0000',
+              routeId: routeInfo?.route_id
+            };
+          });
+          setAllMarkers(processedMarkers);
+          setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
+        }
+        
+        // Load road highlights for ride hailing
+        const highlights = await getRoadHighlights();
+        setRoadHighlights(highlights);
       } catch (error) {
         console.warn('Failed to load map data:', error);
       }
@@ -152,7 +320,15 @@ export default function TouristHomeScreen({ navigation }) {
         filtered.sort((a, b) => (b.price || 0) - (a.price || 0));
         break;
       case 'rating':
-        filtered.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0));
+        filtered.sort((a, b) => {
+          const ratingA = Number(a.average_rating) || 0;
+          const ratingB = Number(b.average_rating) || 0;
+          // Sort by rating first, then by review count as tiebreaker
+          if (ratingB !== ratingA) {
+            return ratingB - ratingA;
+          }
+          return (b.reviews_count || 0) - (a.reviews_count || 0);
+        });
         break;
       default:
         // Keep original order
@@ -197,31 +373,90 @@ export default function TouristHomeScreen({ navigation }) {
     return `Lat ${loc.latitude.toFixed(4)}, Lng ${loc.longitude.toFixed(4)}`;
   };
 
-  const handleMapPress = (e) => {
+  const handleMapPress = async (e) => {
     const { latitude, longitude } = e?.nativeEvent?.coordinate || {};
+    console.log('Map pressed:', { latitude, longitude, roadHighlights: roadHighlights.length });
+    
     if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
     
-    // Check if click is on a road highlight
-    const clickedRoad = roads.find(road => {
-      if (road.road_coordinates) {
-        const coords = JSON.parse(road.road_coordinates);
-        return coords.some(coord => {
-          const distance = Math.sqrt(
-            Math.pow(coord[0] - latitude, 2) + Math.pow(coord[1] - longitude, 2)
-          );
-          return distance < 0.001;
-        });
-      }
-      return false;
-    });
+    // If no road highlights, use clicked coordinates directly
+    if (roadHighlights.length === 0) {
+      const point = {
+        name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+        latitude: latitude,
+        longitude: longitude
+      };
+      
+      if (activePicker === 'pickup') setPickup(point);
+      else setDestination(point);
+      return;
+    }
     
-    if (clickedRoad) {
-      const coords = JSON.parse(clickedRoad.road_coordinates);
-      const roadPoint = coords[0];
-      const point = { 
-        name: clickedRoad.name || 'Road Point', 
-        latitude: roadPoint[0], 
-        longitude: roadPoint[1] 
+    // Auto-snap to nearest road highlight
+    const nearestPoint = findNearestRoadPoint(roadHighlights, latitude, longitude, Infinity);
+    console.log('Nearest point found:', nearestPoint);
+    
+    if (nearestPoint) {
+      const point = {
+        name: nearestPoint.name,
+        latitude: nearestPoint.latitude,
+        longitude: nearestPoint.longitude,
+        id: nearestPoint.id
+      };
+      
+      if (activePicker === 'pickup' && nearestPoint.pointType === 'pickup') {
+        setPickup(point);
+        // Load routes for this pickup point
+        if (point.id) {
+          try {
+            const result = await getRoutesByPickup(point.id);
+            if (result.success && result.data) {
+              setRouteData(result.data);
+              setShowingRoutes(true);
+              
+              // Update road highlights and destinations
+              const routeRoads = result.data.road_highlights || [];
+              const routeDestinations = result.data.available_destinations || [];
+              
+              // Convert road highlights to map format
+              const processedRoads = routeRoads.map(road => ({
+                id: road.id,
+                name: road.name,
+                coordinates: road.coordinates,
+                color: result.data.color,
+                weight: 4,
+                opacity: 0.8
+              }));
+              
+              // Convert destinations to markers
+              const destinationMarkers = routeDestinations.map(dest => ({
+                latitude: parseFloat(dest.latitude),
+                longitude: parseFloat(dest.longitude),
+                title: dest.name,
+                id: dest.id,
+                pointType: 'dropoff',
+                iconColor: result.data.color
+              }));
+              
+              setRoadHighlights(processedRoads);
+              setMarkers(prev => [
+                ...prev.filter(m => m.pointType !== 'dropoff'),
+                ...destinationMarkers
+              ]);
+            }
+          } catch (error) {
+            console.error('Error loading routes:', error);
+          }
+        }
+      } else if (activePicker === 'destination' && nearestPoint.pointType === 'dropoff') {
+        setDestination(point);
+      }
+    } else {
+      // Fallback to clicked coordinates
+      const point = {
+        name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+        latitude: latitude,
+        longitude: longitude
       };
       
       if (activePicker === 'pickup') setPickup(point);
@@ -237,25 +472,176 @@ export default function TouristHomeScreen({ navigation }) {
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const point = { name: 'Current Location', latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      if (activePicker === 'pickup') setPickup(point);
-      else setDestination(point);
-      setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
+      
+      // Find nearest road highlight to current location
+      const nearestPoint = findNearestRoadPoint(roadHighlights, pos.coords.latitude, pos.coords.longitude, 200);
+      
+      if (nearestPoint) {
+        const point = {
+          name: `Near ${nearestPoint.name}`,
+          latitude: nearestPoint.latitude,
+          longitude: nearestPoint.longitude
+        };
+        
+        if (activePicker === 'pickup') setPickup(point);
+        else setDestination(point);
+        setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
+        
+        Alert.alert(
+          'Location Found',
+          `Snapped to nearest road: ${nearestPoint.name} (${Math.round(nearestPoint.distance)}m away)`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Road Nearby',
+          'Your current location is not near any available ride routes. Please select a location on a highlighted road.',
+          [{ text: 'OK' }]
+        );
+      }
     } catch (err) {
       Alert.alert('Location error', err.message || 'Failed to get current location.');
     }
   };
 
-  const chooseTerminal = (t) => {
-    const point = { name: t.name, latitude: t.latitude, longitude: t.longitude };
-    if (activePicker === 'pickup') setPickup(point);
-    else setDestination(point);
-    setMapRegion((r) => ({ ...r, latitude: t.latitude, longitude: t.longitude }));
+  const chooseTerminal = async (t) => {
+    // Find nearest road highlight to terminal
+    const nearestPoint = findNearestRoadPoint(roadHighlights, t.latitude, t.longitude, 300);
+    
+    if (nearestPoint) {
+      const point = {
+        name: `${t.name} (${nearestPoint.name})`,
+        latitude: nearestPoint.latitude,
+        longitude: nearestPoint.longitude,
+        id: nearestPoint.id
+      };
+      
+      if (activePicker === 'pickup' && nearestPoint.pointType === 'pickup') {
+        setPickup(point);
+        // Load routes for this pickup point
+        if (point.id) {
+          try {
+            const result = await getRoutesByPickup(point.id);
+            if (result.success && result.data) {
+              setRouteData(result.data);
+              setShowingRoutes(true);
+              
+              // Update road highlights and destinations
+              const routeRoads = result.data.road_highlights || [];
+              const routeDestinations = result.data.available_destinations || [];
+              
+              const processedRoads = routeRoads.map(road => ({
+                id: road.id,
+                name: road.name,
+                coordinates: road.coordinates,
+                color: result.data.color,
+                weight: 4,
+                opacity: 0.8
+              }));
+              
+              const destinationMarkers = routeDestinations.map(dest => ({
+                latitude: parseFloat(dest.latitude),
+                longitude: parseFloat(dest.longitude),
+                title: dest.name,
+                id: dest.id,
+                pointType: 'dropoff',
+                iconColor: result.data.color
+              }));
+              
+              setRoadHighlights(processedRoads);
+              setMarkers(prev => [
+                ...prev.filter(m => m.pointType !== 'dropoff'),
+                ...destinationMarkers
+              ]);
+            }
+          } catch (error) {
+            console.error('Error loading routes:', error);
+          }
+        }
+      } else if (activePicker === 'destination' && nearestPoint.pointType === 'dropoff') {
+        setDestination(point);
+      }
+      setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
+    } else {
+      Alert.alert(
+        'Terminal Not Available',
+        `${t.name} is not accessible by ride hailing. Please select a location on a highlighted road.`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const swapPoints = () => {
     setPickup(destination);
     setDestination(pickup);
+  };
+
+  const handleMarkerPress = async (marker) => {
+    if (activePicker === 'pickup' && marker.pointType === 'pickup' && marker.id) {
+      // Check if trying to select same point as destination
+      if (destination && destination.id === marker.id) {
+        Alert.alert('Invalid Selection', 'Pickup and destination cannot be the same point.');
+        return;
+      }
+      
+      const point = {
+        name: marker.title,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        id: marker.id
+      };
+      
+      setPickup(point);
+      setDestination(null); // Clear destination when pickup changes
+      
+      // Find the route summary for this pickup point
+      const routeSummary = routeSummaries.find(r => r.pickup_point_id == marker.id);
+      if (routeSummary) {
+        setShowingRoutes(true);
+        
+        // Parse dropoff IDs
+        let dropoffIds = routeSummary.dropoff_point_ids;
+        if (typeof dropoffIds === 'string') {
+          dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+        }
+        
+        // Parse road IDs
+        let roadIds = routeSummary.road_highlight_ids;
+        if (typeof roadIds === 'string') {
+          roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+        }
+        
+        // Show only connected dropoff points
+        const connectedDropoffs = allMarkers.filter(m => 
+          m.pointType === 'dropoff' && dropoffIds.includes(parseInt(m.id))
+        );
+        
+        // Show only connected roads
+        const connectedRoads = allRoads.filter(r => 
+          roadIds.includes(parseInt(r.id))
+        );
+        
+        setMarkers([marker, ...connectedDropoffs]);
+        setRoads(connectedRoads);
+        
+        console.log(`Pickup ${marker.id} connected to ${connectedDropoffs.length} dropoffs and ${connectedRoads.length} roads`);
+      }
+    } else if (activePicker === 'destination' && marker.pointType === 'dropoff') {
+      // Check if trying to select same point as pickup
+      if (pickup && pickup.id === marker.id) {
+        Alert.alert('Invalid Selection', 'Pickup and destination cannot be the same point.');
+        return;
+      }
+      
+      const point = {
+        name: marker.title,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        id: marker.id
+      };
+      
+      setDestination(point);
+    }
   };
 
   const handleRequestRide = async () => {
@@ -265,17 +651,39 @@ export default function TouristHomeScreen({ navigation }) {
     }
     setRequesting(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-      if (!userId) throw new Error('User not found');
-      await requestRide({
-        pickup: { lat: pickup.latitude, lng: pickup.longitude },
-        destination: { lat: destination.latitude, lng: destination.longitude },
-        userId,
+      // Get user from auth service (handles both Supabase and backend sync)
+      const user = await getCurrentUser();
+      if (!user || !user.id) {
+        throw new Error('User not authenticated');
+      }
+      
+      console.log('Creating ride booking for user:', user.id);
+      
+      const result = await createRideBooking({
+        customer_id: user.id,
+        pickup_address: pickup.name || `${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)}`,
+        dropoff_address: destination.name || `${destination.latitude.toFixed(4)}, ${destination.longitude.toFixed(4)}`,
+        notes: `Pickup: ${pickup.latitude}, ${pickup.longitude}. Dropoff: ${destination.latitude}, ${destination.longitude}`
       });
-      setSheetVisible(false);
-      Alert.alert('Request sent!', 'Your ride request has been sent.');
+      
+      if (result.success) {
+        setSheetVisible(false);
+        Alert.alert(
+          'Ride Requested!', 
+          'Your ride request has been sent to drivers. You will be notified when a driver accepts. Payment is cash only upon arrival.',
+          [
+            {
+              text: 'Track My Rides',
+              onPress: () => navigation.navigate('Terminals')
+            },
+            { text: 'OK' }
+          ]
+        );
+      } else {
+        throw new Error(result.error || 'Failed to create ride booking');
+      }
     } catch (err) {
+      console.error('Ride booking error:', err);
       Alert.alert('Error', err.message || 'Failed to request ride.');
     } finally {
       setRequesting(false);
@@ -297,6 +705,23 @@ export default function TouristHomeScreen({ navigation }) {
       >
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Tour Packages</Text>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={16} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search tour packages..."
+            value={search}
+            onChangeText={setSearch}
+            placeholderTextColor="#999"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} style={styles.clearSearch}>
+              <Ionicons name="close-circle" size={16} color="#999" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Filter Row */}
@@ -337,12 +762,18 @@ export default function TouristHomeScreen({ navigation }) {
         </Text>
 
         {loadingPackages ? (
-          <Text style={{ textAlign: 'center', marginVertical: 16 }}>Loading packages...</Text>
+          <View style={{ alignItems: 'center', marginVertical: 16 }}>
+            <ActivityIndicator size="large" color="#6B2E2B" />
+            <Text style={{ marginTop: 8, color: '#666' }}>Loading packages and reviews...</Text>
+          </View>
         ) : filteredPackages.length === 0 ? (
           <View style={styles.noPackagesContainer}>
-            <Text style={styles.noPackagesText}>No tour packages available</Text>
+            <Text style={styles.noPackagesText}>
+              {search.trim() ? 'No packages match your search' : 'No tour packages available'}
+            </Text>
             <Text style={styles.noPackagesSubtext}>
-              {dataSource === 'No Data' ? 'API endpoint not returning valid data' : 'Please try again later'}
+              {search.trim() ? 'Try a different search term' : 
+               dataSource === 'No Data' ? 'API endpoint not returning valid data' : 'Please try again later'}
             </Text>
           </View>
         ) : (
@@ -392,14 +823,21 @@ export default function TouristHomeScreen({ navigation }) {
                     </View>
                   ) : null}
 
-                  {(typeof pkg.average_rating === 'number' || (pkg.reviews && pkg.reviews.length)) ? (
+                  {(typeof pkg.average_rating === 'number' && pkg.average_rating > 0) ? (
                     <View style={styles.metaInline}>
-                      <Ionicons name="star" size={12} />
+                      <Ionicons name="star" size={12} color="#FFD700" />
                       <Text style={styles.metaInlineText} numberOfLines={1}>
-                        {(Number(pkg.average_rating) || 0).toFixed(1)}
+                        {pkg.average_rating.toFixed(1)} ({pkg.reviews_count || 0})
                       </Text>
                     </View>
-                  ) : null}
+                  ) : (
+                    <View style={styles.metaInline}>
+                      <Ionicons name="star-outline" size={12} color="#CCC" />
+                      <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                        No reviews
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Bottom row: Availability + Book */}
@@ -540,8 +978,24 @@ export default function TouristHomeScreen({ navigation }) {
               <Ionicons name="navigate-circle-outline" size={16} color="#6B2E2B" />
               <Text style={styles.quickText}>Use my location</Text>
             </TouchableOpacity>
+            {showingRoutes && (
+              <TouchableOpacity 
+                style={[styles.quickBtn, { backgroundColor: '#FFE5E5', borderColor: '#FFCDD2' }]} 
+                onPress={() => {
+                  setShowingRoutes(false);
+                  setRouteData(null);
+                  setPickup(null);
+                  setDestination(null);
+                  setRoads([]);
+                  setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
+                }}
+              >
+                <Ionicons name="close-circle-outline" size={16} color="#D32F2F" />
+                <Text style={[styles.quickText, { color: '#D32F2F' }]}>Clear routes</Text>
+              </TouchableOpacity>
+            )}
             <Text style={styles.quickHint}>
-              Tap road highlights to set {activePicker === 'pickup' ? 'pickup' : 'destination'}.
+              {showingRoutes ? 'Showing available destinations' : 'Tap pickup point to see routes'}
             </Text>
           </View>
 
@@ -550,22 +1004,49 @@ export default function TouristHomeScreen({ navigation }) {
             <LeafletMapView
               style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
               region={mapRegion}
-              roads={roads}
+              roads={roadHighlights.length > 0 ? roadHighlights : roads}
               markers={markers}
-              onPress={handleMapPress}
+              onMapPress={handleMapPress}
+              onMarkerPress={handleMarkerPress}
               showsUserLocation
             />
+            
+
             {/* Simple markers overlay (if your GoogleMap doesn’t accept children markers) */}
             {pickup && (
-              <View pointerEvents="none" style={[styles.pin, { left: 12, top: 12 }]}>
+              <View style={[styles.pin, { left: 12, top: 12 }]}>
                 <Ionicons name="location-sharp" size={18} color="#2e7d32" />
                 <Text style={styles.pinText}>Pickup</Text>
+                <TouchableOpacity 
+                  style={styles.deletePin} 
+                  onPress={() => {
+                    setPickup(null);
+                    // Also clear destination if it was on same road
+                    if (destination && pickup && destination.name === pickup.name) {
+                      setDestination(null);
+                    }
+                  }}
+                >
+                  <Ionicons name="close" size={12} color="#fff" />
+                </TouchableOpacity>
               </View>
             )}
             {destination && (
-              <View pointerEvents="none" style={[styles.pin, { right: 12, bottom: 12 }]}>
+              <View style={[styles.pin, { right: 12, bottom: 12 }]}>
                 <Ionicons name="flag" size={18} color="#C62828" />
                 <Text style={styles.pinText}>Destination</Text>
+                <TouchableOpacity 
+                  style={styles.deletePin} 
+                  onPress={() => {
+                    setDestination(null);
+                    // Also clear pickup if it was on same road
+                    if (pickup && destination && pickup.name === destination.name) {
+                      setPickup(null);
+                    }
+                  }}
+                >
+                  <Ionicons name="close" size={12} color="#fff" />
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -637,6 +1118,31 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#222' },
 
   networkStatus: { fontSize: 12, fontWeight: '600' },
+
+  /* Search Bar */
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#333',
+  },
+  clearSearch: {
+    padding: 4,
+  },
 
   /* Filter Row */
   filterRow: {
@@ -778,7 +1284,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 540,
+    height: 720,
     backgroundColor: '#fff',
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
@@ -872,7 +1378,7 @@ const styles = StyleSheet.create({
   quickHint: { color: '#777', fontSize: 12 },
 
   mapWrap: {
-    height: 210,
+    height: 380,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
@@ -920,4 +1426,19 @@ const styles = StyleSheet.create({
   noPackagesContainer: { padding: 16, alignItems: 'center' },
   noPackagesText: { fontSize: 16, fontWeight: '800', color: '#333', marginBottom: 6 },
   noPackagesSubtext: { fontSize: 12, color: '#777', textAlign: 'center' },
+
+  deletePin: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+
 });

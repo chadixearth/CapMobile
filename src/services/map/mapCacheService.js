@@ -98,6 +98,12 @@ class MapCacheService {
       const cachedVersion = await AsyncStorage.getItem(CACHE_KEYS.MAP_VERSION);
       const newVersion = this.generateDataHash(newData);
       
+      console.log('[MapCache] Version check:', {
+        cached: cachedVersion,
+        new: newVersion,
+        match: cachedVersion === newVersion
+      });
+      
       if (!cachedVersion || cachedVersion !== newVersion) {
         console.log('[MapCache] Update needed - version mismatch');
         return true;
@@ -265,7 +271,13 @@ class MapCacheService {
       zone: data.zones?.[data.zones.length - 1]?.id || ''
     };
     
-    return JSON.stringify({ counts, lastIds });
+    // Include image URLs for change detection
+    const imageHashes = data.points?.map(point => {
+      const urls = point.image_urls || [];
+      return `${point.id}:${urls.length}:${urls.join(',')}`;
+    }) || [];
+    
+    return JSON.stringify({ counts, lastIds, imageHashes });
   }
   
   /**

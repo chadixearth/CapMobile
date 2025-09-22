@@ -3,6 +3,7 @@ import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { invalidateData } from './dataInvalidationService';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -111,23 +112,62 @@ class NotificationService {
       }
     });
     
-    // Poll every 5 seconds for new notifications
+    // Poll every 30 seconds for new notifications (reduced frequency to prevent rate limiting)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
         if (result.success && result.data) {
+          // Only get truly new notifications (not just unread ones)
           const newNotifications = this.lastNotificationCheck 
-            ? result.data.filter(n => new Date(n.created_at) > this.lastNotificationCheck)
-            : result.data.filter(n => !n.read);
+            ? result.data.filter(n => {
+                const notifTime = new Date(n.created_at);
+                return notifTime > this.lastNotificationCheck && !n.read;
+              })
+            : result.data.filter(n => !n.read).slice(0, 3); // Limit initial load to 3 most recent
           
           if (newNotifications.length > 0) {
+            // Only send local notifications for truly new ones
             for (const notif of newNotifications) {
-              await this.sendLocalNotification(
-                notif.title,
-                notif.message,
-                { type: notif.type, id: notif.id }
-              );
+              if (this.lastNotificationCheck && new Date(notif.created_at) > this.lastNotificationCheck) {
+                await this.sendLocalNotification(
+                  notif.title,
+                  notif.message,
+                  { type: notif.type, id: notif.id }
+                );
+              }
             }
+            
+            // Emit data change events based on notification types
+            newNotifications.forEach(notif => {
+              const title = notif.title?.toLowerCase() || '';
+              const message = notif.message?.toLowerCase() || '';
+              const type = notif.type?.toLowerCase() || '';
+              
+              if (type === 'booking' || title.includes('booking') || title.includes('payment')) {
+                invalidateData.bookings();
+              }
+              if (type === 'ride' || title.includes('ride')) {
+                invalidateData.rides();
+              }
+              if (title.includes('earning') || title.includes('payment received')) {
+                invalidateData.earnings();
+              }
+              if (type === 'custom' || title.includes('custom') || title.includes('special')) {
+                invalidateData.customRequests();
+              }
+              if (type === 'profile' || title.includes('profile') || title.includes('account')) {
+                invalidateData.profile();
+              }
+              if (type === 'review' || title.includes('review') || title.includes('rating')) {
+                invalidateData.reviews();
+              }
+              if (type === 'schedule' || title.includes('schedule') || title.includes('availability')) {
+                invalidateData.schedule();
+              }
+              if (type === 'package' || title.includes('package') || title.includes('tour')) {
+                invalidateData.packages();
+              }
+            });
             
             this.callbacks.forEach(cb => {
               try {
@@ -143,7 +183,7 @@ class NotificationService {
       } catch (error) {
         // Ignore polling errors
       }
-    }, 5000);
+    }, 30000);
 
     // Initial load
     this.getNotifications(userId).then(result => {
@@ -178,7 +218,26 @@ class NotificationService {
           filter: `user_id=eq.${userId}`
         }, (payload) => {
           console.log('Supabase realtime notification:', payload);
-          callback([payload.new]);
+          const notification = payload.new;
+          
+          // Emit data change events for realtime notifications too
+          const title = notification.title?.toLowerCase() || '';
+          const type = notification.type?.toLowerCase() || '';
+          
+          if (type === 'booking' || title.includes('booking')) {
+            invalidateData.bookings();
+          }
+          if (type === 'ride' || title.includes('ride')) {
+            invalidateData.rides();
+          }
+          if (title.includes('earning') || title.includes('payment')) {
+            invalidateData.earnings();
+          }
+          if (type === 'custom' || title.includes('custom')) {
+            invalidateData.customRequests();
+          }
+          
+          callback([notification]);
         })
         .subscribe();
     } catch (error) {
@@ -407,21 +466,15 @@ class NotificationService {
           distanceInterval: 10, // Update every 10 meters
         },
         async (location) => {
-          const { latitude, longitude } = location.coords;
+          const { latitude, longitude, speed, heading } = location.coords;
           
-          // Update location in database
+          // Update location via API
           try {
-            await supabase
-              .from('driver_locations')
-              .upsert({
-                user_id: userId,
-                latitude,
-                longitude,
-                updated_at: new Date().toISOString(),
-              });
+            const { updateDriverLocation } = await import('./rideHailingService');
+            await updateDriverLocation(userId, latitude, longitude, speed || 0, heading || 0);
             
             if (onLocationUpdate) {
-              onLocationUpdate({ latitude, longitude });
+              onLocationUpdate({ latitude, longitude, speed, heading });
             }
           } catch (error) {
             console.error('Error updating location:', error);

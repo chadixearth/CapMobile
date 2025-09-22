@@ -6,6 +6,7 @@ import DriverHomeScreen from '../screens/main/DriverHomeScreen';
 import EarningsScreen from '../screens/main/EarningsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import DriverBookScreen from '../screens/main/DriverBookScreen';
+import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
 import { useAuth } from '../hooks/useAuth';

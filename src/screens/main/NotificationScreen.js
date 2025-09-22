@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, App
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
+import { useScreenAutoRefresh } from '../../services/dataInvalidationService';
 
 const MAROON = '#6B2E2B';
 const MAROON_LIGHT = '#F5E9E2';
@@ -16,6 +17,12 @@ export default function NotificationScreen({ navigation }) {
   const { user } = useAuth();
   const appState = useRef(AppState.currentState);
   
+  // Auto-refresh when notification data changes
+  useScreenAutoRefresh('NOTIFICATIONS', () => {
+    console.log('[NotificationScreen] Auto-refreshing due to data changes');
+    loadNotifications();
+  });
+
   useEffect(() => {
     loadNotifications();
 
@@ -118,11 +125,20 @@ function NotificationItem({ title, message, created_at, read, type, onPress }) {
 
   const formatTime = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
+    const now = new Date();
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) {
+      return 'now';
+    } else if (diffInMinutes < 60) {
+      return `${diffInMinutes}m ago`;
+    } else if (diffInMinutes < 1440) { // Less than 24 hours
+      const hours = Math.floor(diffInMinutes / 60);
+      return `${hours}h ago`;
+    } else {
+      const days = Math.floor(diffInMinutes / 1440);
+      return `${days}d ago`;
+    }
   };
 
   return (

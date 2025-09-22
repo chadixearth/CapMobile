@@ -22,13 +22,23 @@ import {
   getDriverBookings,
   updateBookingStatus,
 } from '../../services/tourpackage/acceptBooking';
+import {
+  getAvailableRideBookings,
+  acceptRideBooking,
+  completeRideBooking,
+  driverCancelRideBooking
+} from '../../services/rideHailingService';
 import { driverStartBooking, driverCancelBooking } from '../../services/tourpackage/acceptBooking';
 import {
   completeBookingWithVerification,
 } from '../../services/tourpackage/bookingVerification';
+import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
 import VerificationPhotoModal from '../../components/VerificationPhotoModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import DriverCancellationModal from '../../components/DriverCancellationModal';
+import LeafletMapView from '../../components/LeafletMapView';
+import { fetchMapData } from '../../services/map/fetchMap';
+import { apiBaseUrl } from '../../services/networkConfig';
 import {
   getAvailableCustomTourRequestsForDrivers,
   driverAcceptCustomTourRequest,
@@ -40,6 +50,154 @@ import NotificationService from '../../services/notificationService';
 import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
 
+const RideMap = ({ ride }) => {
+  const [mapData, setMapData] = useState(null);
+  
+  useEffect(() => {
+    loadMapData();
+  }, [ride]);
+  
+  const loadMapData = async () => {
+    try {
+      let pickupCoords = { latitude: 10.295, longitude: 123.89 };
+      let dropoffCoords = { latitude: 10.305, longitude: 123.90 };
+      
+      // Parse actual coordinates from notes
+      if (ride.notes) {
+        const pickupMatch = ride.notes.match(/Pickup: ([\d.-]+), ([\d.-]+)/);
+        const dropoffMatch = ride.notes.match(/Dropoff: ([\d.-]+), ([\d.-]+)/);
+        
+        if (pickupMatch) {
+          pickupCoords = {
+            latitude: parseFloat(pickupMatch[1]),
+            longitude: parseFloat(pickupMatch[2])
+          };
+        }
+        
+        if (dropoffMatch) {
+          dropoffCoords = {
+            latitude: parseFloat(dropoffMatch[1]),
+            longitude: parseFloat(dropoffMatch[2])
+          };
+        }
+      }
+      
+      // Calculate region
+      const centerLat = (pickupCoords.latitude + dropoffCoords.latitude) / 2;
+      const centerLng = (pickupCoords.longitude + dropoffCoords.longitude) / 2;
+      const deltaLat = Math.max(Math.abs(pickupCoords.latitude - dropoffCoords.latitude) * 1.5, 0.01);
+      const deltaLng = Math.max(Math.abs(pickupCoords.longitude - dropoffCoords.longitude) * 1.5, 0.01);
+      
+      // Load only the specific route roads
+      let roads = [];
+      try {
+        // Get route summaries and map data
+        const [routeResponse, mapDataResult] = await Promise.all([
+          fetch(`${apiBaseUrl()}/ride-hailing/route-summaries/`),
+          fetchMapData({ cacheOnly: true })
+        ]);
+        
+        if (routeResponse.ok && mapDataResult?.roads && mapDataResult?.points) {
+          const routeData = await routeResponse.json();
+          const routeSummaries = routeData.data || [];
+          
+          // Find pickup and dropoff points by coordinates
+          const pickupPoint = mapDataResult.points.find(p => 
+            Math.abs(parseFloat(p.latitude) - pickupCoords.latitude) < 0.001 &&
+            Math.abs(parseFloat(p.longitude) - pickupCoords.longitude) < 0.001
+          );
+          
+          const dropoffPoint = mapDataResult.points.find(p => 
+            Math.abs(parseFloat(p.latitude) - dropoffCoords.latitude) < 0.001 &&
+            Math.abs(parseFloat(p.longitude) - dropoffCoords.longitude) < 0.001
+          );
+          
+          if (pickupPoint && dropoffPoint) {
+            // Find the route that connects these specific points
+            const matchingRoute = routeSummaries.find(r => {
+              const pickupMatch = r.pickup_point_id == pickupPoint.id;
+              
+              let dropoffIds = r.dropoff_point_ids;
+              if (typeof dropoffIds === 'string') {
+                dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim()));
+              }
+              
+              const dropoffMatch = Array.isArray(dropoffIds) && dropoffIds.includes(parseInt(dropoffPoint.id));
+              return pickupMatch && dropoffMatch;
+            });
+            
+            if (matchingRoute) {
+              // Get only roads for this specific route
+              let roadIds = matchingRoute.road_highlight_ids;
+              if (typeof roadIds === 'string') {
+                roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim()));
+              }
+              
+              roads = mapDataResult.roads
+                .filter(road => roadIds.includes(parseInt(road.id)))
+                .map(road => ({
+                  ...road,
+                  color: matchingRoute.color || '#FF9800',
+                  weight: 4,
+                  opacity: 0.8
+                }));
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Could not load specific route:', error);
+      }
+      
+      setMapData({
+        region: {
+          latitude: centerLat,
+          longitude: centerLng,
+          latitudeDelta: deltaLat,
+          longitudeDelta: deltaLng
+        },
+        markers: [
+          {
+            latitude: pickupCoords.latitude,
+            longitude: pickupCoords.longitude,
+            title: 'Pickup',
+            description: ride.pickup_address,
+            iconColor: '#2E7D32'
+          },
+          {
+            latitude: dropoffCoords.latitude,
+            longitude: dropoffCoords.longitude,
+            title: 'Destination',
+            description: ride.dropoff_address,
+            iconColor: '#C62828'
+          }
+        ],
+        roads
+      });
+    } catch (error) {
+      console.error('Error loading map data:', error);
+    }
+  };
+  
+  if (!mapData) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#FF9800" />
+        <Text style={{ marginTop: 8, color: '#666' }}>Loading map...</Text>
+      </View>
+    );
+  }
+  
+  return (
+    <LeafletMapView
+      region={mapData.region}
+      markers={mapData.markers}
+      roads={mapData.roads}
+      routes={[]}
+      showSatellite={false}
+    />
+  );
+};
+
 export default function DriverBookScreen({ navigation }) {
   // Hide the default stack header (avoid double headers)
   useLayoutEffect(() => {
@@ -48,6 +206,7 @@ export default function DriverBookScreen({ navigation }) {
 
   const [availableBookings, setAvailableBookings] = useState([]);
   const [availableCustomTours, setAvailableCustomTours] = useState([]);
+  const [availableRideBookings, setAvailableRideBookings] = useState([]);
   const [driverBookings, setDriverBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,10 +221,18 @@ export default function DriverBookScreen({ navigation }) {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState(null);
   const [showDriverCancelModal, setShowDriverCancelModal] = useState(false);
+  const [showRideMapModal, setShowRideMapModal] = useState(false);
+  const [selectedRide, setSelectedRide] = useState(null);
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
   const completeAnim = useRef(new Animated.Value(0)).current;
+
+  // Auto-refresh when data changes (debounced)
+  useScreenAutoRefresh('DRIVER_BOOK', React.useCallback(() => {
+    console.log('[DriverBookScreen] Auto-refreshing due to data changes');
+    fetchUserAndBookings();
+  }, []));
 
   useEffect(() => {
     fetchUserAndBookings();
@@ -145,7 +312,7 @@ export default function DriverBookScreen({ navigation }) {
     }).start();
   }, [showCompleteModal, completeAnim]);
 
-  const fetchUserAndBookings = async () => {
+  const fetchUserAndBookings = React.useCallback(async () => {
     try {
       setLoading(true);
       let currentUser = await getCurrentUser();
@@ -168,11 +335,20 @@ export default function DriverBookScreen({ navigation }) {
         userId = user.id;
       }
 
-      // Fetch data sequentially to avoid overwhelming the backend
+      // Fetch data sequentially with delays to avoid rate limiting
       try {
         await fetchAvailableBookings(userId);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         await fetchAvailableCustomTours(userId);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        await fetchAvailableRideBookings();
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         await fetchDriverBookings(userId);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         await fetchDriverCustomTours(userId);
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -189,7 +365,7 @@ export default function DriverBookScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const fetchAvailableBookings = async (driverId) => {
     try {
@@ -243,6 +419,36 @@ export default function DriverBookScreen({ navigation }) {
     }
   };
 
+  const fetchAvailableRideBookings = async () => {
+    try {
+      const rideData = await getAvailableRideBookings();
+      if (rideData?.success && Array.isArray(rideData?.data)) {
+        const processedRides = rideData.data.map(ride => ({
+          id: ride.id,
+          package_name: 'Ride Hailing',
+          booking_date: ride.created_at,
+          pickup_time: 'ASAP',
+          number_of_pax: 1,
+          pickup_address: ride.pickup_address,
+          dropoff_address: ride.dropoff_address,
+          contact_number: 'N/A',
+          total_amount: null,
+          status: ride.status,
+          request_type: 'ride_hailing',
+          booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
+          customer_id: ride.customer_id,
+          notes: ride.notes
+        }));
+        setAvailableRideBookings(processedRides);
+      } else {
+        setAvailableRideBookings([]);
+      }
+    } catch (error) {
+      console.error('Error fetching available ride bookings:', error);
+      setAvailableRideBookings([]);
+    }
+  };
+
   const fetchDriverCustomTours = async (driverId) => {
     try {
       const res = await getDriverCustomTours(driverId);
@@ -287,6 +493,37 @@ export default function DriverBookScreen({ navigation }) {
       } else {
         processedBookings = [];
       }
+      
+      // Also fetch driver's accepted ride hailing bookings
+      try {
+        const { getAllRideBookings } = require('../../services/rideHailingService');
+        const allRides = await getAllRideBookings();
+        if (allRides?.success && Array.isArray(allRides?.data)) {
+          const driverRides = allRides.data.filter(ride => 
+            ride.driver_id === driverId && 
+            ['driver_assigned', 'in_progress'].includes(ride.status)
+          ).map(ride => ({
+            id: ride.id,
+            package_name: 'Ride Hailing',
+            booking_date: ride.created_at,
+            pickup_time: 'ASAP',
+            number_of_pax: 1,
+            pickup_address: ride.pickup_address,
+            dropoff_address: ride.dropoff_address,
+            contact_number: 'N/A',
+            total_amount: null,
+            status: ride.status,
+            request_type: 'ride_hailing',
+            booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
+            customer_id: ride.customer_id,
+            notes: ride.notes
+          }));
+          processedBookings = [...processedBookings, ...driverRides];
+        }
+      } catch (rideError) {
+        console.error('Error fetching driver ride bookings:', rideError);
+      }
+      
       setDriverBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
@@ -308,6 +545,35 @@ export default function DriverBookScreen({ navigation }) {
   };
 
   const handleAcceptBooking = async (booking) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    // Check for schedule conflicts first
+    try {
+      const { driverScheduleService } = require('../../services/driverScheduleService');
+      const conflictCheck = await driverScheduleService.checkAvailability(
+        user.id,
+        booking.booking_date,
+        booking.pickup_time || '09:00'
+      );
+
+      if (!conflictCheck.available) {
+        Alert.alert(
+          'Schedule Conflict',
+          conflictCheck.conflict_reason || 'You have a conflict at this time',
+          [
+            { text: 'OK' },
+            { text: 'View Schedule', onPress: () => navigation.navigate('DriverSchedule') }
+          ]
+        );
+        return;
+      }
+    } catch (error) {
+      console.log('Schedule check failed, proceeding with booking:', error);
+    }
+
     setSelectedBooking(booking);
     setShowAcceptModal(true);
   };
@@ -347,6 +613,48 @@ export default function DriverBookScreen({ navigation }) {
     if (!booking || !user) return;
     setBookingToCancel(booking);
     setShowDriverCancelModal(true);
+  };
+
+  const handleViewRideMap = async (ride) => {
+    try {
+      setSelectedRide(ride);
+      
+      // Parse coordinates from notes if available
+      let pickupCoords = null;
+      let dropoffCoords = null;
+      
+      if (ride.notes) {
+        const pickupMatch = ride.notes.match(/Pickup: ([\d.-]+), ([\d.-]+)/);
+        const dropoffMatch = ride.notes.match(/Dropoff: ([\d.-]+), ([\d.-]+)/);
+        
+        if (pickupMatch) {
+          pickupCoords = {
+            latitude: parseFloat(pickupMatch[1]),
+            longitude: parseFloat(pickupMatch[2])
+          };
+        }
+        
+        if (dropoffMatch) {
+          dropoffCoords = {
+            latitude: parseFloat(dropoffMatch[1]),
+            longitude: parseFloat(dropoffMatch[2])
+          };
+        }
+      }
+      
+      // Store coordinates in the ride object for the modal
+      setSelectedRide({
+        ...ride,
+        pickupCoords,
+        dropoffCoords
+      });
+      
+      setShowRideMapModal(true);
+    } catch (error) {
+      console.error('Error preparing ride map:', error);
+      setSelectedRide(ride);
+      setShowRideMapModal(true);
+    }
   };
 
   const handleDriverCancellationSuccess = (result) => {
@@ -398,6 +706,8 @@ export default function DriverBookScreen({ navigation }) {
 
       if (selectedBooking.request_type === 'custom_tour') {
         result = await driverAcceptCustomTourRequest(selectedBooking.id, driverData);
+      } else if (selectedBooking.request_type === 'ride_hailing') {
+        result = await acceptRideBooking(selectedBooking.id, driverData);
       } else {
         result = await driverAcceptBooking(selectedBooking.id, driverData);
       }
@@ -449,6 +759,8 @@ export default function DriverBookScreen({ navigation }) {
       if (isCustom) {
         result = await updateCustomTourStatus(selectedBooking.id, 'completed');
         result = { success: !!(result && result.success), ...result };
+      } else if (selectedBooking.request_type === 'ride_hailing') {
+        result = await completeRideBooking(selectedBooking.id, { driver_id: user.id });
       } else {
         // Use verification-aware completion
         result = await completeBookingWithVerification(selectedBooking.id, user.id);
@@ -660,11 +972,19 @@ const getCustomTitle = (r) => (
     </TouchableOpacity>
   );
   const renderBookingCard = (booking) => (
-    <View key={booking.id} style={styles.bookingCard}>
+    <View key={booking.id} style={[
+      styles.bookingCard, 
+      booking.request_type === 'ride_hailing' && styles.rideHailingCard
+    ]}>
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
           <Text style={styles.bookingReference}>Ref: {booking.booking_reference || 'N/A'}</Text>
           <Text style={styles.bookingDate}>{formatDate(booking.booking_date)}</Text>
+          {booking.request_type === 'ride_hailing' && (
+            <View style={styles.rideHailingBadge}>
+              <Text style={styles.rideHailingBadgeText}>RIDE HAILING</Text>
+            </View>
+          )}
         </View>
         <View style={[styles.statusContainer, { borderColor: getStatusColor(booking.status) }]}>
           <Ionicons name={getStatusIcon(booking.status)} size={16} color={getStatusColor(booking.status)} />
@@ -736,13 +1056,13 @@ const getCustomTitle = (r) => (
           {renderMessageButton(booking)}
         </>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'confirmed' || booking.status === 'driver_assigned') && booking.payment_status !== 'paid' && (
+      {activeTab === 'ongoing' && (booking.status === 'confirmed' || booking.status === 'driver_assigned') && booking.payment_status !== 'paid' && booking.request_type !== 'ride_hailing' && (
         <View style={[styles.acceptButton, styles.disabledButton]}>
           <Ionicons name="card" size={18} color="#999" />
           <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
         </View>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && (
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && booking.request_type !== 'ride_hailing' && (
         <>
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
@@ -762,6 +1082,96 @@ const getCustomTitle = (r) => (
           >
             <Ionicons name="close-circle" size={18} color="#fff" />
             <Text style={styles.acceptButtonText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        </>
+      )}
+      {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && booking.request_type === 'ride_hailing' && (
+        <>
+          <View style={[styles.acceptButton, styles.disabledButton]}>
+            <Ionicons name="car" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Trip Started Automatically</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}
+            onPress={() => handleCancelBooking(booking)}
+            disabled={acceptingBooking}
+          >
+            <Ionicons name="close-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Cancel Ride</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+
+  const renderRideHailingCard = (ride) => (
+    <View key={ride.id} style={[styles.bookingCard, styles.rideHailingCard]}>
+      <View style={styles.bookingHeader}>
+        <View style={styles.bookingInfo}>
+          <Text style={styles.bookingReference}>Ref: {ride.booking_reference}</Text>
+          <View style={styles.rideHailingBadge}>
+            <Text style={styles.rideHailingBadgeText}>RIDE HAILING</Text>
+          </View>
+        </View>
+        <View style={[styles.statusContainer, { borderColor: getStatusColor(ride.status) }]}>
+          <Ionicons name={getStatusIcon(ride.status)} size={16} color={getStatusColor(ride.status)} />
+          <Text style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
+            {ride.status?.replace('_', ' ') || 'Unknown'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.bookingDetails}>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Service:</Text>
+          <Text style={styles.detailValue}>Point-to-Point Ride</Text>
+        </View>
+
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Pickup:</Text>
+          <Text style={styles.detailValue}>{ride.pickup_address}</Text>
+        </View>
+
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Destination:</Text>
+          <Text style={styles.detailValue}>{ride.dropoff_address}</Text>
+        </View>
+
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Requested:</Text>
+          <Text style={styles.detailValue}>{formatDate(ride.booking_date)}</Text>
+        </View>
+
+        {ride.notes && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Notes:</Text>
+            <Text style={styles.detailValue}>{ride.notes}</Text>
+          </View>
+        )}
+      </View>
+
+      {ride.status === 'waiting_for_driver' && activeTab === 'available' && (
+        <>
+          <TouchableOpacity style={[styles.acceptButton, styles.viewMapButton]} onPress={() => handleViewRideMap(ride)}>
+            <Ionicons name="map" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>View Route</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleAcceptBooking(ride)}>
+            <Ionicons name="car" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Accept Ride</Text>
+          </TouchableOpacity>
+        </>
+      )}
+      
+      {activeTab === 'ongoing' && ride.status === 'driver_assigned' && (
+        <>
+          <View style={[styles.acceptButton, styles.disabledButton]}>
+            <Ionicons name="car" size={18} color="#999" />
+            <Text style={[styles.acceptButtonText, { color: '#999' }]}>Trip In Progress</Text>
+          </View>
+          <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleCompleteBooking(ride)}>
+            <Ionicons name="checkmark-done" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Complete Ride</Text>
           </TouchableOpacity>
         </>
       )}
@@ -925,7 +1335,7 @@ const getCustomTitle = (r) => (
   });
 
   const currentBookings =
-    activeTab === 'available' ? availableBookings : activeTab === 'ongoing' ? ongoingBookings : historyBookings;
+    activeTab === 'available' ? [...availableBookings, ...availableRideBookings] : activeTab === 'ongoing' ? ongoingBookings : historyBookings;
 
   const currentCustomTours = activeTab === 'available' ? availableCustomTours : [];
 
@@ -1183,7 +1593,55 @@ const getCustomTitle = (r) => (
         booking={bookingToCancel}
         driverId={user?.id}
         onCancellationSuccess={handleDriverCancellationSuccess}
+        bookingType={bookingToCancel?.request_type === 'ride_hailing' ? 'ride' : 'tour'}
       />
+
+      {/* Ride Map Modal */}
+      <Modal
+        visible={showRideMapModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRideMapModal(false)}
+      >
+        <View style={styles.mapModalOverlay}>
+          <View style={styles.mapModalContainer}>
+            <View style={styles.mapModalHeader}>
+              <Text style={styles.mapModalTitle}>Ride Route</Text>
+              <TouchableOpacity onPress={() => setShowRideMapModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedRide && (
+              <View style={styles.mapModalInfo}>
+                <View style={styles.mapInfoRow}>
+                  <Ionicons name="location" size={16} color="#2E7D32" />
+                  <Text style={styles.mapInfoText}>{selectedRide.pickup_address}</Text>
+                </View>
+                <View style={styles.mapInfoRow}>
+                  <Ionicons name="flag" size={16} color="#C62828" />
+                  <Text style={styles.mapInfoText}>{selectedRide.dropoff_address}</Text>
+                </View>
+              </View>
+            )}
+            
+            <View style={styles.mapContainer}>
+              {selectedRide && <RideMap ride={selectedRide} />}
+            </View>
+            
+            <TouchableOpacity 
+              style={[styles.acceptButton, styles.rideHailingAcceptButton, { margin: 16 }]} 
+              onPress={() => {
+                setShowRideMapModal(false);
+                handleAcceptBooking(selectedRide);
+              }}
+            >
+              <Ionicons name="car" size={18} color="#fff" />
+              <Text style={styles.acceptButtonText}>Accept This Ride</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1400,9 +1858,77 @@ const styles = StyleSheet.create({
   },
   customTourBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   customTourAcceptButton: { backgroundColor: '#9C27B0' },
-    messageBtn: { 
+  
+  /* Ride hailing accent */
+  rideHailingCard: { borderLeftWidth: 4, borderLeftColor: '#FF9800' },
+  rideHailingBadge: {
+    backgroundColor: '#FF9800',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  rideHailingBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  rideHailingAcceptButton: { backgroundColor: '#FF9800' },
+  messageBtn: { 
     backgroundColor: '#1565C0', 
     marginTop: 8,
     marginBottom: 8
+  },
+  viewMapButton: {
+    backgroundColor: '#1976D2',
+    marginTop: 8
+  },
+  
+  /* Map Modal Styles */
+  mapModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  mapModalContainer: {
+    width: '90%',
+    height: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden'
+  },
+  mapModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDE7E6'
+  },
+  mapModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#222'
+  },
+  mapModalInfo: {
+    padding: 16,
+    backgroundColor: '#F8F9FA'
+  },
+  mapInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  mapInfoText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#333',
+    flex: 1
+  },
+  mapContainer: {
+    flex: 1,
+    margin: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EDE7E6'
   },
 });

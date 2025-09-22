@@ -218,6 +218,12 @@ const UniversalMap = ({
         {mapLoaded && markers.map((marker, index) => {
           const markerColor = marker.iconColor || getMarkerColor(marker.pointType);
           
+          // Create description with images if available
+          let description = marker.description || '';
+          if (marker.image_urls && marker.image_urls.length > 0) {
+            description += `\n📷 ${marker.image_urls.length} image(s) available`;
+          }
+          
           return (
             <Marker
               key={marker.id || `marker-${index}`}
@@ -225,8 +231,8 @@ const UniversalMap = ({
                 latitude: parseFloat(marker.latitude || 0),
                 longitude: parseFloat(marker.longitude || 0)
               }}
-              title={marker.title || 'Location'}
-              description={marker.description || ''}
+              title={marker.title || marker.name || 'Location'}
+              description={description}
               pinColor={markerColor}
               tracksViewChanges={false} // Performance optimization
             />

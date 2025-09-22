@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, NativeModules } from 'react-native';
+import { Platform, NativeModules, Alert } from 'react-native';
 import { apiBaseUrl } from './networkConfig';
 
 // API Configuration - Use the network config
@@ -21,8 +21,11 @@ export function setSessionExpiredCallback(callback) {
 
 /**
  * Helper function to make API requests with proper error handling
+ * @param {string} endpoint - API endpoint (e.g., '/auth/login/')
+ * @param {object} options - Fetch options
+ * @returns {Promise<{success: boolean, data: any, status: number, error?: string}>}
  */
-async function apiRequest(endpoint, options = {}) {
+export async function apiRequest(endpoint, options = {}) {
   try {
     console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
     
@@ -58,10 +61,31 @@ async function apiRequest(endpoint, options = {}) {
     
     clearTimeout(timeoutId);
     
-    // Session expiry handled by UnifiedAuth only
-    // No session handling in authService
+    let data;
+    try {
+      const text = await response.text();
+      if (text.trim().startsWith('<')) {
+        // HTML response (likely 404 page)
+        console.warn(`[apiRequest] Received HTML response from ${endpoint}`);
+        data = { error: 'Endpoint not found or returned HTML instead of JSON' };
+      } else {
+        data = JSON.parse(text);
+      }
+    } catch (parseError) {
+      console.error(`[apiRequest] JSON parse error for ${endpoint}:`, parseError.message);
+      data = { error: 'Invalid JSON response' };
+    }
     
-    const data = await response.json();
+    // Check for JWT expiry
+    if (!response.ok && (response.status === 401 || 
+        (data.error && data.error.includes('JWT expired')) ||
+        (data.error && data.error.includes('PGRST301')))) {
+      console.log('[authService] JWT expired, clearing session');
+      await clearStoredSession();
+      if (sessionExpiredCallback) {
+        sessionExpiredCallback();
+      }
+    }
     
     console.log(`API response status: ${response.status}`);
     if (!response.ok) {

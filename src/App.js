@@ -4,6 +4,7 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import RootNavigator from './navigation/RootNavigator';
 import AppInitService from './services/AppInitService';
+import { setSessionExpiredCallback, clearLocalSession } from './services/authService';
 
 import ErrorProvider from './components/ErrorProvider';
 import ErrorHandlingService from './services/errorHandlingService';
@@ -70,6 +71,29 @@ export default function App() {
             ErrorHandlingService.setNavigationRef(navRef.current);
             // Make navigation ref globally available for logout
             global.navigationRef = navRef.current;
+            
+            // Set up JWT expiry callback
+            setSessionExpiredCallback(() => {
+              console.log('[App] JWT expired, logging out user');
+              Alert.alert(
+                'Session Expired',
+                'Your session has expired. Please log in again.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      // Navigate to login screen
+                      if (navRef.current) {
+                        navRef.current.reset({
+                          index: 0,
+                          routes: [{ name: 'Auth' }],
+                        });
+                      }
+                    }
+                  }
+                ]
+              );
+            });
           }}
         >
           <RootNavigator />
