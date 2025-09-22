@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
 import OwnerBookScreen from '../screens/main/OwnerBookScreen';
-import EarningsScreen from '../screens/main/EarningsScreen';
+import OwnerBreakevenScreen from '../screens/main/OwnerBreakevenScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
@@ -30,7 +30,7 @@ export default function OwnerTabs({ setRole }) {
         tabBarIcon: ({ color, size }) => {
           if (route.name === Routes.HOME) {
             return <Ionicons name="home-outline" size={size} color={color} />;
-          } else if (route.name === 'Earnings') {
+          } else if (route.name === Routes.BREAKEVEN) {
             return <Ionicons name="wallet-outline" size={size} color={color} />;
           } else if (route.name === Routes.EVENTS) {
             return <Ionicons name="star-outline" size={size} color={color} />;
@@ -52,8 +52,8 @@ export default function OwnerTabs({ setRole }) {
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
       <Tab.Screen 
-        name={Routes.EARNINGS} 
-        component={EarningsScreen} 
+        name={Routes.BREAKEVEN} 
+        component={OwnerBreakevenScreen} 
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       
       <Tab.Screen
