@@ -34,12 +34,22 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const loadNotifications = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('[NotificationContext] No user ID available');
+      return;
+    }
+    
+    console.log(`[NotificationContext] Loading notifications for user: ${user.id} (role: ${user.role})`);
     
     try {
       const result = await NotificationService.getNotifications(user.id);
       if (result.success) {
+        const rawCount = result.data?.length || 0;
         const filtered = filterTestNotifications(result.data || []);
+        const filteredCount = filtered.length;
+        
+        console.log(`[NotificationContext] Filtered ${rawCount} raw notifications to ${filteredCount} for user ${user.id}`);
+        
         setNotifications(filtered);
         setUnreadCount(filtered.filter(n => !n.read).length);
       }

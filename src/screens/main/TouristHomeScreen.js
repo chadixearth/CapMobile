@@ -183,25 +183,8 @@ export default function TouristHomeScreen({ navigation }) {
       try {
         const mapData = await fetchMapData({ cacheOnly: true });
         
-        // Load route summaries to get color associations
+        // Route summaries will be loaded lazily when ride sheet is opened
         let routeSummaries = [];
-        try {
-          console.log('Fetching route summaries from API');
-          const { apiRequest } = await import('../../services/authService');
-          const result = await apiRequest('/ride-hailing/route-summaries/');
-          
-          if (result.success && result.data) {
-            routeSummaries = result.data.data || result.data || [];
-            console.log('Loaded route summaries:', routeSummaries.length);
-            
-            // Store route summaries globally for filtering
-            setRouteSummaries(routeSummaries);
-          } else {
-            console.error('Route summaries API failed:', result.status, result.data?.error || result.error);
-          }
-        } catch (error) {
-          console.error('Route summaries fetch error:', error);
-        }
         
         if (mapData?.roads) {
           const processedRoads = mapData.roads.map(road => {
@@ -364,6 +347,26 @@ export default function TouristHomeScreen({ navigation }) {
         await Location.requestForegroundPermissionsAsync();
       } catch {}
     }
+    
+    // Load route summaries only when ride sheet is opened
+    if (routeSummaries.length === 0) {
+      try {
+        console.log('Loading route summaries for ride sheet');
+        const { apiRequest } = await import('../../services/authService');
+        const result = await apiRequest('/ride-hailing/route-summaries/');
+        
+        if (result.success && result.data) {
+          const summaries = result.data.data || result.data || [];
+          console.log('Loaded route summaries:', summaries.length);
+          setRouteSummaries(summaries);
+        } else {
+          console.warn('Route summaries API failed:', result.status, result.data?.error || result.error);
+        }
+      } catch (error) {
+        console.warn('Route summaries fetch error:', error);
+      }
+    }
+    
     setSheetVisible(true);
   };
 

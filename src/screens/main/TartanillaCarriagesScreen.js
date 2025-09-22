@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { supabase } from '../../services/supabase';
-import carriageService, { testCarriageConnection, setApiBaseUrl } from '../../services/tourpackage/fetchCarriage';
+import { getMyCarriages, getAvailableDrivers, assignDriverToCarriage, createCarriage, createTestDrivers } from '../../services/tartanillaService';
 import { useAuth } from '../../hooks/useAuth';
 
 const { width } = Dimensions.get('window');
@@ -24,7 +24,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     plate_number: '', 
     capacity: '4',
     status: 'available',
-    eligibility: 'eligible',
     notes: ''
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
@@ -38,8 +37,42 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   // All callback functions need to be defined before the conditional return
   const fetchAvailableDrivers = async () => {
     try {
-      const drivers = await carriageService.getAvailableDrivers();
-      setAvailableDrivers(Array.isArray(drivers) ? drivers : []);
+      const result = await getAvailableDrivers();
+      if (result.success) {
+        setAvailableDrivers(result.data || []);
+        
+        // Show debug info if no drivers found
+        if (result.data.length === 0 && result.debug) {
+          console.log('No drivers found. Debug info:', result.debug);
+          const debugMsg = `Debug Info:\n` +
+            `Total users: ${result.debug.total_users}\n` +
+            `Total drivers: ${result.debug.total_drivers}\n` +
+            `Available drivers: ${result.debug.available_drivers}`;
+          
+          Alert.alert(
+            'No Drivers Found', 
+            `${debugMsg}\n\nWould you like to create test drivers for development?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Create Test Drivers', 
+                onPress: async () => {
+                  const createResult = await createTestDrivers();
+                  if (createResult.success) {
+                    Alert.alert('Success', 'Test drivers created! Refreshing list...');
+                    await fetchAvailableDrivers();
+                  } else {
+                    Alert.alert('Error', createResult.error || 'Failed to create test drivers');
+                  }
+                }
+              }
+            ]
+          );
+        }
+      } else {
+        console.error('Error fetching available drivers:', result.error);
+        Alert.alert('Error', result.error || 'Failed to load available drivers');
+      }
     } catch (error) {
       console.error('Error fetching available drivers:', error);
       Alert.alert('Error', 'Failed to load available drivers');
@@ -51,17 +84,22 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     
     setAssigningDriver(true);
     try {
-      const updatedCarriage = await carriageService.updateCarriage(selectedCarriage.id, {
-        driver: driverId
-      });
+      const result = await assignDriverToCarriage(selectedCarriage.id, driverId);
       
-      // Update the carriages list with the updated carriage
-      setCarriages(carriages.map(carriage => 
-        carriage.id === selectedCarriage.id ? { ...carriage, driver: updatedCarriage.driver } : carriage
-      ));
-      
-      setShowDriverModal(false);
-      Alert.alert('Success', 'Driver assigned successfully');
+      if (result.success) {
+        setShowDriverModal(false);
+        Alert.alert('Success', 'Driver invitation sent! Waiting for driver acceptance.', [
+          {
+            text: 'OK',
+            onPress: async () => {
+              // Force refresh the carriages list
+              await fetchUserAndCarriages();
+            }
+          }
+        ]);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to assign driver');
+      }
     } catch (error) {
       console.error('Error assigning driver:', error);
       Alert.alert('Error', 'Failed to assign driver');
@@ -98,8 +136,14 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         return;
       }
 
-      const data = await carriageService.getByOwner(currentUser.id);
-      setCarriages(Array.isArray(data) ? data : []);
+      const result = await getMyCarriages();
+      if (result.success) {
+        console.log('Raw carriage data:', result.data);
+        setCarriages(result.data || []);
+      } else {
+        console.error('Error loading carriages:', result.error);
+        setCarriages([]);
+      }
     } catch (err) {
       console.error('Failed to load carriages:', err);
       let errorMessage = 'Failed to load carriages';
@@ -120,8 +164,10 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     setRefreshing(true);
     try {
       if (auth.user?.role === 'owner') {
-        const data = await carriageService.getByOwner(auth.user.id);
-        setCarriages(Array.isArray(data) ? data : []);
+        const result = await getMyCarriages();
+        if (result.success) {
+          setCarriages(result.data || []);
+        }
       }
     } catch (err) {
       console.error('Refresh error:', err);
@@ -249,37 +295,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         }
       });
 
-      // Set the API endpoint
-      const API_BASE_URL = `${apiBaseUrl()}/tartanilla-carriages/`;
-      console.log('API Base URL:', API_BASE_URL);
-      console.log('Current user object:', JSON.stringify(auth.user, null, 2));
-      console.log('User ID being used:', auth.user?.id);
-      
-      if (!auth.user?.id) {
-        console.error('No user ID found in auth.user:', auth);
-        throw new Error('User not properly authenticated - missing ID');
-      }
-      
-      // Prepare the payload with all required fields
-      const payload = {
-        plate_number: carriageData.plate_number,
-        capacity: parseInt(carriageData.capacity) || 4,
-        status: carriageData.status,
-        eligibility: carriageData.eligibility,
-        notes: carriageData.notes,
-        assigned_owner_id: auth.user.id  // Remove toString() to send as raw UUID
-      };
-      
-      console.log('Final payload being sent:', JSON.stringify(payload, null, 2));
-      
-      console.log('Sending payload:', JSON.stringify(payload, null, 2));
-      
-      if (!payload.plate_number || !payload.assigned_owner_id) {
-        throw new Error('Missing required fields');
-      }
+      console.log('Creating carriage with data:', carriageData);
       
       // First, check if a carriage with this plate number already exists
-      const existingCarriages = await carriageService.getAllCarriages();
+      const existingResult = await getMyCarriages();
+      const existingCarriages = existingResult.success ? existingResult.data : [];
       const duplicate = Array.isArray(existingCarriages) && 
         existingCarriages.some(carriage => 
           carriage.plate_number?.toLowerCase() === carriageData.plate_number?.toLowerCase()
@@ -291,49 +311,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         return;
       }
 
-      // Make the API call
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
+      // Use the service function
+      const result = await createCarriage(carriageData);
       
-      const responseText = await response.text();
-      console.log('Response status:', response.status);
-      console.log('Response text:', responseText);
-      
-      if (!response.ok) {
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = JSON.parse(responseText);
-          console.error('Error details:', errorData);
-          
-          // Handle field-specific errors
-          if (errorData.plate_number) {
-            errorMessage = `Plate number: ${Array.isArray(errorData.plate_number) ? errorData.plate_number.join(' ') : errorData.plate_number}`;
-          } else if (errorData.assigned_owner) {
-            errorMessage = `Owner error: ${Array.isArray(errorData.assigned_owner) ? errorData.assigned_owner.join(' ') : errorData.assigned_owner}`;
-          } else if (errorData.detail) {
-            errorMessage = errorData.detail;
-          } else if (errorData.message) {
-            errorMessage = errorData.message;
-          } else if (typeof errorData === 'object') {
-            errorMessage = JSON.stringify(errorData);
-          }
-        } catch (e) {
-          console.error('Error parsing error response:', e);
-          errorMessage = responseText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-      
-      const result = JSON.parse(responseText);
-      
-      if (!result) {
-        throw new Error('Failed to add carriage: No response from server');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to add carriage');
       }
 
       // Reset form and close modal on success
@@ -342,7 +324,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         plate_number: '',
         capacity: '4',
         status: 'available',
-        eligibility: 'eligible',
         notes: ''
       });
       
@@ -358,6 +339,23 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       ]);
     } catch (error) {
       console.error('Error adding carriage:', error);
+      
+      // Check for authentication errors
+      if (error.message.includes('Owner not found') || error.message.includes('not authenticated')) {
+        Alert.alert('Session Expired', 'Please log in again.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Welcome' }],
+              });
+            }
+          }
+        ]);
+        return;
+      }
+      
       let errorMessage = 'Failed to add carriage. Please try again.';
       
       if (error.message.includes('plate_number')) {
@@ -433,6 +431,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         text: 'Maintenance',
         iconColor: '#ff8f00'
       },
+      waiting_driver_acceptance: {
+        icon: 'hourglass-outline',
+        color: '#ff8f00',
+        bgColor: '#FFF3E0',
+        text: 'Pending Driver',
+        iconColor: '#ff8f00'
+      },
+      driver_assigned: {
+        icon: 'person-circle',
+        color: '#2196F3',
+        bgColor: '#E3F2FD',
+        text: 'Driver Assigned',
+        iconColor: '#2196F3'
+      },
       default: {
         icon: 'help-circle',
         color: '#6c757d',
@@ -443,9 +455,24 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     };
 
     const status = statusConfig[carriage.status?.toLowerCase()] || statusConfig.default;
-    const driverName = carriage.driver 
-      ? `${carriage.driver.first_name} ${carriage.driver.last_name}`
-      : 'Not assigned';
+    
+    // Debug: Log the actual carriage data structure
+    console.log('Carriage debug:', {
+      plate: carriage.plate_number,
+      driver_id: carriage.assigned_driver_id,
+      driver_obj: carriage.assigned_driver,
+      status: carriage.status
+    });
+    
+    const driverName = carriage.assigned_driver?.name || (carriage.assigned_driver_id ? `Driver ID: ${carriage.assigned_driver_id}` : 'Not assigned');
+    const driverEmail = carriage.assigned_driver?.email || (carriage.assigned_driver_id ? `ID: ${carriage.assigned_driver_id}` : '');
+    
+    // Show assignment status for owners
+    const assignmentStatus = carriage.status === 'waiting_driver_acceptance' 
+      ? 'Waiting for driver acceptance'
+      : carriage.status === 'driver_assigned'
+      ? 'Driver confirmed assignment'
+      : null;
 
     return (
       <View key={carriage.id} style={styles.card}>
@@ -468,21 +495,26 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <View style={styles.infoTextContainer}>
               <Text style={styles.infoLabel}>Driver</Text>
               <Text style={styles.infoValue} numberOfLines={1}>{driverName}</Text>
+              {driverEmail && (
+                <Text style={[styles.infoLabel, { marginTop: 2, fontSize: 11, color: '#888' }]} numberOfLines={1}>{driverEmail}</Text>
+              )}
             </View>
-            <TouchableOpacity 
-              style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
-              onPress={() => openDriverModal(carriage)}
-              disabled={assigningDriver}
-            >
-              <Ionicons 
-                name={carriage.driver ? "sync-outline" : "person-add"} 
-                size={14} 
-                color="#fff"
-              />
-              <Text style={styles.assignButtonText}>
-                {carriage.driver ? 'Change' : 'Assign'}
-              </Text>
-            </TouchableOpacity>
+            {carriage.status !== 'driver_assigned' && (
+              <TouchableOpacity 
+                style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons 
+                  name={carriage.assigned_driver ? "sync-outline" : "person-add"} 
+                  size={14} 
+                  color="#fff"
+                />
+                <Text style={styles.assignButtonText}>
+                  {carriage.assigned_driver ? 'Change' : 'Assign'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.infoRow}>
@@ -500,6 +532,18 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 <Text style={styles.infoLabel}>Eligibility</Text>
                 <Text style={styles.infoValue}>
                   {carriage.eligibility.charAt(0).toUpperCase() + carriage.eligibility.slice(1)}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {assignmentStatus && (
+            <View style={styles.infoRow}>
+              <Ionicons name="information-circle" size={16} color="#ff8f00" style={styles.infoIcon} />
+              <View style={styles.infoTextContainer}>
+                <Text style={styles.infoLabel}>Assignment Status</Text>
+                <Text style={[styles.infoValue, { color: '#ff8f00' }]}>
+                  {assignmentStatus}
                 </Text>
               </View>
             </View>
@@ -555,23 +599,27 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) => (
                   <TouchableOpacity 
-                    style={styles.driverItem}
+                    style={[styles.driverItem, assigningDriver && styles.driverItemDisabled]}
                     onPress={() => handleAssignDriver(item.id)}
                     disabled={assigningDriver}
+                    activeOpacity={0.7}
                   >
                     <View style={styles.driverAvatar}>
-                      <Ionicons name="person-circle-outline" size={40} color="#666" />
+                      <Ionicons name="person-circle-outline" size={40} color={MAROON} />
                     </View>
                     <View style={styles.driverInfo}>
                       <Text style={styles.driverName}>
-                        {item.first_name} {item.last_name}
+                        {item.name || 'Unknown Driver'}
                       </Text>
                       <Text style={styles.driverEmail} numberOfLines={1}>
-                        {item.email}
+                        {item.email || 'No email'}
                       </Text>
-                      <Text style={styles.driverPhone}>
-                        {item.phone_number || 'No phone number'}
+                      <Text style={styles.driverRole}>
+                        {item.role || 'driver'}
                       </Text>
+                    </View>
+                    <View style={styles.selectDriverButton}>
+                      <Ionicons name="chevron-forward" size={20} color={MAROON} />
                     </View>
                   </TouchableOpacity>
                 )}
@@ -735,29 +783,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 </View>
               </View>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Eligibility</Text>
-                <View style={styles.eligibilityContainer}>
-                  {['eligible', 'not_eligible'].map((eligibility) => (
-                    <TouchableOpacity
-                      key={eligibility}
-                      style={[
-                        styles.eligibilityOption,
-                        newCarriage.eligibility === eligibility && styles.eligibilityOptionSelected,
-                      ]}
-                      onPress={() => setNewCarriage({...newCarriage, eligibility})}
-                      disabled={addingCarriage}
-                    >
-                      <Text style={[
-                        styles.eligibilityOptionText,
-                        newCarriage.eligibility === eligibility && styles.eligibilityOptionTextSelected
-                      ]}>
-                        {eligibility === 'eligible' ? 'Eligible' : 'Not Eligible'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
+
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Notes (Optional)</Text>
@@ -823,6 +849,18 @@ const statusConfig = {
     color: '#ff8f00',
     bgColor: '#FFF8E1',
     text: 'Maintenance',
+  },
+  waiting_driver_acceptance: {
+    icon: 'hourglass-outline',
+    color: '#ff8f00',
+    bgColor: '#FFF3E0',
+    text: 'Pending Driver',
+  },
+  driver_assigned: {
+    icon: 'person-circle',
+    color: '#2196F3',
+    bgColor: '#E3F2FD',
+    text: 'Driver Assigned',
   },
   default: {
     icon: 'help-circle',
@@ -1346,6 +1384,18 @@ const styles = StyleSheet.create({
   driverPhone: {
     fontSize: 13,
     color: '#888',
+  },
+  driverRole: {
+    fontSize: 12,
+    color: MAROON,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  driverItemDisabled: {
+    opacity: 0.6,
+  },
+  selectDriverButton: {
+    padding: 8,
   },
   divider: {
     height: 1,

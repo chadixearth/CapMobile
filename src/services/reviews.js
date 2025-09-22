@@ -111,10 +111,15 @@ export async function getDriverReviews({ driver_id, limit = 20 } = {}) {
   return { success: false, error: res.data?.error || 'Failed to fetch driver reviews' };
 }
 
-export async function getUserReviews({ user_id, type = 'received', limit = 50 } = {}) {
+export async function getUserReviews({ user_id, type = 'received', limit = 50, user_role = null } = {}) {
   if (!user_id) return { success: false, error: 'user_id is required' };
   
   try {
+    // Tourists can only give reviews, not receive them
+    if (user_role === 'tourist' && type === 'received') {
+      return { success: true, data: [], stats: { average_rating: 0, review_count: 0 } };
+    }
+    
     if (type === 'received') {
       // Get reviews received by this user (as driver/owner)
       return await getDriverReviews({ driver_id: user_id, limit });

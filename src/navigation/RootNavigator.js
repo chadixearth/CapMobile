@@ -23,6 +23,8 @@ import CompletionPhotoScreen from '../screens/main/CompletionPhotoScreen';
 import PaymentReceiptScreen from '../screens/main/PaymentReceiptScreen';
 import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
 import SetAvailabilityScreen from '../screens/main/SetAvailabilityScreen';
+import DriverCarriageAssignmentsScreen from '../screens/main/DriverCarriageAssignmentsScreen';
+import MyCarriagesScreen from '../screens/main/MyCarriagesScreen';
 import MainTabs from './MainTabs';
 import DriverTabs from './DriverTabs';
 import OwnerTabs from './OwnerTabs';
@@ -104,10 +106,12 @@ export default function RootNavigator() {
           <Stack.Screen name="MyTourPackages" component={MyTourPackagesScreen} />
           <Stack.Screen name="CreateTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
+          <Stack.Screen name="MyCarriages" component={MyCarriagesScreen} />
           <Stack.Screen name="CompletionPhoto" component={CompletionPhotoScreen} />
           <Stack.Screen name="PaymentReceipt" component={PaymentReceiptScreen} />
           <Stack.Screen name="DriverSchedule" component={DriverScheduleScreen} />
           <Stack.Screen name="SetAvailability" component={SetAvailabilityScreen} />
+          <Stack.Screen name="DriverCarriageAssignments" component={DriverCarriageAssignmentsScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
           <Stack.Screen name="Communication" component={Communication} />
         </>

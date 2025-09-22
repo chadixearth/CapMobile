@@ -52,9 +52,10 @@ export async function getMyTourPackages() {
 export async function createTourPackage(packageData) {
   try {
     const user = await getCurrentUser();
+    const userRole = user?.role || 'driver';
     const dataWithDriver = {
       ...packageData,
-      creator_role: 'driver',
+      creator_role: userRole,
       creator_id: user?.id,
       driver_id: user?.id
     };

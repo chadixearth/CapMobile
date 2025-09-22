@@ -49,8 +49,14 @@ class NotificationService {
   // Get user notifications
   static async getNotifications(userId) {
     try {
+      if (!userId) {
+        console.warn('[NotificationService] No user ID provided');
+        return { success: true, data: [] };
+      }
+      
       const { apiBaseUrl } = await import('./networkConfig');
       const url = `${apiBaseUrl()}/notifications/?user_id=${userId}`;
+      console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -62,12 +68,15 @@ class NotificationService {
       });
       
       if (!response.ok) {
+        console.warn(`[NotificationService] API response not OK: ${response.status}`);
         return { success: true, data: [] }; // Return empty array instead of error
       }
       
       const result = await response.json();
+      console.log(`[NotificationService] Received ${result.data?.length || 0} notifications for user ${userId}`);
       return result;
     } catch (error) {
+      console.error('[NotificationService] Error fetching notifications:', error);
       return { success: true, data: [] }; // Return empty array on error
     }
   }

@@ -32,7 +32,8 @@ export default function ReviewsScreen({ navigation }) {
       const result = await getUserReviews({
         user_id: user?.id,
         type: activeTab,
-        limit: 50
+        limit: 50,
+        user_role: user?.role
       });
 
       if (result.success) {
@@ -131,8 +132,8 @@ export default function ReviewsScreen({ navigation }) {
         <Text style={styles.headerTitle}>Reviews</Text>
       </View>
 
-      {/* Tabs - Only show for tourists who can both give and receive reviews */}
-      {user?.role === 'tourist' && (
+      {/* Tabs - Only show for drivers/owners who can receive reviews */}
+      {(user?.role === 'driver' || user?.role === 'owner') && (
         <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'received' && styles.activeTab]}
@@ -172,9 +173,11 @@ export default function ReviewsScreen({ navigation }) {
             <Ionicons name="star-outline" size={64} color="#DDD" />
             <Text style={styles.emptyTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyText}>
-              {activeTab === 'received'
-                ? 'You haven\'t received any reviews yet.'
-                : 'You haven\'t given any reviews yet.'}
+              {user?.role === 'tourist' 
+                ? 'You haven\'t given any reviews yet. Complete a booking to leave a review!'
+                : activeTab === 'received'
+                  ? 'You haven\'t received any reviews yet.'
+                  : 'You haven\'t given any reviews yet.'}
             </Text>
           </View>
         ) : (

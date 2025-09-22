@@ -46,6 +46,14 @@ export default function MenuScreen({ navigation }) {
         let userData = currentUser;
         if (profileResult.success && profileResult.data) {
           userData = { ...currentUser, ...profileResult.data };
+          // Ensure name is properly constructed from profile data
+          if (profileResult.data.first_name || profileResult.data.middle_name || profileResult.data.last_name) {
+            const fullName = [profileResult.data.first_name, profileResult.data.middle_name, profileResult.data.last_name]
+              .filter(Boolean)
+              .join(' ');
+            userData.name = fullName;
+            userData.full_name = fullName;
+          }
         }
         setUser(userData);
       } else {
@@ -132,7 +140,10 @@ export default function MenuScreen({ navigation }) {
   const name =
     user?.name || user?.full_name || user?.user_metadata?.name || '';
   const email = user?.email || '';
-  const avatarUrl = name
+  const profilePhoto = user?.profile_photo || user?.profile_photo_url || user?.avatar_url || user?.user_metadata?.profile_photo_url || '';
+  const avatarUrl = profilePhoto
+    ? profilePhoto
+    : name
     ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`
     : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
 

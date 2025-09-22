@@ -60,4 +60,60 @@ export async function requestRide({ pickup, destination, userId }) {
     throw new Error('Failed to request ride');
   }
   return await response.json();
+}
+
+// Tartanilla Carriage API functions
+export async function getCarriagesByDriver(driverId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
+  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`, {
+    signal: controller.signal,
+  });
+  
+  clearTimeout(timeoutId);
+  if (!response.ok) {
+    throw new Error('Failed to fetch carriages');
+  }
+  return await response.json();
+}
+
+export async function acceptCarriageAssignment(carriageId, driverId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
+  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-accept/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ driver_id: driverId }),
+    signal: controller.signal,
+  });
+  
+  clearTimeout(timeoutId);
+  if (!response.ok) {
+    throw new Error('Failed to accept assignment');
+  }
+  return await response.json();
+}
+
+export async function declineCarriageAssignment(carriageId, driverId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
+  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-decline/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ driver_id: driverId }),
+    signal: controller.signal,
+  });
+  
+  clearTimeout(timeoutId);
+  if (!response.ok) {
+    throw new Error('Failed to decline assignment');
+  }
+  return await response.json();
 } 

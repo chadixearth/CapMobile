@@ -23,6 +23,7 @@ import {
   formatCurrency,
   formatPercentage,
 } from '../../services/earningsService';
+import { getCarriagesByDriver } from '../../services/api';
 import NotificationService from '../../services/notificationService';
 import NotificationManager from '../../components/NotificationManager';
 
@@ -162,6 +163,7 @@ export default function DriverHomeScreen({ navigation }) {
   const [percentageChange, setPercentageChange] = useState(null);
   const [notifications, setNotifications] = useState(defaultNotifications);
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0); // admin pending
+  const [pendingAssignments, setPendingAssignments] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -228,6 +230,7 @@ export default function DriverHomeScreen({ navigation }) {
           fetchPercentageChange(userId),
           fetchRecentNotifications(userId),
           fetchPending(userId),
+          fetchPendingAssignments(userId),
         ]);
       }
     } catch (error) {
@@ -271,6 +274,18 @@ export default function DriverHomeScreen({ navigation }) {
       setPendingPayoutAmount(res?.data?.amount || 0);
     } catch {
       setPendingPayoutAmount(0);
+    }
+  };
+
+  const fetchPendingAssignments = async (driverId) => {
+    try {
+      const response = await getCarriagesByDriver(driverId);
+      if (response.success) {
+        const pending = response.data.filter(c => c.status === 'waiting_driver_acceptance');
+        setPendingAssignments(pending.length);
+      }
+    } catch {
+      setPendingAssignments(0);
     }
   };
 
@@ -455,6 +470,27 @@ export default function DriverHomeScreen({ navigation }) {
           )}
         </View>
 
+        {/* Pending Assignments */}
+        {pendingAssignments > 0 && (
+          <TouchableOpacity 
+            style={styles.pendingCard}
+            onPress={() => navigation.navigate('DriverCarriageAssignments')}
+          >
+            <View style={styles.pendingHeader}>
+              <View style={styles.pendingIcon}>
+                <MaterialCommunityIcons name="cart-outline" size={24} color={MAROON} />
+              </View>
+              <View style={styles.pendingInfo}>
+                <Text style={styles.pendingTitle}>Pending Assignments</Text>
+                <Text style={styles.pendingSubtitle}>
+                  {pendingAssignments} carriage{pendingAssignments > 1 ? 's' : ''} waiting for your response
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={MAROON} />
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* To be Paid — Owner demo, Admin from backend */}
         {/* <Text style={styles.section}>To be Paid</Text> */}
         <View style={styles.toBePaidCard}>
@@ -553,6 +589,43 @@ const styles = StyleSheet.create({
   splitCol: { flex: 1, alignItems: 'center' },
   splitLabel: { color: MUTED, fontSize: 11, marginBottom: 2 },
   splitValue: { color: TEXT, fontSize: 13, fontWeight: '800' },
+
+  /* Pending Assignments */
+  pendingCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#FFB74D',
+  },
+  pendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pendingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: MAROON_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  pendingInfo: {
+    flex: 1,
+  },
+  pendingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: TEXT,
+    marginBottom: 2,
+  },
+  pendingSubtitle: {
+    fontSize: 13,
+    color: MUTED,
+  },
 
   /* To be Paid */
   toBePaidCard: {
