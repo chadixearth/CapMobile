@@ -2,7 +2,7 @@
  * Comprehensive test for payment completion fix
  */
 
-const API_BASE_URL = 'http://192.168.3.23:8000';
+const API_BASE_URL = 'http://192.168.101.80:8000';
 const BOOKING_ID = '03502004-c8d8-428b-9287-41214467e5b1';
 
 const testPaymentFlow = async () => {

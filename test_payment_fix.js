@@ -3,7 +3,7 @@
  */
 
 const testPaymentCompletion = async () => {
-  const API_BASE_URL = 'http://192.168.3.23:8000'; // From the logs
+  const API_BASE_URL = 'http://192.168.101.80:8000'; // From the logs
   const BOOKING_ID = '03502004-c8d8-428b-9287-41214467e5b1'; // From the logs
   
   try {

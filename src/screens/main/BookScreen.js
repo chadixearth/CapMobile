@@ -918,7 +918,11 @@ export default function BookScreen({ navigation }) {
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={[styles.actionBtn, { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' }]}
-                    onPress={() => {
+                    onPress={async () => {
+                      // Get driver profile first
+                      const driverId = getDriverId(b);
+                      const driver = await getDriverProfile(driverId);
+                      
                       navigation.navigate('Communication', { 
                         screen: 'ChatRoom',
                         params: { 
@@ -927,8 +931,8 @@ export default function BookScreen({ navigation }) {
                           participantRole: 'driver',
                           requestType: 'package_booking',
                           userRole: 'tourist',
-                          contactName: b.driver_name || 'Driver',
-                          contactEmail: b.driver_email
+                          contactName: driver?.name || cleanName(getDriverName(b)) || 'Driver',
+                          contactEmail: driver?.email || getDriverContact(b)
                         }
                       });
                     }}
@@ -1072,7 +1076,7 @@ export default function BookScreen({ navigation }) {
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={[styles.actionBtn, { backgroundColor: '#E3F2FD', borderColor: '#BBDEFB' }]}
-                    onPress={() => {
+                    onPress={async () => {
                       // Correctly determine participant role based on request type
                       const participantRole = r.request_type === 'special_event' ? 'owner' : 'driver';
                       
@@ -1084,36 +1088,55 @@ export default function BookScreen({ navigation }) {
                       // Get the right IDs based on request type
                       let packageId = null;
                       let eventId = null;
+                      let contactId = null;
                       
                       if (r.request_type === 'special_event') {
                         // For special events, use special_event_request_id
                         eventId = r.special_event_request_id || null;
+                        contactId = r.owner_id || null;
                       } else {
                         // For custom tours, use custom_tour_package_id
                         packageId = r.custom_tour_package_id || null;
+                        contactId = r.driver_id || null;
                       }
                       
-                      console.log('Debug chat params:', {
-                        requestType,
-                        participantRole,
-                        packageId,
-                        eventId
-                      });
-                      
-                      navigation.navigate('Communication', { 
-                        screen: 'ChatRoom',
-                        params: { 
-                          bookingId: r.id,
-                          subject: r.request_type === 'special_event'
-                            ? `Special Event: ${getCustomTitle(r)}`
-                            : `Custom Tour: ${getCustomTitle(r).replace(/^Custom Tour:\s*/, '')}`,
-                          participantRole: participantRole,
-                          requestType: requestType,
-                          packageId: packageId || null, // Ensure null if undefined
-                          eventId: eventId || null,     // Ensure null if undefined
-                          contactName: getCustomContactName(r) || null,
-                        }
-                      });
+                      try {
+                        // Get contact person profile
+                        const contact = contactId ? await getDriverProfile(contactId) : null;
+                        
+                        navigation.navigate('Communication', { 
+                          screen: 'ChatRoom',
+                          params: { 
+                            bookingId: r.id,
+                            subject: r.request_type === 'special_event'
+                              ? `Special Event: ${getCustomTitle(r)}`
+                              : `Custom Tour: ${getCustomTitle(r).replace(/^Custom Tour:\s*/, '')}`,
+                            participantRole: participantRole,
+                            requestType: requestType,
+                            packageId: packageId || null,
+                            eventId: eventId || null,
+                            contactName: contact?.name || cleanName(getCustomContactName(r)) || (r.request_type === 'special_event' ? 'Event Owner' : 'Driver'),
+                            contactEmail: contact?.email
+                          }
+                        });
+                      } catch (error) {
+                        console.error('Error getting contact person info:', error);
+                        // Fallback if profile lookup fails
+                        navigation.navigate('Communication', { 
+                          screen: 'ChatRoom',
+                          params: { 
+                            bookingId: r.id,
+                            subject: r.request_type === 'special_event'
+                              ? `Special Event: ${getCustomTitle(r)}`
+                              : `Custom Tour: ${getCustomTitle(r).replace(/^Custom Tour:\s*/, '')}`,
+                            participantRole: participantRole,
+                            requestType: requestType,
+                            packageId: packageId || null,
+                            eventId: eventId || null,
+                            contactName: cleanName(getCustomContactName(r)) || (r.request_type === 'special_event' ? 'Event Owner' : 'Driver')
+                          }
+                        });
+                      }
                     }}
                     activeOpacity={0.85}
                   >
@@ -1131,6 +1154,26 @@ export default function BookScreen({ navigation }) {
         )}
       </View>
     );
+  };
+
+  // Add this function after the cleanName function:
+  const getDriverProfile = async (driverId) => {
+    if (!driverId || driverId === 'undefined') {
+      console.warn('No valid driverId provided');
+      return { id: null, name: 'Driver' };
+    }
+
+    const { data, error } = await supabase
+      .from('public_user_profiles')
+      .select('id, name')
+      .eq('id', driverId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching driver profile:', error);
+      return { id: driverId, name: 'Driver' };
+    }
+    return data || { id: driverId, name: 'Driver' };
   };
 
   // ---------- derived lists / counts (single filter path)
