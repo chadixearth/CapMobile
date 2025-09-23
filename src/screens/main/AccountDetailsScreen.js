@@ -249,7 +249,6 @@ export default function AccountDetailsScreen({ navigation }) {
         );
         if (result.success) {
           setPhotoUrl(result.photo_url);
-          // Update the user profile with the new photo URL
           await updateUserProfile(currentUser.id, { profile_photo: result.photo_url });
           setSuccess('Profile photo updated!');
         } else {
@@ -312,7 +311,6 @@ export default function AccountDetailsScreen({ navigation }) {
             );
             if (result.success) {
               setPhotoUrl(result.photoUrl);
-              // Update the user profile with the new photo URL
               await updateUserProfile(currentUser.id, { profile_photo: result.photoUrl });
               setSuccess('Profile photo updated!');
             } else {
@@ -575,19 +573,20 @@ export default function AccountDetailsScreen({ navigation }) {
       if (currentUser) {
         AccountDeletionHandler.requestDeletion(
           currentUser.id,
-          'User requested account deletion',
+          'User requested account deactivation',
           () => auth.logout()
         );
         setDeleteOpen(false);
       }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Failed to schedule deletion.');
+      Alert.alert('Error', e?.message || 'Failed to schedule deactivation.');
     } finally {
       setDeleting(false);
     }
   };
 
-  const deleteEnabled = deleteConfirmText.trim().toUpperCase() === 'DELETE';
+  // Change confirmation keyword from DELETE → DEACTIVATE
+  const deleteEnabled = deleteConfirmText.trim().toUpperCase() === 'DEACTIVATE';
 
   return (
     <KeyboardAvoidingView
@@ -866,16 +865,16 @@ export default function AccountDetailsScreen({ navigation }) {
         )}
 
         {/* Danger Zone — Redesigned */}
-        <Section icon="warning-outline" title="Danger Zone">
+        <Section icon="warning-outline" title="ACCOUNT DEACTIVATION">
           <View style={styles.dangerWrap}>
             <View style={styles.dangerHeaderRow}>
               <View style={styles.dangerIconCircle}>
                 <Ionicons name="warning" size={18} color={COLORS.red} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.dangerHeading}>Delete your account</Text>
+                <Text style={styles.dangerHeading}>Deactivate your account</Text>
                 <Text style={styles.dangerSub}>
-                  This is permanent. Your account will be scheduled for deletion in 7 days.
+                  Your account will be deactivated now.
                 </Text>
               </View>
             </View>
@@ -887,19 +886,12 @@ export default function AccountDetailsScreen({ navigation }) {
               </View>
               <View style={styles.dangerListItem}>
                 <Ionicons name="time-outline" size={16} color={COLORS.red} />
-                <Text style={styles.dangerListText}>You can cancel deletion by logging in again within 7 days.</Text>
+                <Text className="styles.dangerListText" style={styles.dangerListText}>You can cancel deactivation by logging in again within 7 days.</Text>
               </View>
             </View>
 
             <View style={styles.dangerActionsRow}>
-              <TouchableOpacity
-                style={styles.dangerGhostBtn}
-                activeOpacity={0.9}
-                onPress={() => Alert.alert('Need help?', 'Contact support at support@example.com')}
-              >
-                <Ionicons name="help-circle-outline" size={16} color={COLORS.red} />
-                <Text style={styles.dangerGhostText}>Need help</Text>
-              </TouchableOpacity>
+             
 
               <TouchableOpacity
                 style={styles.dangerPrimaryBtn}
@@ -907,7 +899,7 @@ export default function AccountDetailsScreen({ navigation }) {
                 onPress={openDeleteModal}
               >
                 <Ionicons name="trash" size={16} color="#fff" />
-                <Text style={styles.dangerPrimaryText}>Delete Account</Text>
+                <Text style={styles.dangerPrimaryText}>Deactivate Account</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -916,7 +908,7 @@ export default function AccountDetailsScreen({ navigation }) {
         <View style={{ height: 28 }} />
       </ScrollView>
 
-      {/* Delete Confirmation Modal */}
+      {/* Deactivate Confirmation Modal */}
       <Modal
         visible={deleteOpen}
         transparent
@@ -930,7 +922,7 @@ export default function AccountDetailsScreen({ navigation }) {
                 <View style={styles.modalIconCircle}>
                   <Ionicons name="warning" size={18} color={COLORS.red} />
                 </View>
-                <Text style={styles.modalTitle}>Confirm deletion</Text>
+                <Text style={styles.modalTitle}>Confirm deactivation</Text>
               </View>
               <TouchableOpacity
                 onPress={() => !deleting && setDeleteOpen(false)}
@@ -942,15 +934,15 @@ export default function AccountDetailsScreen({ navigation }) {
 
             <View style={styles.modalBody}>
               <Text style={styles.modalText}>
-                Deleting your account will schedule it for removal in 7 days. To confirm,
-                type <Text style={{ fontWeight: '800', color: COLORS.text }}>DELETE</Text> below.
+                Deactivating your account will schedule it for removal in 7 days. To confirm,
+                type <Text style={{ fontWeight: '800', color: COLORS.text }}>DEACTIVATE</Text> below.
               </Text>
 
               <TextInput
                 style={styles.confirmInput}
                 value={deleteConfirmText}
                 onChangeText={setDeleteConfirmText}
-                placeholder="Type DELETE to confirm"
+                placeholder="Type DEACTIVATE to confirm"
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="characters"
                 editable={!deleting}
@@ -990,7 +982,7 @@ export default function AccountDetailsScreen({ navigation }) {
                   {deleting ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text style={styles.modalBtnDangerText}>Confirm Delete</Text>
+                    <Text style={styles.modalBtnDangerText}>Deactivate Now</Text>
                   )}
                 </TouchableOpacity>
               </View>

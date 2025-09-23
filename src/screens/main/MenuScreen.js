@@ -46,7 +46,6 @@ export default function MenuScreen({ navigation }) {
         let userData = currentUser;
         if (profileResult.success && profileResult.data) {
           userData = { ...currentUser, ...profileResult.data };
-          // Ensure name is properly constructed from profile data
           if (profileResult.data.first_name || profileResult.data.middle_name || profileResult.data.last_name) {
             const fullName = [profileResult.data.first_name, profileResult.data.middle_name, profileResult.data.last_name]
               .filter(Boolean)
@@ -106,7 +105,7 @@ export default function MenuScreen({ navigation }) {
 
     setDeletingAccount(true);
     try {
-      const result = await requestAccountDeletion(user.id, 'User requested account deletion from mobile app');
+      const result = await requestAccountDeletion(user.id, 'User requested account deactivation from mobile app');
 
       if (result.success) {
         const days = result.days_remaining || 7;
@@ -115,10 +114,10 @@ export default function MenuScreen({ navigation }) {
           : 'in 7 days';
 
         alert(
-          `Account Deletion Scheduled\n\n` +
-          `Your account will be permanently deleted on ${deletionDate}.\n\n` +
+          `Account Deactivation Scheduled\n\n` +
+          `Your account will be deactivated now and permanently deleted on ${deletionDate}.\n\n` +
           `You have ${days} days to change your mind.\n\n` +
-          `To cancel the deletion, simply log in again and your account will be automatically reactivated.\n\n` +
+          `To cancel the deactivation, simply log in again and your account will be automatically reactivated.\n\n` +
           `You will now be logged out.`
         );
 
@@ -126,11 +125,11 @@ export default function MenuScreen({ navigation }) {
           await auth.logout();
         }, 100);
       } else {
-        alert(`Failed to request account deletion: ${result.error || 'Unknown error occurred'}`);
+        alert(`Failed to request account deactivation: ${result.error || 'Unknown error occurred'}`);
       }
     } catch (error) {
-      console.error('Account deletion error:', error);
-      alert('An error occurred while requesting account deletion. Please try again.');
+      console.error('Account deactivation error:', error);
+      alert('An error occurred while requesting account deactivation. Please try again.');
     } finally {
       setDeletingAccount(false);
       setDeleteAccountVisible(false);
@@ -276,16 +275,16 @@ export default function MenuScreen({ navigation }) {
             onPress={() => navigation.navigate(Routes.PRIVACY || 'Privacy')}
           />
           <Divider />
-          <ProfileItem
+          {/* <ProfileItem
             icon={<MaterialIcons name="delete-forever" size={22} color="#DC3545" />}
-            label="Delete Account"
+            label="Deactivate Account"
             onPress={openDeleteAccountConfirm}
             textStyle={{ color: '#DC3545' }}
-          />
+          /> */}
         </View>
 
         {/* Data Status (for debugging) */}
-        {__DEV__ && (
+        {/* {__DEV__ && (
           <View style={styles.debugCard}>
             <Text style={styles.debugTitle}>API Data Status</Text>
             <Text style={styles.debugText}>Bookings: {bookings.length} loaded</Text>
@@ -296,7 +295,7 @@ export default function MenuScreen({ navigation }) {
               </>
             )}
           </View>
-        )}
+        )} */}
 
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
@@ -371,7 +370,7 @@ export default function MenuScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Delete Account Modal */}
+      {/* Deactivate Account Modal */}
       <Modal
         visible={deleteAccountVisible}
         transparent
@@ -384,9 +383,9 @@ export default function MenuScreen({ navigation }) {
               <MaterialIcons name="delete-forever" size={30} color="#DC3545" />
             </View>
 
-            <Text style={styles.modalTitle}>Delete Account</Text>
+            <Text style={styles.modalTitle}>Deactivate Account</Text>
             <Text style={styles.modalDesc}>
-              Your account will be scheduled for deletion in 7 days. During this time, you can change your mind and cancel the deletion by simply logging in again. After 7 days, all your data will be permanently deleted and cannot be recovered.
+              Your account will be deactivated now and scheduled for permanent deletion in 7 days. During this time, you can change your mind and cancel by simply logging in again. After 7 days, all your data will be permanently deleted and cannot be recovered.
             </Text>
             <Text style={[styles.modalDesc, { fontWeight: '600', color: '#DC3545', marginTop: 4 }]}>
               You will be logged out immediately after confirming.
@@ -413,7 +412,7 @@ export default function MenuScreen({ navigation }) {
                 {deletingAccount ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.modalPrimaryText}>Delete Account</Text>
+                  <Text style={styles.modalPrimaryText}>Deactivate Account</Text>
                 )}
               </TouchableOpacity>
             </View>
