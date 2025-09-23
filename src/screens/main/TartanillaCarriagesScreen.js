@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -8,6 +8,7 @@ import driverService from '../../services/carriages/fetchDriver';
 import { supabase } from '../../services/supabase';
 import { getMyCarriages, assignDriverToCarriage, createCarriage } from '../../services/tartanillaService';
 import { useAuth } from '../../hooks/useAuth';
+import carriageService from '../../services/tourpackage/fetchCarriage';
 
 const { width } = Dimensions.get('window');
 const MAROON = '#6B2E2B';
@@ -25,7 +26,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [newCarriage, setNewCarriage] = useState({
     plate_number: '', 
     capacity: '4',
-    status: 'available',
+    status: '',
     notes: ''
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
@@ -36,6 +37,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [assigningDriver, setAssigningDriver] = useState(false);
   const [driverCache, setDriverCache] = useState({}); // id -> driver details
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingCarriage, setEditingCarriage] = useState(null);
+  const [editForm, setEditForm] = useState({ capacity: '4', status: 'available', notes: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const normalizedStatusRef = useRef(new Set()); // ids already normalized from driver_assigned -> available
 
   // All callback functions need to be defined before the conditional return
   const fetchAllDrivers = async () => {
@@ -68,11 +74,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       const result = await assignDriverToCarriage(selectedCarriage.id, driver.id);
       
       if (result.success) {
-        // Optimistically seed the cache so UI shows name/email immediately
-        setDriverCache(prev => ({ ...prev, [driver.id]: driver }));
-        // Optionally update the specific carriage locally for instant feedback
+        // Optimistically seed the cache so UI shows name/email immediately (by id and user_id)
+        setDriverCache(prev => ({ 
+          ...prev, 
+          [String(driver.id)]: driver,
+          ...(driver.user_id ? { [String(driver.user_id)]: driver } : {})
+        }));
+        // Optimistically update the specific carriage locally for instant feedback
         setCarriages(prev => prev.map(c => c.id === selectedCarriage.id 
-          ? { ...c, assigned_driver_id: driver.id, assigned_driver: c.assigned_driver || null }
+          ? { 
+              ...c, 
+              assigned_driver_id: driver.id,
+              assigned_driver: driver,
+              status: 'waiting_driver_acceptance'
+            }
           : c
         ));
         setShowDriverModal(false);
@@ -236,6 +251,29 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     fetchMissingDrivers();
   }, [carriages, driverCache]);
 
+  // Normalize backend status: convert 'driver_assigned' to 'available' once per carriage
+  useEffect(() => {
+    (async () => {
+      try {
+        const items = Array.isArray(carriages) ? carriages : [];
+        const toNormalize = items.filter(c => c?.id && c.status === 'driver_assigned' && !normalizedStatusRef.current.has(c.id));
+        for (const c of toNormalize) {
+          try {
+            await carriageService.updateCarriage(c.id, { status: 'available' });
+            normalizedStatusRef.current.add(c.id);
+            // Optimistically update local state
+            setCarriages(prev => prev.map(x => x.id === c.id ? { ...x, status: 'available' } : x));
+          } catch (e) {
+            // Skip failures but don't loop endlessly
+            normalizedStatusRef.current.add(c.id);
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+    })();
+  }, [carriages]);
+
   // Show loading while checking authentication
   if (auth.loading) {
     return (
@@ -327,7 +365,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       const carriageData = {
         plate_number: newCarriage.plate_number.trim(),
         capacity: parseInt(newCarriage.capacity) || 4,
-        status: newCarriage.status || 'available',
+        status: newCarriage.status || 'waiting_driver_acceptance',
         eligibility: newCarriage.eligibility || 'eligible',
         notes: newCarriage.notes || ''
       };
@@ -367,7 +405,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       setNewCarriage({
         plate_number: '',
         capacity: '4',
-        status: 'available',
+        status: 'waiting_driver_acceptance',
         notes: ''
       });
       
@@ -420,108 +458,81 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="car-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Carriages Found</Text>
-      <Text style={styles.emptyStateSubtitle}>
-        {auth.user?.role === 'owner'
-          ? 'You have not registered any tartanilla carriages yet.'
-          : 'Only owners can view their tartanilla carriages.'}
-      </Text>
-      {auth.user?.role === 'owner' && (
-        <TouchableOpacity style={styles.testConnectionButton} onPress={testConnection}>
-          <Text style={styles.testConnectionButtonText}>Test API Connection</Text>
-        </TouchableOpacity>
-      )}
-      
-      {loading && <ActivityIndicator size="large" color={MAROON} style={{marginTop: 20}} />}
-    </View>
-  );
+  const openEditModal = (carriage) => {
+    setEditingCarriage(carriage);
+    setEditForm({
+      capacity: String(carriage.capacity || '4'),
+      status: (carriage.status && carriage.status !== 'driver_assigned') ? carriage.status : 'available',
+      notes: carriage.notes || ''
+    });
+    setShowEditModal(true);
+  };
 
-  const getStatusTextStyle = (status) => {
-    switch (status) {
-      case 'available':
-        return { color: '#28a745' };
-      case 'in_use':
-        return { color: '#dc3545' };
-      case 'maintenance':
-        return { color: '#ffc107' };
-      default:
-        return { color: DARK_GRAY };
+  const validateEditForm = () => {
+    const errors = {};
+    const cap = parseInt(editForm.capacity);
+    if (isNaN(cap) || cap < 1 || cap > 10) {
+      errors.capacity = 'Capacity must be between 1 and 10';
+    }
+    if (!editForm.status) {
+      errors.status = 'Status is required';
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleUpdateCarriage = async () => {
+    if (!editingCarriage) return;
+    if (!validateEditForm()) return;
+    setSavingEdit(true);
+    try {
+      const updates = {
+        capacity: parseInt(editForm.capacity) || undefined,
+        status: editForm.status,
+        notes: editForm.notes ?? ''
+      };
+      // Clean undefined
+      Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
+
+      await carriageService.updateCarriage(editingCarriage.id, updates);
+
+      setShowEditModal(false);
+      setEditingCarriage(null);
+      // Refresh
+      await fetchUserAndCarriages();
+      Alert.alert('Success', 'Carriage updated successfully');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to update carriage');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
-      available: { 
-        icon: 'checkmark-circle', 
-        color: '#28a745',
-        bgColor: '#E8F5E9',
-        text: 'Available',
-        iconColor: '#28a745'
-      },
-      in_use: { 
-        icon: 'time', 
-        color: '#dc3545',
-        bgColor: '#FFEBEE',
-        text: 'In Use',
-        iconColor: '#dc3545'
-      },
-      maintenance: { 
-        icon: 'build', 
-        color: '#ffc107',
-        bgColor: '#FFF8E1',
-        text: 'Maintenance',
-        iconColor: '#ff8f00'
-      },
-      waiting_driver_acceptance: {
-        icon: 'hourglass-outline',
-        color: '#ff8f00',
-        bgColor: '#FFF3E0',
-        text: 'Pending Driver',
-        iconColor: '#ff8f00'
-      },
-      driver_assigned: {
-        icon: 'person-circle',
-        color: '#2196F3',
-        bgColor: '#E3F2FD',
-        text: 'Driver Assigned',
-        iconColor: '#2196F3'
-      },
-      default: {
-        icon: 'help-circle',
-        color: '#6c757d',
-        bgColor: '#f5f5f5',
-        text: 'Unknown',
-        iconColor: '#6c757d'
-      }
+      available: { icon: 'checkmark-circle', color: '#28a745', bgColor: '#E8F5E9', text: 'Available', iconColor: '#28a745' },
+      in_use: { icon: 'time', color: '#dc3545', bgColor: '#FFEBEE', text: 'In Use', iconColor: '#dc3545' },
+      maintenance: { icon: 'build', color: '#ffc107', bgColor: '#FFF8E1', text: 'Maintenance', iconColor: '#ff8f00' },
+      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#ff8f00', bgColor: '#FFF3E0', text: 'Pending Driver', iconColor: '#ff8f00' },
+      driver_assigned: { icon: 'person-circle', color: '#2196F3', bgColor: '#E3F2FD', text: 'Driver Assigned', iconColor: '#2196F3' },
+      not_usable: { icon: 'close-circle', color: '#dc3545', bgColor: '#F5C6CB', text: 'Not Usable', iconColor: '#dc3545' },
+      default: { icon: 'help-circle', color: '#6c757d', bgColor: '#f5f5f5', text: 'Unknown', iconColor: '#6c757d' },
     };
 
-    const status = statusConfig[carriage.status?.toLowerCase()] || statusConfig.default;
-    
-    // Debug: Log the actual carriage data structure
-    console.log('Carriage debug:', {
-      plate: carriage.plate_number,
-      driver_id: carriage.assigned_driver_id,
-      driver_obj: carriage.assigned_driver,
-      status: carriage.status
-    });
-    
+    const statusKey = carriage.status === 'driver_assigned' ? 'available' : (carriage.status?.toLowerCase());
+    const status = statusConfig[statusKey] || statusConfig.default;
+
     const cached = driverCache[carriage.assigned_driver_id];
 
-    // Build driver name with multiple fallbacks
     const buildName = (d) => {
       if (!d) return null;
       return (
         d.name ||
         d.full_name || d.fullName ||
         (d.first_name || d.last_name ? `${d.first_name || ''} ${d.last_name || ''}`.trim() : null) ||
-        // nested user object fallback
         d.user?.name ||
         (d.user && (d.user.first_name || d.user.last_name) ? `${d.user.first_name || ''} ${d.user.last_name || ''}`.trim() : null) ||
         d.username ||
-        // last resort: use email or its local-part
         d.email || (typeof d.email === 'string' ? d.email : null) ||
         null
       );
@@ -532,35 +543,42 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       buildName(cached) ||
       (carriage.assigned_driver_id ? 'Unknown Driver' : 'Unassigned');
 
-    // Driver email
     const driverEmail =
       carriage.assigned_driver?.email ||
       cached?.email ||
       (carriage.assigned_driver_id ? 'No email' : '');
 
-    
-    // Show assignment status for owners
-    const assignmentStatus = carriage.status === 'waiting_driver_acceptance'
+    const hasDriverSelected = !!(carriage.assigned_driver_id || carriage.assigned_driver);
+    const assignmentStatus = hasDriverSelected && carriage.status === 'waiting_driver_acceptance'
       ? 'Waiting for driver acceptance'
-      : carriage.status === 'driver_assigned'
-      ? 'Driver confirmed assignment'
       : null;
-
     return (
       <View key={carriage.id} style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={styles.plateContainer}>
             <Ionicons name="car" size={20} color={MAROON} style={styles.carIcon} />
             <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: status.bgColor, marginLeft: 8 }]}>
+              <Ionicons name={status.icon} size={14} color={status.iconColor} style={styles.statusIcon} />
+              <Text style={[styles.statusText, { color: status.color }]}>
+                {status.text}
+              </Text>
+            </View>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
-            <Ionicons name={status.icon} size={14} color={status.iconColor} style={styles.statusIcon} />
-            <Text style={[styles.statusText, { color: status.color }]}>
-              {status.text}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+              <TouchableOpacity
+                style={styles.statusEditButton}
+                onPress={() => openEditModal(carriage)}
+                disabled={savingEdit}
+              >
+                <Ionicons name="pencil" size={14} color="#fff" />
+                <Text style={styles.statusEditButtonText}>Edit</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
-        
+
         <View style={styles.cardContent}>
           <View style={styles.infoRow}>
             <Ionicons name="person" size={16} color="#555" style={styles.infoIcon} />
@@ -571,20 +589,34 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 <Text style={[styles.infoLabel, { marginTop: 2, fontSize: 11, color: '#888' }]} numberOfLines={1}>{driverEmail}</Text>
               )}
             </View>
-            {carriage.status !== 'driver_assigned' && (
+            {!hasDriverSelected && (
               <TouchableOpacity 
                 style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
                 onPress={() => openDriverModal(carriage)}
                 disabled={assigningDriver}
               >
-                <Ionicons 
-                  name={carriage.assigned_driver || carriage.status === 'waiting_driver_acceptance' ? "sync-outline" : "person-add"} 
-                  size={14} 
-                  color="#fff"
-                />
-                <Text style={styles.assignButtonText}>
-                  {(carriage.assigned_driver || carriage.status === 'waiting_driver_acceptance') ? 'Change' : 'Assign'}
-                </Text>
+                <Ionicons name={'person-add'} size={14} color="#fff" />
+                <Text style={styles.assignButtonText}>Assign</Text>
+              </TouchableOpacity>
+            )}
+            {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
+              <TouchableOpacity 
+                style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name={'sync-outline'} size={14} color="#fff" />
+                <Text style={styles.assignButtonText}>Change</Text>
+              </TouchableOpacity>
+            )}
+            {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+              <TouchableOpacity 
+                style={[styles.reassignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name="swap-horizontal" size={14} color="#fff" />
+                <Text style={styles.reassignButtonText}>Reassign</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -622,7 +654,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           )}
 
           {carriage.notes && (
-            <View style={[styles.infoRow, { alignItems: 'flex-start' }]}>
+            <View style={[styles.infoRow, { alignItems: 'flex-start' }]}> 
               <Ionicons name="document-text" size={16} color="#555" style={[styles.infoIcon, { marginTop: 2 }]} />
               <View style={[styles.infoTextContainer, { flex: 1 }]}>
                 <Text style={styles.infoLabel}>Notes</Text>
@@ -712,7 +744,103 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       </View>
     </Modal>
   );
-  
+
+  const renderEditModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={showEditModal}
+      onRequestClose={() => !savingEdit && setShowEditModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Carriage</Text>
+            <TouchableOpacity onPress={() => !savingEdit && setShowEditModal(false)} disabled={savingEdit}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Plate Number</Text>
+              <TextInput style={[styles.input, { backgroundColor: '#f5f5f5' }]} value={editingCarriage?.plate_number || ''} editable={false} />
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Capacity *</Text>
+              <View style={styles.capacityContainer}>
+                <TouchableOpacity 
+                  style={styles.capacityButton}
+                  onPress={() => setEditForm(prev => ({ ...prev, capacity: String(Math.max(1, (parseInt(prev.capacity) || 4) - 1)) }))}
+                  disabled={savingEdit}
+                >
+                  <Ionicons name="remove" size={20} color="#666" />
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.input, styles.capacityInput, formErrors.capacity && styles.inputError]}
+                  value={editForm.capacity}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, capacity: text }))}
+                  keyboardType="numeric"
+                  editable={!savingEdit}
+                />
+                <TouchableOpacity 
+                  style={styles.capacityButton}
+                  onPress={() => setEditForm(prev => ({ ...prev, capacity: String(Math.min(10, (parseInt(prev.capacity) || 4) + 1)) }))}
+                  disabled={savingEdit}
+                >
+                  <Ionicons name="add" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+              {formErrors.capacity && <Text style={styles.errorText}>{formErrors.capacity}</Text>}
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Status *</Text>
+              <View style={styles.statusOptions}>
+                {['available', 'in_use', 'maintenance', 'not_usable'].map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.statusOption,
+                      editForm.status === status && styles.statusOptionSelected,
+                      { backgroundColor: (statusConfig[status]?.bgColor || '#f5f5f5') }
+                    ]}
+                    onPress={() => setEditForm(prev => ({ ...prev, status }))}
+                    disabled={savingEdit}
+                  >
+                    <Ionicons name={(statusConfig[status]?.icon || 'help-circle')} size={16} color={(statusConfig[status]?.color || '#666')} style={styles.statusIcon} />
+                    <Text style={[styles.statusOptionText, { color: (statusConfig[status]?.color || '#666') }, editForm.status === status && styles.statusOptionTextSelected]}>
+                      {status === 'not_usable' ? 'Not Usable' : (statusConfig[status]?.text || 'Unknown')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {formErrors.status && <Text style={styles.errorText}>{formErrors.status}</Text>}
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Notes (Optional)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Any additional notes about this carriage"
+                value={editForm.notes}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, notes: text }))}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                editable={!savingEdit}
+              />
+            </View>
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={[styles.button, styles.cancelButton, savingEdit && styles.buttonDisabled]} onPress={() => setShowEditModal(false)} disabled={savingEdit}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.saveButton, savingEdit && styles.buttonDisabled]} onPress={handleUpdateCarriage} disabled={savingEdit}>
+              {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   // Main render function
   return (
@@ -834,40 +962,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.statusOptions}>
-                  {['available', 'in_use', 'maintenance'].map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      style={[
-                        styles.statusOption,
-                        newCarriage.status === status && styles.statusOptionSelected,
-                        { backgroundColor: statusConfig[status]?.bgColor || '#f5f5f5' }
-                      ]}
-                      onPress={() => setNewCarriage({...newCarriage, status})}
-                      disabled={addingCarriage}
-                    >
-                      <Ionicons 
-                        name={statusConfig[status]?.icon || 'help-circle'} 
-                        size={16} 
-                        color={statusConfig[status]?.color || '#666'} 
-                        style={styles.statusIcon} 
-                      />
-                      <Text style={[
-                        styles.statusOptionText,
-                        { color: statusConfig[status]?.color || '#666' },
-                        newCarriage.status === status && styles.statusOptionTextSelected
-                      ]}>
-                        {statusConfig[status]?.text || 'Unknown'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-
-
-              <View style={styles.formGroup}>
                 <Text style={styles.label}>Notes (Optional)</Text>
                 <TextInput
                   style={[styles.input, styles.textArea]}
@@ -906,8 +1000,8 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         </View>
       </Modal>
       
-      {/* Driver Assignment Modal */}
-      {renderDriverModal()}
+      {/* Edit Carriage Modal */}
+      {renderEditModal()}
     </View>
   );
 }
@@ -943,6 +1037,12 @@ const statusConfig = {
     color: '#2196F3',
     bgColor: '#E3F2FD',
     text: 'Driver Assigned',
+  },
+  not_usable: {
+    icon: 'close-circle',
+    color: '#dc3545',
+    bgColor: '#F5C6CB',
+    text: 'Not Usable',
   },
   default: {
     icon: 'help-circle',
@@ -1193,6 +1293,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  statusEditButton: {
+    marginLeft: 8,
+    backgroundColor: MAROON,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  statusEditButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
   cardContent: {
     paddingTop: 4,
   },
@@ -1230,6 +1346,36 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   assignButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6c757d',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  reassignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MAROON,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  reassignButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '500',

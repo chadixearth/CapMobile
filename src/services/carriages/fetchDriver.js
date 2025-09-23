@@ -37,66 +37,26 @@ const unwrapObject = (data) => {
 };
 
 export const driverService = {
-  // List all drivers (attempt multiple likely endpoints; first success wins)
+  // List available drivers (use known working endpoint only)
   async getAllDrivers(params = {}) {
     const queryString = Object.keys(params).length
-      ? new URLSearchParams(params).toString()
+      ? `?${new URLSearchParams(params).toString()}`
       : '';
-
-    const candidates = [
-      // Likely REST endpoints (apiBaseUrl already includes '/api')
-      '/drivers/',
-      '/accounts/drivers/',
-      // Generic users collections
-      '/users/',
-      '/accounts/users/',
-    ].map(base => base.includes('?')
-      ? `${base}${queryString ? `&${queryString}` : ''}`
-      : `${base}${queryString ? `?${queryString}` : ''}`);
-
-    // Try candidates one by one
-    for (const base of candidates) {
-      const endpoint = base.includes('?')
-        ? `${base}${queryString ? `&${queryString}` : ''}`
-        : `${base}${queryString ? `?${queryString}` : ''}`;
-      try {
-        const data = await apiCall(endpoint);
-        return unwrapList(data);
-      } catch (e) {
-        // try next candidate
-      }
-    }
-
-    // Fallback: available drivers (if full list is not available)
-    try {
-      const data = await apiCall('/tartanilla-carriages/get_available_drivers/');
-      return unwrapList(data);
-    } catch (e) {
-      // Surface the last error
-      throw new Error('Failed to fetch drivers from all known endpoints');
-    }
+    const data = await apiCall(`/tartanilla-carriages/get_available_drivers/${queryString}`);
+    return unwrapList(data);
   },
 
-  // Retrieve a driver by ID
+  // Retrieve a driver by ID (resolve from available drivers list only)
   async getDriverById(driverId) {
-    const candidates = [
-      `/drivers/${driverId}/`,
-      `/accounts/drivers/${driverId}/`,
-      `/users/${driverId}/`,
-      `/accounts/users/${driverId}/`,
-      // Fallback used by carriage services in this app
-      `/tartanilla-carriages/get_user_by_id/?user_id=${encodeURIComponent(driverId)}`,
-    ];
-
-    for (const endpoint of candidates) {
-      try {
-        const data = await apiCall(endpoint);
-        return unwrapObject(data);
-      } catch (e) {
-        // try next
-      }
-    }
-    throw new Error('Driver not found from known endpoints');
+    const list = await this.getAllDrivers();
+    const target = String(driverId);
+    const match = (Array.isArray(list) ? list : []).find(d => {
+      const did = String(d?.id || '');
+      const uid = String(d?.user_id || '');
+      return did === target || uid === target;
+    });
+    if (!match) throw new Error('Driver not found in available drivers');
+    return match;
   },
 
   // Suspend a driver
