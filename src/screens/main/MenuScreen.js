@@ -147,6 +147,14 @@ export default function MenuScreen({ navigation }) {
     ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`
     : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
 
+  const navigateToEarningsDetail = () => {
+      if (user) {
+        navigation.navigate(Routes.DRIVER_EARNINGS);
+      } else {
+        Alert.alert('Login Required', 'Please log in to view detailed earnings.');
+      }
+    };
+
   return (
     <View style={styles.container}>
       {/* TOP APP BAR: Back (left) + Notifications (right) ONLY */}
@@ -209,7 +217,7 @@ export default function MenuScreen({ navigation }) {
               <ProfileItem
                 icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
                 label="Earnings"
-                onPress={() => navigation.navigate('Earnings')}
+                onPress={navigateToEarningsDetail}
               />
               <Divider />
               <ProfileItem

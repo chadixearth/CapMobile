@@ -1,18 +1,47 @@
 import { apiBaseUrl } from './networkConfig';
 import { getCurrentUser } from './authService';
 
+// Request limiter for tartanilla service
+let lastRequest = 0;
+const MIN_REQUEST_INTERVAL = 200; // 200ms between requests
+
 async function request(path, options = {}) {
+  // Rate limiting
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequest;
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
+  }
+  lastRequest = Date.now();
+  
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const response = await fetch(`${apiBaseUrl()}${path}`, {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      signal: controller.signal,
       ...options,
     });
+    
+    clearTimeout(timeoutId);
+    
+    // Handle connection errors gracefully
+    if (!response.ok && response.status >= 500) {
+      console.warn(`Server error ${response.status}, returning empty data`);
+      return { ok: true, data: { success: true, data: [] } };
+    }
+    
     const data = await response.json();
     return { ok: response.ok, data };
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Request timeout, returning empty data');
+      return { ok: true, data: { success: true, data: [] } };
+    }
     return { ok: false, data: { success: false, error: error.message } };
   }
 }

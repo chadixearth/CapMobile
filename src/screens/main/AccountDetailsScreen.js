@@ -249,6 +249,8 @@ export default function AccountDetailsScreen({ navigation }) {
         );
         if (result.success) {
           setPhotoUrl(result.photo_url);
+          // Update the user profile with the new photo URL
+          await updateUserProfile(currentUser.id, { profile_photo: result.photo_url });
           setSuccess('Profile photo updated!');
         } else {
           throw new Error(result.error || 'Failed to upload photo');
@@ -310,6 +312,8 @@ export default function AccountDetailsScreen({ navigation }) {
             );
             if (result.success) {
               setPhotoUrl(result.photoUrl);
+              // Update the user profile with the new photo URL
+              await updateUserProfile(currentUser.id, { profile_photo: result.photoUrl });
               setSuccess('Profile photo updated!');
             } else {
               throw new Error(result.error || 'Failed to upload photo');

@@ -14,6 +14,8 @@ export const GOODS_SERVICES = 'GoodsServices';
 export const DRIVER_EARNINGS = 'DriverEarnings';
 export const PAYMENT = 'Payment';
 export const BOOKING_CONFIRMATION = 'BookingConfirmation';
+export const DRIVER_SCHEDULE = 'DriverSchedule';
+export const SET_AVAILABILITY = 'SetAvailability';
 
 // Tab names
 export const HOME = 'Home';
@@ -25,3 +27,4 @@ export const BOOKINGS = 'Bookings';
 export const EVENTS = 'Events';
 export const MENU = 'Menu';
 export const REVIEWS = 'Reviews';
+export const BREAKEVEN = 'Breakeven';

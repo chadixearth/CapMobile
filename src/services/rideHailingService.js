@@ -1,69 +1,46 @@
-import { apiRequest } from './authService';
+import networkClient from './networkClient';
 import { invalidateData } from './dataInvalidationService';
 
-// Helper function for API calls with retry logic
-async function apiCall(endpoint, options = {}, maxRetries = 3) {
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await apiRequest(endpoint, options);
-      
-      if (result.success) {
-        // Emit data change events for successful operations (only for write operations)
-        if (options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method.toUpperCase())) {
-          if (endpoint.includes('/ride-hailing/')) {
-            invalidateData.rides();
-            invalidateData.bookings();
-          }
-          if (endpoint.includes('/complete/') || endpoint.includes('/driver-cancel/') || endpoint.includes('/customer-cancel/')) {
-            invalidateData.earnings();
-          }
-          if (endpoint.includes('/payment/') || endpoint.includes('/pay/')) {
-            invalidateData.payments();
-            invalidateData.bookings();
-          }
-          if (endpoint.includes('/profile/') || endpoint.includes('/user/')) {
-            invalidateData.profile();
-          }
-          if (endpoint.includes('/review/') || endpoint.includes('/rating/')) {
-            invalidateData.reviews();
-          }
-          if (endpoint.includes('/custom/') || endpoint.includes('/special/')) {
-            invalidateData.customRequests();
-          }
-          if (endpoint.includes('/carriage/') || endpoint.includes('/vehicle/')) {
-            invalidateData.carriages();
-          }
-          if (endpoint.includes('/map/') || endpoint.includes('/route/')) {
-            invalidateData.mapData();
-          }
-        }
-        return result.data;
-      } else {
-        throw new Error(result.data?.error || result.error || `HTTP ${result.status}`);
+// Helper function for API calls with improved error handling
+async function apiCall(endpoint, options = {}) {
+  try {
+    const result = await networkClient.request(endpoint, options);
+    
+    // Emit data change events for successful operations (only for write operations)
+    if (options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method.toUpperCase())) {
+      if (endpoint.includes('/ride-hailing/')) {
+        invalidateData.rides();
+        invalidateData.bookings();
       }
-    } catch (error) {
-      lastError = error;
-      
-      // Handle rate limiting (429) and server errors (500)
-      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
-      const isServerError = error.message?.includes('500');
-      
-      if ((isRateLimited || isServerError) && attempt < maxRetries) {
-        const baseDelay = isRateLimited ? 2000 : 1000;
-        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000);
-        console.log(`API call ${isRateLimited ? 'rate limited' : 'server error'}, retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
+      if (endpoint.includes('/complete/') || endpoint.includes('/driver-cancel/') || endpoint.includes('/customer-cancel/')) {
+        invalidateData.earnings();
       }
-      
-      break;
+      if (endpoint.includes('/payment/') || endpoint.includes('/pay/')) {
+        invalidateData.payments();
+        invalidateData.bookings();
+      }
+      if (endpoint.includes('/profile/') || endpoint.includes('/user/')) {
+        invalidateData.profile();
+      }
+      if (endpoint.includes('/review/') || endpoint.includes('/rating/')) {
+        invalidateData.reviews();
+      }
+      if (endpoint.includes('/custom/') || endpoint.includes('/special/')) {
+        invalidateData.customRequests();
+      }
+      if (endpoint.includes('/carriage/') || endpoint.includes('/vehicle/')) {
+        invalidateData.carriages();
+      }
+      if (endpoint.includes('/map/') || endpoint.includes('/route/')) {
+        invalidateData.mapData();
+      }
     }
+    
+    return result;
+  } catch (error) {
+    console.error('API call failed:', error);
+    throw error;
   }
-  
-  console.error('API call failed after all retries:', lastError);
-  throw lastError;
 }
 
 // Create ride hailing booking
@@ -71,7 +48,7 @@ export async function createRideBooking(bookingData) {
   try {
     const result = await apiCall('/ride-hailing/', {
       method: 'POST',
-      body: JSON.stringify(bookingData)
+      body: bookingData
     });
     
     return result;
@@ -97,7 +74,7 @@ export async function acceptRideBooking(bookingId, driverData) {
   try {
     const result = await apiCall(`/ride-hailing/driver-accept/${bookingId}/`, {
       method: 'POST',
-      body: JSON.stringify(driverData)
+      body: driverData
     });
     
     return result;
@@ -112,7 +89,7 @@ export async function completeRideBooking(bookingId, driverData) {
   try {
     const result = await apiCall(`/ride-hailing/complete/${bookingId}/`, {
       method: 'POST',
-      body: JSON.stringify(driverData)
+      body: driverData
     });
     
     return result;
@@ -127,7 +104,7 @@ export async function cancelRideBooking(bookingId, customerData) {
   try {
     const result = await apiCall(`/ride-hailing/customer-cancel/${bookingId}/`, {
       method: 'POST',
-      body: JSON.stringify(customerData)
+      body: customerData
     });
     
     return result;
@@ -142,7 +119,7 @@ export async function driverCancelRideBooking(bookingId, driverData) {
   try {
     const result = await apiCall(`/ride-hailing/driver-cancel/${bookingId}/`, {
       method: 'POST',
-      body: JSON.stringify(driverData)
+      body: driverData
     });
     
     // Emit data invalidation events for cancellation
@@ -218,13 +195,13 @@ export async function updateDriverLocation(userId, latitude, longitude, speed = 
   try {
     const result = await apiCall('/location/update/', {
       method: 'POST',
-      body: JSON.stringify({
+      body: {
         user_id: userId,
         latitude,
         longitude,
         speed,
         heading
-      })
+      }
     });
     return result;
   } catch (error) {
