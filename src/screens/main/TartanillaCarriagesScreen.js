@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, A
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { apiBaseUrl } from '../../services/networkConfig';
+import driverService from '../../services/carriages/fetchDriver';
+
 import { supabase } from '../../services/supabase';
-import { getMyCarriages, getAvailableDrivers, assignDriverToCarriage, createCarriage, createTestDrivers } from '../../services/tartanillaService';
+import { getMyCarriages, assignDriverToCarriage, createCarriage } from '../../services/tartanillaService';
 import { useAuth } from '../../hooks/useAuth';
 
 const { width } = Dimensions.get('window');
@@ -33,60 +35,46 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [assigningDriver, setAssigningDriver] = useState(false);
+  const [driverCache, setDriverCache] = useState({}); // id -> driver details
 
   // All callback functions need to be defined before the conditional return
-  const fetchAvailableDrivers = async () => {
+  const fetchAllDrivers = async () => {
     try {
-      const result = await getAvailableDrivers();
-      if (result.success) {
-        setAvailableDrivers(result.data || []);
-        
-        // Show debug info if no drivers found
-        if (result.data.length === 0 && result.debug) {
-          console.log('No drivers found. Debug info:', result.debug);
-          const debugMsg = `Debug Info:\n` +
-            `Total users: ${result.debug.total_users}\n` +
-            `Total drivers: ${result.debug.total_drivers}\n` +
-            `Available drivers: ${result.debug.available_drivers}`;
-          
-          Alert.alert(
-            'No Drivers Found', 
-            `${debugMsg}\n\nWould you like to create test drivers for development?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Create Test Drivers', 
-                onPress: async () => {
-                  const createResult = await createTestDrivers();
-                  if (createResult.success) {
-                    Alert.alert('Success', 'Test drivers created! Refreshing list...');
-                    await fetchAvailableDrivers();
-                  } else {
-                    Alert.alert('Error', createResult.error || 'Failed to create test drivers');
-                  }
-                }
-              }
-            ]
-          );
+      const drivers = await driverService.getAllDrivers();
+      const list = Array.isArray(drivers) ? drivers : [];
+      setAvailableDrivers(list);
+      // Seed cache by id and user_id for immediate resolution in cards
+      if (list.length) {
+        const updates = {};
+        list.forEach(d => {
+          if (d?.id) updates[String(d.id)] = d;
+          if (d?.user_id) updates[String(d.user_id)] = d;
+        });
+        if (Object.keys(updates).length) {
+          setDriverCache(prev => ({ ...prev, ...updates }));
         }
-      } else {
-        console.error('Error fetching available drivers:', result.error);
-        Alert.alert('Error', result.error || 'Failed to load available drivers');
       }
     } catch (error) {
-      console.error('Error fetching available drivers:', error);
-      Alert.alert('Error', 'Failed to load available drivers');
+      console.error('Error fetching drivers:', error);
+      Alert.alert('Error', error.message || 'Failed to load drivers');
     }
   };
 
-  const handleAssignDriver = async (driverId) => {
-    if (!selectedCarriage) return;
+  const handleAssignDriver = async (driver) => {
+    if (!selectedCarriage || !driver?.id) return;
     
     setAssigningDriver(true);
     try {
-      const result = await assignDriverToCarriage(selectedCarriage.id, driverId);
+      const result = await assignDriverToCarriage(selectedCarriage.id, driver.id);
       
       if (result.success) {
+        // Optimistically seed the cache so UI shows name/email immediately
+        setDriverCache(prev => ({ ...prev, [driver.id]: driver }));
+        // Optionally update the specific carriage locally for instant feedback
+        setCarriages(prev => prev.map(c => c.id === selectedCarriage.id 
+          ? { ...c, assigned_driver_id: driver.id, assigned_driver: c.assigned_driver || null }
+          : c
+        ));
         setShowDriverModal(false);
         Alert.alert('Success', 'Driver invitation sent! Waiting for driver acceptance.', [
           {
@@ -111,7 +99,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const openDriverModal = async (carriage) => {
     setSelectedCarriage(carriage);
     setShowDriverModal(true);
-    await fetchAvailableDrivers();
+    await fetchAllDrivers();
   };
 
   const fetchUserAndCarriages = useCallback(async () => {
@@ -191,6 +179,62 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       fetchUserAndCarriages();
     }
   }, [auth.loading, auth.isAuthenticated, fetchUserAndCarriages, navigation]);
+
+  // When carriages change, hydrate missing driver details into a local cache
+  useEffect(() => {
+    const fetchMissingDrivers = async () => {
+      try {
+        const idsToFetch = (carriages || [])
+          .map(c => c.assigned_driver ? null : c.assigned_driver_id)
+          .filter(id => !!id && !driverCache[id]);
+
+        if (idsToFetch.length === 0) return;
+
+        let unresolved = new Set(idsToFetch);
+
+        // First, try per-ID fetches
+        for (const id of idsToFetch) {
+          try {
+            const d = await driverService.getDriverById(id);
+            if (d) {
+              setDriverCache(prev => ({ ...prev, [id]: d }));
+              unresolved.delete(id);
+            }
+          } catch (e) {
+            // will try bulk fallback below
+          }
+        }
+
+        // Bulk fallback if any unresolved
+        if (unresolved.size > 0) {
+          try {
+            const all = await driverService.getAllDrivers();
+            const byId = new Map();
+            const byUserId = new Map();
+            (Array.isArray(all) ? all : []).forEach(d => {
+              if (d?.id) byId.set(String(d.id), d);
+              if (d?.user_id) byUserId.set(String(d.user_id), d);
+            });
+
+            const updates = {};
+            unresolved.forEach(id => {
+              const key = String(id);
+              const d = byId.get(key) || byUserId.get(key);
+              if (d) updates[key] = d;
+            });
+            if (Object.keys(updates).length > 0) {
+              setDriverCache(prev => ({ ...prev, ...updates }));
+            }
+          } catch (e) {
+            // swallow; not critical for UI
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    fetchMissingDrivers();
+  }, [carriages, driverCache]);
 
   // Show loading while checking authentication
   if (auth.loading) {
@@ -464,11 +508,39 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       status: carriage.status
     });
     
-    const driverName = carriage.assigned_driver?.name || (carriage.assigned_driver_id ? `Driver ID: ${carriage.assigned_driver_id}` : 'Not assigned');
-    const driverEmail = carriage.assigned_driver?.email || (carriage.assigned_driver_id ? `ID: ${carriage.assigned_driver_id}` : '');
+    const cached = driverCache[carriage.assigned_driver_id];
+
+    // Build driver name with multiple fallbacks
+    const buildName = (d) => {
+      if (!d) return null;
+      return (
+        d.name ||
+        d.full_name || d.fullName ||
+        (d.first_name || d.last_name ? `${d.first_name || ''} ${d.last_name || ''}`.trim() : null) ||
+        // nested user object fallback
+        d.user?.name ||
+        (d.user && (d.user.first_name || d.user.last_name) ? `${d.user.first_name || ''} ${d.user.last_name || ''}`.trim() : null) ||
+        d.username ||
+        // last resort: use email or its local-part
+        d.email || (typeof d.email === 'string' ? d.email : null) ||
+        null
+      );
+    };
+
+    const driverName =
+      buildName(carriage.assigned_driver) ||
+      buildName(cached) ||
+      (carriage.assigned_driver_id ? 'Unknown Driver' : 'Unassigned');
+
+    // Driver email
+    const driverEmail =
+      carriage.assigned_driver?.email ||
+      cached?.email ||
+      (carriage.assigned_driver_id ? 'No email' : '');
+
     
     // Show assignment status for owners
-    const assignmentStatus = carriage.status === 'waiting_driver_acceptance' 
+    const assignmentStatus = carriage.status === 'waiting_driver_acceptance'
       ? 'Waiting for driver acceptance'
       : carriage.status === 'driver_assigned'
       ? 'Driver confirmed assignment'
@@ -506,12 +578,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 disabled={assigningDriver}
               >
                 <Ionicons 
-                  name={carriage.assigned_driver ? "sync-outline" : "person-add"} 
+                  name={carriage.assigned_driver || carriage.status === 'waiting_driver_acceptance' ? "sync-outline" : "person-add"} 
                   size={14} 
                   color="#fff"
                 />
                 <Text style={styles.assignButtonText}>
-                  {carriage.assigned_driver ? 'Change' : 'Assign'}
+                  {(carriage.assigned_driver || carriage.status === 'waiting_driver_acceptance') ? 'Change' : 'Assign'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -588,9 +660,9 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             {availableDrivers.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={48} color="#ccc" />
-                <Text style={styles.emptyStateText}>No available drivers found</Text>
+                <Text style={styles.emptyStateText}>No drivers found</Text>
                 <Text style={styles.emptyStateSubtext}>
-                  All drivers are currently assigned to carriages.
+                  Try again later.
                 </Text>
               </View>
             ) : (
@@ -600,7 +672,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 renderItem={({ item }) => (
                   <TouchableOpacity 
                     style={[styles.driverItem, assigningDriver && styles.driverItemDisabled]}
-                    onPress={() => handleAssignDriver(item.id)}
+                    onPress={() => handleAssignDriver(item)}
                     disabled={assigningDriver}
                     activeOpacity={0.7}
                   >
@@ -609,7 +681,16 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                     </View>
                     <View style={styles.driverInfo}>
                       <Text style={styles.driverName}>
-                        {item.name || 'Unknown Driver'}
+                        {(
+                          item.name ||
+                          item.full_name || item.fullName ||
+                          (item.first_name || item.last_name ? `${item.first_name || ''} ${item.last_name || ''}`.trim() : null) ||
+                          item.user?.name ||
+                          (item.user && (item.user.first_name || item.user.last_name) ? `${item.user.first_name || ''} ${item.user.last_name || ''}`.trim() : null) ||
+                          item.username ||
+                          item.email ||
+                          'Unknown Driver'
+                        )}
                       </Text>
                       <Text style={styles.driverEmail} numberOfLines={1}>
                         {item.email || 'No email'}
@@ -631,11 +712,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       </View>
     </Modal>
   );
+  
 
   // Main render function
   return (
     <View style={styles.container}>
-      <TARTRACKHeader 
+      <TARTRACKHeader
         title="My Tartanilla Carriages"
         onNotificationPress={() => navigation.navigate('NotificationScreen')} 
       />
@@ -1560,4 +1642,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
