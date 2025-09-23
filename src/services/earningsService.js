@@ -21,10 +21,38 @@ const EARNINGS_API_BASE_URL = `${apiBaseUrl()}/earnings/`;
  * @param {Object} filters - Optional filters (date_from, date_to, limit)
  * @returns {Promise<Object>} Driver earnings data
  */
+// Request queue to prevent too many concurrent requests
+let requestQueue = [];
+let activeRequests = 0;
+const MAX_CONCURRENT = 3;
+
+function queueRequest(requestFn) {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ requestFn, resolve, reject });
+    processQueue();
+  });
+}
+
+function processQueue() {
+  if (activeRequests >= MAX_CONCURRENT || requestQueue.length === 0) return;
+  
+  const { requestFn, resolve, reject } = requestQueue.shift();
+  activeRequests++;
+  
+  requestFn()
+    .then(resolve)
+    .catch(reject)
+    .finally(() => {
+      activeRequests--;
+      setTimeout(processQueue, 100); // Small delay between requests
+    });
+}
+
 export async function getDriverEarnings(driverId, filters = {}) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+  return queueRequest(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // Reduced timeout
     
     // Build query parameters
     const queryParams = new URLSearchParams();
@@ -101,6 +129,7 @@ export async function getDriverEarnings(driverId, filters = {}) {
     console.error('Error fetching driver earnings:', error);
     throw error;
   }
+  });
 }
 
 /**

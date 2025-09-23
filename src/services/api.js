@@ -22,6 +22,11 @@ export async function fetchExampleData() {
     
     const response = await fetch(`${API_BASE_URL}/example/`, {
       signal: controller.signal,
+      headers: {
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      cache: 'no-store',
     });
     
     clearTimeout(timeoutId);
@@ -30,6 +35,9 @@ export async function fetchExampleData() {
     }
     return await response.json();
   } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
     throw error;
   }
 }
@@ -42,78 +50,120 @@ export async function requestRide({ pickup, destination, userId }) {
     userId,
   });
   
-  // Create an AbortController for manual timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body,
-    signal: controller.signal,
-  });
-  
-  clearTimeout(timeoutId);
-  if (!response.ok) {
-    throw new Error('Failed to request ride');
+  try {
+    // Create an AbortController for manual timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error('Failed to request ride');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
+    throw error;
   }
-  return await response.json();
 }
 
 // Tartanilla Carriage API functions
 export async function getCarriagesByDriver(driverId) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  
-  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`, {
-    signal: controller.signal,
-  });
-  
-  clearTimeout(timeoutId);
-  if (!response.ok) {
-    throw new Error('Failed to fetch carriages');
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`, {
+      signal: controller.signal,
+      headers: {
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error('Failed to fetch carriages');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
+    throw error;
   }
-  return await response.json();
 }
 
 export async function acceptCarriageAssignment(carriageId, driverId) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  
-  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-accept/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ driver_id: driverId }),
-    signal: controller.signal,
-  });
-  
-  clearTimeout(timeoutId);
-  if (!response.ok) {
-    throw new Error('Failed to accept assignment');
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-accept/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body: JSON.stringify({ driver_id: driverId }),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error('Failed to accept assignment');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
+    throw error;
   }
-  return await response.json();
 }
 
 export async function declineCarriageAssignment(carriageId, driverId) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  
-  const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-decline/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ driver_id: driverId }),
-    signal: controller.signal,
-  });
-  
-  clearTimeout(timeoutId);
-  if (!response.ok) {
-    throw new Error('Failed to decline assignment');
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-decline/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body: JSON.stringify({ driver_id: driverId }),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error('Failed to decline assignment');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
+    throw error;
   }
-  return await response.json();
 } 

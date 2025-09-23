@@ -12,58 +12,28 @@ const API_BASE_URL = '/tour-booking';
  * @returns {Promise<Object>} Available bookings
  */
 export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
-  const maxRetries = 3;
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Build query parameters
-      const queryParams = new URLSearchParams();
-      queryParams.append('driver_id', driverId);
-      queryParams.append('status', filters.status || 'pending');
-      
-      Object.keys(filters).forEach(key => {
-        if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          queryParams.append(key, filters[key]);
-        }
-      });
-      
-      const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
-      console.log(`[getAvailableBookingsForDrivers] Calling endpoint: ${endpoint}`);
-      console.log(`[getAvailableBookingsForDrivers] Attempt ${attempt}/${maxRetries}`);
-      
-      const result = await apiClient.get(endpoint);
-      
-      console.log('Available bookings response:', result.data);
-      return result.data;
-    } catch (error) {
-      lastError = error;
-      console.error(`[getAvailableBookingsForDrivers] Error on attempt ${attempt}/${maxRetries}:`, {
-        message: error.message,
-        stack: error.stack,
-        endpoint: `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`
-      });
-      
-      // Handle rate limiting (429) and server errors (500) with exponential backoff
-      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
-      const isServerError = error.message?.includes('500');
-      
-      if ((isRateLimited || isServerError) && attempt < maxRetries) {
-        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
-        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
-        console.log(`[getAvailableBookingsForDrivers] ${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
+  try {
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.append('driver_id', driverId);
+    queryParams.append('status', filters.status || 'pending');
+    
+    Object.keys(filters).forEach(key => {
+      if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        queryParams.append(key, filters[key]);
       }
-      
-      // For non-500 errors or final attempt, break
-      break;
-    }
+    });
+    
+    const endpoint = `${API_BASE_URL}/available-for-drivers/?${queryParams.toString()}`;
+    const result = await apiClient.get(endpoint);
+    
+    console.log('Available bookings response:', result.data);
+    return result.data;
+  } catch (error) {
+    console.error('[getAvailableBookingsForDrivers] Error:', error.message);
+    // Return empty result instead of throwing to prevent app crashes
+    return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
   }
-  
-  console.error('[getAvailableBookingsForDrivers] All retry attempts failed:', lastError);
-  console.error('[getAvailableBookingsForDrivers] Final endpoint that failed:', `${API_BASE_URL}/available-for-drivers/?driver_id=${driverId}&status=${filters.status || 'pending'}`);
-  return { success: true, data: { bookings: [], count: 0, driver_id: driverId } };
 }
 
 /**
@@ -107,6 +77,30 @@ export async function driverAcceptBooking(bookingId, driverData) {
     }
     return result.data;
   } catch (error) {
+    // Handle carriage-related errors gracefully
+    if (error.message && (error.message.includes('HTTP 403') || error.message.includes('HTTP 400'))) {
+      try {
+        // Parse the error response to check for carriage errors
+        const errorMatch = error.message.match(/HTTP (?:403|400): (.+)/);
+        if (errorMatch) {
+          const errorData = JSON.parse(errorMatch[1]);
+          if (errorData.error_code === 'NO_CARRIAGE_ASSIGNED' || errorData.error_code === 'NO_AVAILABLE_CARRIAGE' || errorData.error_code === 'NO_ELIGIBLE_CARRIAGE') {
+            // Return the error as a structured response instead of throwing
+            console.log('Carriage validation response - driver can view but not accept:', errorData);
+            return {
+              success: false,
+              error: errorData.error,
+              error_code: errorData.error_code,
+              can_view_only: errorData.can_view_only || true,
+              friendly_message: errorData.friendly_message
+            };
+          }
+        }
+      } catch (parseError) {
+        console.warn('Could not parse carriage error response:', parseError);
+      }
+    }
+    
     console.error('Error accepting booking:', error);
     throw error;
   }
@@ -119,47 +113,25 @@ export async function driverAcceptBooking(bookingId, driverData) {
  * @returns {Promise<Object>} Driver's bookings
  */
 export async function getDriverBookings(driverId, filters = {}) {
-  const maxRetries = 3;
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Build query parameters
-      const queryParams = new URLSearchParams();
-      Object.keys(filters).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-          queryParams.append(key, filters[key]);
-        }
-      });
-      
-      const endpoint = `${API_BASE_URL}/driver/${driverId}/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-      const result = await apiClient.get(endpoint);
-      
-      console.log('Driver bookings response:', result.data);
-      return result.data;
-    } catch (error) {
-      lastError = error;
-      console.error(`Error fetching driver bookings (attempt ${attempt}/${maxRetries}):`, error);
-      
-      // Handle rate limiting (429) and server errors (500) with exponential backoff
-      const isRateLimited = error.message?.includes('429') || error.message?.includes('throttled');
-      const isServerError = error.message?.includes('500');
-      
-      if ((isRateLimited || isServerError) && attempt < maxRetries) {
-        const baseDelay = isRateLimited ? 2000 : 1000; // Longer delay for rate limiting
-        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000); // Max 10s for rate limits
-        console.log(`${isRateLimited ? 'Rate limited' : 'Server error'}, retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
+  try {
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+        queryParams.append(key, filters[key]);
       }
-      
-      // For non-500 errors or final attempt, break
-      break;
-    }
+    });
+    
+    const endpoint = `${API_BASE_URL}/driver/${driverId}/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    const result = await apiClient.get(endpoint);
+    
+    console.log('Driver bookings response:', result.data);
+    return result.data;
+  } catch (error) {
+    console.error('Error fetching driver bookings:', error.message);
+    // Return empty result instead of throwing to prevent app crashes
+    return { success: true, data: { bookings: [], count: 0, driver_info: { id: driverId, name: 'Driver' }, statistics: { total_bookings: 0, total_earnings: 0 } } };
   }
-  
-  console.error('All retry attempts failed for driver bookings');
-  return { success: true, data: [] };
 }
 
 /**

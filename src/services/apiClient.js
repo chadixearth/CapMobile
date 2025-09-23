@@ -75,6 +75,8 @@ class ApiClient {
       const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'Connection': 'close', // Force connection close to prevent HTTP/2 issues
+        'Cache-Control': 'no-cache',
         ...options.headers,
       };
 
@@ -85,30 +87,16 @@ class ApiClient {
 
       console.log(`[ApiClient] ${options.method || 'GET'} ${this.baseURL}${endpoint}`);
       console.log(`[ApiClient] Auth token:`, token ? 'Present' : 'Missing');
-      console.log(`[ApiClient] Headers:`, headers);
 
       const response = await fetch(`${this.baseURL}${endpoint}`, {
         method: 'GET',
         ...options,
         headers,
         signal: controller.signal,
+        cache: 'no-store', // Prevent caching issues
       });
 
       clearTimeout(timeoutId);
-
-      // Handle auth errors
-      if (response.status === 401 || response.status === 403) {
-        const errorData = await response.text();
-        console.log(`[ApiClient] Auth error:`, errorData);
-        
-        const errorText = errorData || '';
-        if (errorText.includes('token') || errorText.includes('expired') || errorText.includes('invalid')) {
-          console.log('[ApiClient] Token expired, clearing session and redirecting to login');
-          await clearLocalSession();
-          navigateToLogin();
-          throw new Error('Session expired. Please login again.');
-        }
-      }
 
       const contentType = response.headers.get('content-type') || '';
       const data = contentType.includes('application/json') 
@@ -116,12 +104,34 @@ class ApiClient {
         : await response.text();
 
       if (!response.ok) {
-        console.error(`[ApiClient] HTTP Error ${response.status}:`, {
-          url: `${this.baseURL}${endpoint}`,
-          status: response.status,
-          statusText: response.statusText,
-          data: data
-        });
+        // Check if this is a carriage-related business logic error (not a real error)
+        const isCarriageError = (response.status === 400 || response.status === 403) && 
+          data && 
+          (data.error_code === 'NO_CARRIAGE_ASSIGNED' || data.error_code === 'NO_AVAILABLE_CARRIAGE' || data.error_code === 'NO_ELIGIBLE_CARRIAGE');
+        
+        // Handle auth errors (but not carriage errors)
+        if ((response.status === 401 || response.status === 403) && !isCarriageError) {
+          console.log(`[ApiClient] Auth error:`, data);
+          
+          const errorText = typeof data === 'string' ? data : JSON.stringify(data);
+          if (errorText.includes('token') || errorText.includes('expired') || errorText.includes('invalid')) {
+            console.log('[ApiClient] Token expired, clearing session and redirecting to login');
+            await clearLocalSession();
+            navigateToLogin();
+            throw new Error('Session expired. Please login again.');
+          }
+        }
+        
+        if (!isCarriageError) {
+          console.error(`[ApiClient] HTTP Error ${response.status}:`, {
+            url: `${this.baseURL}${endpoint}`,
+            status: response.status,
+            statusText: response.statusText,
+            data: data
+          });
+        } else {
+          console.log(`[ApiClient] Carriage validation response ${response.status}:`, data);
+        }
         
         // Record failure for 5xx errors
         if (response.status >= 500) {
@@ -139,6 +149,20 @@ class ApiClient {
         status: response.status,
       };
     } catch (error) {
+      // Handle connection termination errors specifically
+      const isConnectionError = 
+        error.message?.includes('ConnectionTerminated') ||
+        error.message?.includes('Network request failed') ||
+        error.message?.includes('Connection closed') ||
+        error.message?.includes('ECONNRESET') ||
+        error.name === 'AbortError';
+      
+      if (isConnectionError) {
+        console.warn('[ApiClient] Connection error detected:', error.message);
+        this.recordFailure();
+        throw new Error('Connection lost. Please check your network and try again.');
+      }
+      
       // Record failure for network errors and timeouts
       if (error.name === 'AbortError') {
         this.recordFailure();

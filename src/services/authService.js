@@ -55,8 +55,13 @@ export async function apiRequest(endpoint, options = {}) {
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
-      headers,
+      headers: {
+        ...headers,
+        'Connection': 'close', // Force connection close to prevent HTTP/2 issues
+        'Cache-Control': 'no-cache',
+      },
       signal: controller.signal,
+      cache: 'no-store', // Prevent caching issues
     });
     
     clearTimeout(timeoutId);
@@ -115,6 +120,13 @@ export async function apiRequest(endpoint, options = {}) {
         success: false,
         error: `Cannot connect to server at ${API_BASE_URL}. Please check:\n1. Backend server is running\n2. Device is on same network\n3. IP address is correct\n4. Try updating IP in networkConfig.js` 
       };
+    }
+    
+    // Handle connection termination errors specifically
+    if (error.message?.includes('ConnectionTerminated') || 
+        error.message?.includes('Connection closed') ||
+        error.message?.includes('ECONNRESET')) {
+      return { success: false, error: 'Connection lost. Please check your network and try again.' };
     }
     
     return { success: false, error: error.message || 'Network error occurred' };

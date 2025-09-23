@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { invalidateData } from './dataInvalidationService';
+import networkClient from './networkClient';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -24,22 +25,15 @@ class NotificationService {
   // Send notification to backend
   static async sendNotification(userIds, title, message, type = 'info', role = 'tourist') {
     try {
-      const { apiBaseUrl } = await import('./networkConfig');
-      const response = await fetch(`${apiBaseUrl()}/notifications/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_ids: Array.isArray(userIds) ? userIds : [userIds],
-          title,
-          message,
-          type,
-          role
-        })
+      const result = await networkClient.post('/notifications/', {
+        user_ids: Array.isArray(userIds) ? userIds : [userIds],
+        title,
+        message,
+        type,
+        role
       });
       
-      return await response.json();
+      return result.data;
     } catch (error) {
       console.error('Error sending notification:', error);
       return { success: false, error: error.message };
@@ -54,29 +48,18 @@ class NotificationService {
         return { success: true, data: [] };
       }
       
-      const { apiBaseUrl } = await import('./networkConfig');
-      const url = `${apiBaseUrl()}/notifications/?user_id=${userId}`;
       console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      });
-      
-      if (!response.ok) {
-        console.warn(`[NotificationService] API response not OK: ${response.status}`);
-        return { success: true, data: [] }; // Return empty array instead of error
-      }
-      
-      const result = await response.json();
-      console.log(`[NotificationService] Received ${result.data?.length || 0} notifications for user ${userId}`);
-      return result;
+      const result = await networkClient.get(`/notifications/?user_id=${userId}`);
+      console.log(`[NotificationService] Received ${result.data?.data?.length || 0} notifications for user ${userId}`);
+      return result.data;
     } catch (error) {
-      console.error('[NotificationService] Error fetching notifications:', error);
+      // Don't log timeout errors as errors
+      if ((error.message && error.message.includes('timeout')) || (error.message && error.message.includes('Aborted'))) {
+        console.log('[NotificationService] Request timeout, returning empty notifications');
+      } else {
+        console.error('[NotificationService] Error fetching notifications:', error);
+      }
       return { success: true, data: [] }; // Return empty array on error
     }
   }
@@ -84,15 +67,10 @@ class NotificationService {
   // Mark notification as read
   static async markAsRead(notificationId) {
     try {
-      const { apiBaseUrl } = await import('./networkConfig');
-      const response = await fetch(`${apiBaseUrl()}/notifications/mark-read/`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ notification_id: notificationId })
+      const result = await networkClient.put('/notifications/mark-read/', {
+        notification_id: notificationId
       });
-      return await response.json();
+      return result.data;
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -418,21 +396,14 @@ class NotificationService {
   // Store push token in backend
   static async storePushToken(token) {
     try {
-      const { apiBaseUrl } = await import('./networkConfig');
       const userId = await AsyncStorage.getItem('userId');
       
       if (!userId) return;
       
-      await fetch(`${apiBaseUrl()}/notifications/store-token/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          push_token: token,
-          platform: Platform.OS
-        })
+      await networkClient.post('/notifications/store-token/', {
+        user_id: userId,
+        push_token: token,
+        platform: Platform.OS
       });
     } catch (error) {
       console.error('Error storing push token:', error);

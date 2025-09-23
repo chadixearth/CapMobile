@@ -16,6 +16,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { listGoodsServicesPosts } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
+import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -97,17 +98,10 @@ export default function GoodsServicesScreen() {
               const res = await getUserProfile(id);
               if (res.success && res.data) {
                 const userData = res.data;
-                const name = userData.name || 
-                           userData.full_name ||
-                           [userData.first_name, userData.middle_name, userData.last_name].filter(Boolean).join(' ').trim() ||
-                           userData.email || 
-                           `${userData.role || 'User'}`;
+                const standardizedProfile = standardizeUserProfile(userData);
                 return { 
                   id, 
-                  name, 
-                  email: userData.email || '', 
-                  role: userData.role || 'user',
-                  phone: userData.phone || '',
+                  ...standardizedProfile,
                   profile_photos: userData.profile_photos || userData.photos || []
                 };
               }
@@ -120,7 +114,7 @@ export default function GoodsServicesScreen() {
 
         const mapUpdate = {};
         for (const r of results) {
-          mapUpdate[r.id] = { name: r.name, email: r.email, role: r.role, phone: r.phone };
+          mapUpdate[r.id] = r;
         }
         console.log('Author map updated with:', Object.keys(mapUpdate).length, 'profiles');
         setAuthorMap(mapUpdate);
@@ -250,20 +244,24 @@ export default function GoodsServicesScreen() {
       // Check if it's actual media objects or just placeholder
       const firstItem = item.media[0];
       if (firstItem && typeof firstItem === 'object' && firstItem.url) {
-        mediaArray = item.media;
+        // Ensure URLs point to goods-storage bucket
+        mediaArray = item.media.map(media => ({
+          ...media,
+          url: media.url.includes('goods-storage') ? media.url : media.url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/')
+        }));
       }
     }
     
     // Fallback to other possible fields
     if (mediaArray.length === 0) {
       if (Array.isArray(item.photos) && item.photos.length > 0) {
-        mediaArray = item.photos.map(url => ({ url }));
+        mediaArray = item.photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
       } else if (Array.isArray(item.images) && item.images.length > 0) {
-        mediaArray = item.images.map(url => ({ url }));
+        mediaArray = item.images.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
       } else if (Array.isArray(item.profile_photos) && item.profile_photos.length > 0) {
-        mediaArray = item.profile_photos.map(url => ({ url }));
+        mediaArray = item.profile_photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
       } else if (Array.isArray(authorFromMap.profile_photos) && authorFromMap.profile_photos.length > 0) {
-        mediaArray = authorFromMap.profile_photos.map(url => ({ url }));
+        mediaArray = authorFromMap.profile_photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
       }
     }
     
@@ -296,15 +294,14 @@ export default function GoodsServicesScreen() {
     const userRole = item.author_role || authorFromMap?.role || 'user';
     const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
+    const profilePhoto = getBestAvatarUrl(authorFromMap || item);
 
     return (
       <View style={styles.card}>
         {/* Enhanced Header */}
         <View style={styles.headerRow}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-            </View>
+            <Image source={{ uri: profilePhoto }} style={styles.avatar} />
             {userRole && (
               <View style={styles.roleIndicator}>
                 <Ionicons 

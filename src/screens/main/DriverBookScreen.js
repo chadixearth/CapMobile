@@ -12,6 +12,7 @@ import {
   Easing,
   Pressable,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -49,6 +50,7 @@ import { getCurrentUser } from '../../services/authService';
 import NotificationService from '../../services/notificationService';
 import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
+import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
 
 const RideMap = ({ ride }) => {
   const [mapData, setMapData] = useState(null);
@@ -335,24 +337,16 @@ export default function DriverBookScreen({ navigation }) {
         userId = user.id;
       }
 
-      // Fetch data sequentially with delays to avoid rate limiting
-      try {
-        await fetchAvailableBookings(userId);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        await fetchAvailableCustomTours(userId);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        await fetchAvailableRideBookings();
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        await fetchDriverBookings(userId);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        await fetchDriverCustomTours(userId);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
+      // Fetch data with error handling for each service
+      const fetchPromises = [
+        fetchAvailableBookings(userId).catch(err => console.warn('Available bookings failed:', err.message)),
+        fetchAvailableCustomTours(userId).catch(err => console.warn('Custom tours failed:', err.message)),
+        fetchAvailableRideBookings().catch(err => console.warn('Ride bookings failed:', err.message)),
+        fetchDriverBookings(userId).catch(err => console.warn('Driver bookings failed:', err.message)),
+        fetchDriverCustomTours(userId).catch(err => console.warn('Driver custom tours failed:', err.message))
+      ];
+      
+      await Promise.allSettled(fetchPromises);
     } catch (error) {
       console.error('Error fetching bookings:', error);
       // Don't show alert for 500 errors, just set empty arrays
@@ -382,7 +376,29 @@ export default function DriverBookScreen({ navigation }) {
       } else {
         processedBookings = [];
       }
-      setAvailableBookings(processedBookings);
+      
+      // Fetch customer profiles for each booking with error handling
+      const bookingsWithProfiles = await Promise.allSettled(
+        processedBookings.map(async (booking) => {
+          if (booking.customer_id) {
+            try {
+              const customerProfile = await getTouristProfile(booking.customer_id);
+              return { ...booking, customer_profile: customerProfile };
+            } catch (error) {
+              console.warn(`Failed to fetch profile for customer ${booking.customer_id}:`, error.message);
+              return { ...booking, customer_profile: { id: booking.customer_id, name: 'Tourist', profile_photo: null } };
+            }
+          }
+          return booking;
+        })
+      );
+      
+      // Extract successful results
+      const successfulBookings = bookingsWithProfiles
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value);
+      
+      setAvailableBookings(successfulBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
       setAvailableBookings([]);
@@ -524,7 +540,28 @@ export default function DriverBookScreen({ navigation }) {
         console.error('Error fetching driver ride bookings:', rideError);
       }
       
-      setDriverBookings(processedBookings);
+      // Fetch customer profiles for each booking with error handling
+      const bookingsWithProfiles = await Promise.allSettled(
+        processedBookings.map(async (booking) => {
+          if (booking.customer_id) {
+            try {
+              const customerProfile = await getTouristProfile(booking.customer_id);
+              return { ...booking, customer_profile: customerProfile };
+            } catch (error) {
+              console.warn(`Failed to fetch profile for customer ${booking.customer_id}:`, error.message);
+              return { ...booking, customer_profile: { id: booking.customer_id, name: 'Tourist', profile_photo: null } };
+            }
+          }
+          return booking;
+        })
+      );
+      
+      // Extract successful results
+      const successfulBookings = bookingsWithProfiles
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value);
+      
+      setDriverBookings(successfulBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
       setDriverBookings([]);
@@ -565,7 +602,7 @@ export default function DriverBookScreen({ navigation }) {
           conflictCheck.conflict_reason || 'You have a conflict at this time',
           [
             { text: 'OK' },
-            { text: 'View Schedule', onPress: () => navigation.navigate('DriverSchedule') }
+            { text: 'View Schedule', onPress: () => navigation.navigate(Routes.DRIVER_SCHEDULE) }
           ]
         );
         return;
@@ -738,7 +775,28 @@ export default function DriverBookScreen({ navigation }) {
           },
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to accept booking');
+        // Handle specific carriage-related errors with user-friendly modals
+        if (result.error_code === 'NO_CARRIAGE_ASSIGNED') {
+          Alert.alert(
+            '🚗 Carriage Required',
+            result.friendly_message || 'You need an assigned tartanilla carriage to accept bookings. Please contact admin to get a carriage assigned to you.',
+            [
+              { text: 'OK' },
+              { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else if (result.error_code === 'NO_AVAILABLE_CARRIAGE') {
+          Alert.alert(
+            '🚗 Carriage Not Available',
+            result.friendly_message || 'Your assigned carriage is not available. Please ensure your carriage status is set to available.',
+            [
+              { text: 'OK' },
+              { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else {
+          Alert.alert('Unable to Accept Booking', result.error || 'Failed to accept booking');
+        }
       }
     } catch (error) {
       console.error('Error accepting booking:', error);
@@ -879,21 +937,35 @@ export default function DriverBookScreen({ navigation }) {
 
   const getTouristProfile = async (customerId) => {
     if (!customerId || customerId === 'undefined') {
-      console.warn('No valid customerId provided');
-      return { id: null, name: 'Tourist' };
+      return { id: null, name: 'Tourist', profile_photo: null };
     }
 
-    const { data, error } = await supabase
-      .from('public_user_profiles')
-      .select('id, name')
-      .eq('id', customerId)
-      .maybeSingle();
+    try {
+      // Use only basic fields that definitely exist
+      const { data, error } = await supabase
+        .from('public_user_profiles')
+        .select('id, name')
+        .eq('id', customerId)
+        .maybeSingle();
 
-    if (error) {
-      console.error('Error fetching tourist profile:', error);
-      return { id: customerId, name: 'Tourist' };
+      if (error) {
+        console.warn('Profile fetch error:', error.message);
+        return { id: customerId, name: 'Tourist', profile_photo: null };
+      }
+      
+      if (!data) {
+        return { id: customerId, name: 'Tourist', profile_photo: null };
+      }
+      
+      return {
+        id: data.id || customerId,
+        name: data.name || 'Tourist',
+        profile_photo: null // Use fallback avatar instead
+      };
+    } catch (error) {
+      console.warn('Profile fetch exception:', error.message);
+      return { id: customerId, name: 'Tourist', profile_photo: null };
     }
-    return data || { id: customerId, name: 'Tourist' };
   };
 
 
@@ -995,6 +1067,20 @@ const getCustomTitle = (r) => (
       </View>
 
       <View style={styles.bookingDetails}>
+        {/* Customer Profile Row */}
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Customer:</Text>
+          <View style={styles.customerInfo}>
+            <Image 
+              source={{ uri: getBestAvatarUrl(booking.customer_profile) }} 
+              style={styles.customerAvatar} 
+            />
+            <Text style={styles.customerName}>
+              {booking.customer_profile?.name || 'Tourist'}
+            </Text>
+          </View>
+        </View>
+        
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Package:</Text>
           <Text style={styles.detailValue}>{booking.package_name || 'N/A'}</Text>
@@ -1724,6 +1810,26 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   detailLabel: { fontSize: 13, color: '#777', fontWeight: '600', flex: 1, paddingRight: 10 },
   detailValue: { fontSize: 13, color: '#222', flex: 2, textAlign: 'right' },
+  
+  /* Customer Profile Styles */
+  customerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 2,
+    justifyContent: 'flex-end',
+  },
+  customerAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+
+  customerName: {
+    fontSize: 13,
+    color: '#222',
+    fontWeight: '600',
+  },
 
   /* Buttons */
   acceptButton: {
