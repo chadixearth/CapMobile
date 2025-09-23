@@ -499,6 +499,25 @@ export default function OwnerBreakevenScreen({ navigation, route }) {
     return (currentProfit / totalExpenses) * 100;
   }, [profitPositive, currentProfit, totalExpenses]);
 
+  // ====== NEW: show results only after at least one item has been added ======
+  const hasListValues = useMemo(
+    () => expenseItems.length > 0 || revenueItems.length > 0 || eventItems.length > 0,
+    [expenseItems.length, revenueItems.length, eventItems.length]
+  );
+  const bufferExpenseVal = useMemo(
+    () => parseFloat(String(expenseInput).replace(/,/g, '')) || 0,
+    [expenseInput]
+  );
+  const bufferRevenueVal = useMemo(
+    () => parseFloat(String(revenueInput).replace(/,/g, '')) || 0,
+    [revenueInput]
+  );
+  const bufferEventsVal = useMemo(
+    () => parseInt(String(eventsInput).replace(/,/g, ''), 10) || 0,
+    [eventsInput]
+  );
+  const buffersHaveValues = bufferExpenseVal > 0 || bufferRevenueVal > 0 || bufferEventsVal > 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
@@ -635,6 +654,23 @@ export default function OwnerBreakevenScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
 
+          {/* NEW: gentle notice when nothing added yet */}
+          {!hasListValues && (
+            <View style={styles.tipBanner}>
+              <Ionicons
+                name="information-circle-outline"
+                size={16}
+                color="#0B61A4"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.tipText}>
+                {buffersHaveValues
+                  ? 'Tap Add to include your entries and calculate breakeven and profit.'
+                  : 'Add expenses, revenue, or events above, then tap Add to calculate breakeven and profit.'}
+              </Text>
+            </View>
+          )}
+
           {/* Fare per rent/event = totalRevenue / totalEvents */}
           <Text style={styles.inputLabel}>Fare per rent/event (computed)</Text>
           <View style={styles.inputWrap}>
@@ -739,7 +775,8 @@ export default function OwnerBreakevenScreen({ navigation, route }) {
             </View>
           </View>
 
-          {(profitPositive || hasNetProfit) && (
+          {/* Badges & guidance — only after something has been added */}
+          {hasListValues && (profitPositive || hasNetProfit) && (
             <View style={styles.badgeRow}>
               {profitPositive && (
                 <View style={[styles.badge, styles.badgeBreakeven]}>
@@ -759,7 +796,7 @@ export default function OwnerBreakevenScreen({ navigation, route }) {
             </View>
           )}
 
-          {!profitPositive && (
+          {hasListValues && !profitPositive && (
             <View style={styles.tipBanner}>
               <Ionicons name="information-circle-outline" size={16} color="#0B61A4" style={{ marginRight: 8 }} />
               <Text style={styles.tipText}>
@@ -784,52 +821,54 @@ export default function OwnerBreakevenScreen({ navigation, route }) {
         </View>
 
         {/* ====== Breakeven Summary (reflects calculator data) ====== */}
-        <View style={[card, styles.elevatedCard]}>
-          <View style={styles.summaryHeaderRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <MaterialCommunityIcons name="progress-clock" size={18} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.sectionTitle}>Breakeven Summary</Text>
+        {hasListValues && (
+          <View style={[card, styles.elevatedCard]}>
+            <View style={styles.summaryHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MaterialCommunityIcons name="progress-clock" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.sectionTitle}>Breakeven Summary</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Summary date */}
-          <View style={styles.summaryDateWrap}>
-            <Text style={styles.summaryDateLabel}>Summary date</Text>
-            <Text style={styles.summaryDateValue}>{periodLabel(periodStart, periodEnd, PERIOD_LABEL_TZ)}</Text>
-          </View>
-
-          {/* Summary line based on calculator */}
-          <Text style={styles.summaryLine}>
-            Breakeven at <Text style={styles.strong}>{calcPackagesNeeded || 0}</Text> rent/event package(s). You’re at{' '}
-            <Text style={styles.strong}>{acceptedPackages}</Text>.
-          </Text>
-
-          {/* Progress bar based on revenue vs expenses */}
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${revenueProgress * 100}%` }]} />
-          </View>
-          <View style={styles.progressMeta}>
-            <Text style={styles.progressMetaText}>{Math.round(revenueProgress * 100)}%</Text>
-            <Text style={styles.progressMetaText}>({acceptedPackages}/{calcPackagesNeeded || 0})</Text>
-          </View>
-
-          {/* margin/deficit */}
-          {profitPositive ? (
-            <View style={[styles.callout, styles.calloutSuccess]}>
-              <Ionicons name="shield-checkmark-outline" size={16} color="#1B5E20" style={{ marginRight: 8 }} />
-              <Text style={styles.calloutText}>
-                Safety margin: <Text style={styles.strong}>{safetyMarginPct ? `${safetyMarginPct.toFixed(1)}%` : '—'}</Text>. Keep it up!
-              </Text>
+            {/* Summary date */}
+            <View style={styles.summaryDateWrap}>
+              <Text style={styles.summaryDateLabel}>Summary date</Text>
+              <Text style={styles.summaryDateValue}>{periodLabel(periodStart, periodEnd, PERIOD_LABEL_TZ)}</Text>
             </View>
-          ) : (
-            <View style={[styles.callout, styles.calloutWarn]}>
-              <Ionicons name="alert-outline" size={16} color="#8B2C2C" style={{ marginRight: 8 }} />
-              <Text style={styles.calloutText}>
-                Amount to breakeven: <Text style={styles.strong}>₱ {formatPeso(amountNeedToEarn)}</Text>.
-              </Text>
+
+            {/* Summary line based on calculator */}
+            <Text style={styles.summaryLine}>
+              Breakeven at <Text style={styles.strong}>{calcPackagesNeeded || 0}</Text> rent/event package(s). You’re at{' '}
+              <Text style={styles.strong}>{acceptedPackages}</Text>.
+            </Text>
+
+            {/* Progress bar based on revenue vs expenses */}
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${revenueProgress * 100}%` }]} />
             </View>
-          )}
-        </View>
+            <View style={styles.progressMeta}>
+              <Text style={styles.progressMetaText}>{Math.round(revenueProgress * 100)}%</Text>
+              <Text style={styles.progressMetaText}>({acceptedPackages}/{calcPackagesNeeded || 0})</Text>
+            </View>
+
+            {/* margin/deficit */}
+            {profitPositive ? (
+              <View style={[styles.callout, styles.calloutSuccess]}>
+                <Ionicons name="shield-checkmark-outline" size={16} color="#1B5E20" style={{ marginRight: 8 }} />
+                <Text style={styles.calloutText}>
+                  Safety margin: <Text style={styles.strong}>{safetyMarginPct ? `${safetyMarginPct.toFixed(1)}%` : '—'}</Text>. Keep it up!
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.callout, styles.calloutWarn]}>
+                <Ionicons name="alert-outline" size={16} color="#8B2C2C" style={{ marginRight: 8 }} />
+                <Text style={styles.calloutText}>
+                  Amount to breakeven: <Text style={styles.strong}>₱ {formatPeso(amountNeedToEarn)}</Text>.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ====== Expense Breakdown ====== */}
         <View style={[card, styles.elevatedCard]}>

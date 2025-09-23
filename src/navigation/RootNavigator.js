@@ -33,6 +33,7 @@ import ChatNavigator from '../chat/navigation/ChatNavigator';
 import Communication from '../communication/navigation/CommunicationNavigator';
 import { useAuth } from '../hooks/useAuth';
 import NotificationManager from '../components/NotificationManager';
+import TouristRefundScreen from '../screens/main/TouristRefundScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -114,6 +115,10 @@ export default function RootNavigator() {
           <Stack.Screen name="DriverCarriageAssignments" component={DriverCarriageAssignmentsScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
           <Stack.Screen name="Communication" component={Communication} />
+          <Stack.Screen name={Routes.TOURIST_REFUND} // 'TouristRefundScreen' per your routes.js
+              component={TouristRefundScreen}
+            />
+
         </>
       )}
       </Stack.Navigator>
