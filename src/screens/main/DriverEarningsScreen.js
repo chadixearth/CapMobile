@@ -23,6 +23,59 @@ import {
 
 const { width } = Dimensions.get('window');
 
+/* ----------------------------- Local date helpers ----------------------------- */
+function toLocalYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function addDays(d, n) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function startOfWeekMonday(base = new Date()) {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  const dow = d.getDay(); // 0 Sun .. 6 Sat
+  const offset = (dow + 6) % 7; // 0 if Mon, 6 if Sun
+  d.setDate(d.getDate() - offset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function endOfWeekExclusive(base = new Date()) {
+  const start = startOfWeekMonday(base);
+  return addDays(start, 7); // next Monday (exclusive)
+}
+function startOfMonth(base = new Date()) {
+  return new Date(base.getFullYear(), base.getMonth(), 1);
+}
+function startOfNextMonth(base = new Date()) {
+  return new Date(base.getFullYear(), base.getMonth() + 1, 1);
+}
+function formatSingleDate(ymd) {
+  const d = new Date(ymd + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function formatRangeDisplay(fromYMD, toYMD) {
+  if (!fromYMD || !toYMD) return '';
+  const f = new Date(fromYMD + 'T00:00:00');
+  const t = new Date(toYMD + 'T00:00:00');
+  const sameYear = f.getFullYear() === t.getFullYear();
+  const sameMonth = sameYear && f.getMonth() === t.getMonth();
+  const fmt = (d, withYear = true) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) });
+
+  if (sameMonth) {
+    return `${f.toLocaleString('en-US', { month: 'short' })} ${f.getDate()}–${t.getDate()}, ${t.getFullYear()}`;
+  }
+  if (sameYear) {
+    return `${fmt(f, false)} – ${fmt(t)}`;
+  }
+  return `${fmt(f)} – ${fmt(t)}`;
+}
+
+/* -------------------------------- Component -------------------------------- */
 export default function DriverEarningsScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [earningsData, setEarningsData] = useState(null);
@@ -117,28 +170,36 @@ export default function DriverEarningsScreen({ navigation }) {
     }
   };
 
+  /** Build filters for list view. */
   const getDateFilters = (period) => {
     const now = new Date();
     const filters = {};
 
     switch (period) {
       case 'today': {
-        const today = now.toISOString().split('T')[0];
-        filters.date_from = today;
-        filters.date_to = today;
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // today 00:00
+        const endExcl = addDays(start, 1); // tomorrow 00:00 (exclusive)
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
         break;
       }
       case 'week': {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        filters.date_from = weekAgo.toISOString().split('T')[0];
+        // Explicit Monday → next Monday (exclusive)
+        const start = startOfWeekMonday(now);      // Mon 00:00
+        const endExcl = endOfWeekExclusive(now);   // next Mon 00:00 (exclusive)
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
         break;
       }
       case 'month': {
-        const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-        filters.date_from = monthAgo.toISOString().split('T')[0];
+        // Calendar month: 1st → 1st of next month (exclusive)
+        const start = startOfMonth(now);
+        const endExcl = startOfNextMonth(now);
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
         break;
       }
-      // 'all' means no date filter
+      // 'all' => no date filter
     }
 
     return filters;
@@ -149,6 +210,14 @@ export default function DriverEarningsScreen({ navigation }) {
     await fetchUserAndEarnings();
     setRefreshing(false);
   };
+
+  /** Sum visible list for consistency (used for Today/Week cards). */
+  const visibleTotal = detailedEarnings.reduce(
+    (sum, e) => sum + (Number(e?.driver_earnings) || 0),
+    0
+  );
+  const visibleCount = detailedEarnings.length;
+  const visibleAvg = visibleCount > 0 ? visibleTotal / visibleCount : 0;
 
   const renderPeriodSelector = () => (
     <View style={styles.periodSelector}>
@@ -171,12 +240,58 @@ export default function DriverEarningsScreen({ navigation }) {
     </View>
   );
 
-  /** ------ Redesigned Overview Card (matches Driver Home Income Card) ------ */
+  /** Always show a date line for today/week/month.
+   *  Uses earningsData.period_from/to when available, else local fallback. */
+  const renderRangeLine = () => {
+    const pf = earningsData?.period_from;
+    const pt = earningsData?.period_to;
+
+    if (selectedPeriod === 'today') {
+      const label = pf && pt ? formatSingleDate(pf) : formatSingleDate(toLocalYMD(new Date()));
+      return <Text style={styles.rangeText}>{label}</Text>;
+    }
+
+    if (selectedPeriod === 'week') {
+      if (pf && pt) return <Text style={styles.rangeText}>{formatRangeDisplay(pf, pt)}</Text>;
+      const start = startOfWeekMonday(new Date());
+      const endIncl = addDays(endOfWeekExclusive(new Date()), -1);
+      return (
+        <Text style={styles.rangeText}>
+          {formatRangeDisplay(toLocalYMD(start), toLocalYMD(endIncl))}
+        </Text>
+      );
+    }
+
+    if (selectedPeriod === 'month') {
+      if (pf && pt) return <Text style={styles.rangeText}>{formatRangeDisplay(pf, pt)}</Text>;
+      const start = startOfMonth(new Date());
+      const endIncl = addDays(startOfNextMonth(new Date()), -1);
+      return (
+        <Text style={styles.rangeText}>
+          {formatRangeDisplay(toLocalYMD(start), toLocalYMD(endIncl))}
+        </Text>
+      );
+    }
+
+    return null; // 'all'
+  };
+
+  /** ------ Overview Card ------ */
   const renderEarningsOverview = () => {
-    const totalEarnings = earningsData?.total_driver_earnings || 0;
+    const useVisible = selectedPeriod === 'week' || selectedPeriod === 'today';
+    const totalEarnings = useVisible
+      ? visibleTotal
+      : (earningsData?.total_driver_earnings || 0);
+
+    const totalBookings = useVisible
+      ? visibleCount
+      : (earningsData?.count || 0);
+
+    const avgEarning = useVisible
+      ? visibleAvg
+      : (earningsData?.avg_earning_per_booking || 0);
+
     const changeData = percentageChange || { percentage_change: 0, is_increase: true };
-    const totalBookings = earningsData?.count || 0;
-    const avgEarning = earningsData?.avg_earning_per_booking || 0;
     const yourShare = earningsData?.driver_percentage ?? 80;
 
     const periodTitle =
@@ -190,16 +305,19 @@ export default function DriverEarningsScreen({ navigation }) {
 
     const subText =
       selectedPeriod === 'today'
-        ? (earningsData?.earnings_today || 0) > 0
-          ? `Today: ${formatCurrency(earningsData?.earnings_today || 0)}`
+        ? (visibleTotal || 0) > 0
+          ? `Today: ${formatCurrency(visibleTotal)}`
           : 'No earnings yet today'
         : `${totalBookings} completed · ${formatCurrency(avgEarning)} avg/booking`;
 
     return (
-      <View style={styles.overviewCard /* styled like home incomeCard */}>
-        {/* Top row: title + trend chip */}
+      <View style={styles.overviewCard}>
+        {/* Top row: title + date range + trend chip */}
         <View style={styles.incomeTopRow}>
-          <Text style={styles.incomeTitle}>{periodTitle}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.incomeTitle}>{periodTitle}</Text>
+            {renderRangeLine()}
+          </View>
           <View
             style={[
               styles.trendChip,
@@ -237,7 +355,7 @@ export default function DriverEarningsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Split stats (like home) */}
+        {/* Split stats */}
         <View style={styles.splitRow}>
           <View style={styles.splitCol}>
             <Text style={styles.splitLabel}>Your share</Text>
@@ -288,8 +406,12 @@ export default function DriverEarningsScreen({ navigation }) {
             </View>
 
             <View style={styles.earningAmounts}>
-              <Text style={styles.driverEarning}>{formatCurrency(earning.driver_earnings)}</Text>
-              <Text style={styles.listTotalText}>of {formatCurrency(earning.total_amount)}</Text>
+              <Text style={styles.driverEarning}>
+                {formatCurrency(earning.driver_earnings)}
+              </Text>
+              <Text style={styles.listTotalText}>
+                of {formatCurrency(earning.total_amount)}
+              </Text>
             </View>
           </View>
         ))
@@ -404,7 +526,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
-  /** ------- Overview (styled like Driver Home Income Card) ------- */
+  /* Overview (income card) */
   overviewCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -423,6 +545,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   incomeTitle: { color: '#222', fontWeight: '800', fontSize: 14 },
+  rangeText: { color: '#666', fontSize: 12, marginTop: 2 },
   trendChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -436,7 +559,7 @@ const styles = StyleSheet.create({
   incomeAmount: { fontSize: 28, fontWeight: '900', color: '#222', letterSpacing: 0.2 },
   incomeSub: { color: '#777', marginTop: 2, fontSize: 12 },
 
-  /* Split stats row (same visual language as home) */
+  /* Split stats row */
   splitRow: {
     flexDirection: 'row',
     alignItems: 'center',
