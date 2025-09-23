@@ -478,7 +478,7 @@ export default function DriverHomeScreen({ navigation }) {
           >
             <View style={styles.pendingHeader}>
               <View style={styles.pendingIcon}>
-                <MaterialCommunityIcons name="cart-outline" size={24} color={MAROON} />
+                <MaterialCommunityIcons name="progress-clock" size={24} color={MAROON} />
               </View>
               <View style={styles.pendingInfo}>
                 <Text style={styles.pendingTitle}>Pending Assignments</Text>
@@ -592,13 +592,13 @@ const styles = StyleSheet.create({
 
   /* Pending Assignments */
   pendingCard: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: MAROON_LIGHT,
     borderRadius: 16,
     marginHorizontal: 16,
     marginTop: 12,
     padding: 16,
     borderWidth: 2,
-    borderColor: '#FFB74D',
+    borderColor: MAROON,
   },
   pendingHeader: {
     flexDirection: 'row',
