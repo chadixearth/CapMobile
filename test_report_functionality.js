@@ -3,7 +3,7 @@
  * Run this with: node test_report_functionality.js
  */
 
-const API_BASE_URL = 'http://10.93.130.23:8000/api';
+const API_BASE_URL = 'http://192.168.101.80:8000/api';
 
 async function testTripReport() {
   console.log('🧪 Testing Trip Report Functionality...\n');

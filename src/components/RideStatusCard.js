@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { checkRideStatus, getDriverLocation } from '../services/rideHailingService';
 import LiveTrackingMap from './LiveTrackingMap';
+import { useNavigation } from '@react-navigation/native';
 
 const RideStatusCard = ({ ride, onRefresh }) => {
+  const navigation = useNavigation();
   const [driverLocation, setDriverLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -84,6 +86,20 @@ const RideStatusCard = ({ ride, onRefresh }) => {
     }
   };
 
+  const handleMessageDriver = () => {
+    navigation.navigate('Communication', { 
+      screen: 'ChatRoom',
+      params: { 
+        bookingId: ride.id,
+        subject: `Ride: ${ride.pickup_address?.substring(0, 15) || 'Pickup'} → ${ride.dropoff_address?.substring(0, 15) || 'Destination'}`,
+        participantRole: 'driver',
+        requestType: 'ride_hailing',
+        userRole: 'passenger',
+        contactName: ride.driver_name || 'Driver'
+      }
+    });
+  };
+
   const statusInfo = getStatusInfo();
 
   return (
@@ -118,13 +134,23 @@ const RideStatusCard = ({ ride, onRefresh }) => {
 
       {ride.status === 'driver_assigned' && (
         <>
-          <TouchableOpacity 
-            style={styles.trackButton} 
-            onPress={() => setShowMap(true)}
-          >
-            <Ionicons name="map" size={16} color="#007AFF" />
-            <Text style={styles.trackButtonText}>Track Driver</Text>
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.trackButton]} 
+              onPress={() => setShowMap(true)}
+            >
+              <Ionicons name="map" size={16} color="#007AFF" />
+              <Text style={styles.trackButtonText}>Track Driver</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.messageButton]} 
+              onPress={handleMessageDriver}
+            >
+              <Ionicons name="chatbubble-outline" size={16} color="#34C759" />
+              <Text style={styles.messageButtonText}>Message Driver</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.cashNote}>💰 Cash payment on arrival</Text>
         </>
       )}
@@ -207,20 +233,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  trackButton: {
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0F8FF',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    marginTop: 12,
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  trackButton: {
+    backgroundColor: '#F0F8FF',
   },
   trackButtonText: {
     marginLeft: 6,
     fontSize: 14,
     color: '#007AFF',
+    fontWeight: '600',
+  },
+  messageButton: {
+    backgroundColor: '#F0FFF0',
+    borderWidth: 1,
+    borderColor: '#E8F5E8',
+  },
+  messageButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    color: '#34C759',
     fontWeight: '600',
   },
   mapModal: {
