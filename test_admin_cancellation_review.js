@@ -3,7 +3,7 @@
  * Run this with: node test_admin_cancellation_review.js
  */
 
-const API_BASE_URL = 'http://10.93.130.23:8000/api';
+const API_BASE_URL = 'http://192.168.101.80:8000/api';
 
 async function testAdminReview() {
   console.log('🧪 Testing Admin Cancellation Review...\n');

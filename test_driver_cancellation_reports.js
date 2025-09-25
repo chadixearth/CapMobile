@@ -3,7 +3,7 @@
  * Run this with: node test_driver_cancellation_reports.js
  */
 
-const API_BASE_URL = 'http://10.93.130.23:8000/api';
+const API_BASE_URL = 'http://192.168.101.80:8000/api';
 
 async function testDriverCancellation() {
   console.log('🧪 Testing Enhanced Driver Cancellation Reporting...\n');

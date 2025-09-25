@@ -16,6 +16,7 @@ export const PAYMENT = 'Payment';
 export const BOOKING_CONFIRMATION = 'BookingConfirmation';
 export const DRIVER_SCHEDULE = 'DriverSchedule';
 export const SET_AVAILABILITY = 'SetAvailability';
+export const TOURIST_REFUND = 'TouristRefundScreen';
 
 // Tab names
 export const HOME = 'Home';

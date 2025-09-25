@@ -12,32 +12,19 @@ import {
   Animated,
   Easing,
   Dimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 const MAROON = '#6B2E2B';
-const MAROON_LIGHT = '#F5E9E2';
 const TEXT_DARK = '#1F1F1F';
-const MUTED = '#6B6B6B';
-const CARD_BG = '#FFFFFF';
-const SURFACE = '#F7F7F7';
 const RADIUS = 16;
 const { height: SCREEN_H } = Dimensions.get('window');
 
 // Local image for tartanillas
 const tartanillaImage = require('../../../assets/tartanilla.jpg');
 
-// ---- Helpers ----
-const formatCurrency = (n = 0) =>
-  `₱ ${Number(n || 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-const formatPercentage = (n = 0) => `${Math.abs(Number(n || 0)).toFixed(1)}%`;
-
-// Mock data (replace with your API later)
+// ---- Mock data (replace with your API later) ----
 const MOCK_TARTANILLAS = [
   {
     id: '1',
@@ -96,15 +83,6 @@ const NOTIFS = [
   },
 ];
 
-// Mock earnings (owner)
-const MOCK_EARNINGS = {
-  total_owner_earnings: 12340.0,
-  earnings_today: 520.0,
-  number_tartanillas: 5,
-  avg_earning_per_tartanilla: 457.0,
-  trend: { percentage_change: 8.3, is_increase: true },
-};
-
 export default function OwnerHomeScreen({ navigation }) {
   // Hide the default stack header (keep only TARTRACKHeader)
   useLayoutEffect(() => {
@@ -113,7 +91,6 @@ export default function OwnerHomeScreen({ navigation }) {
 
   const [selected, setSelected] = useState(null);
   const [visible, setVisible] = useState(false);
-  const [loadingEarnings] = useState(false); // set true when wiring real API
   const y = useMemo(() => new Animated.Value(SCREEN_H), []);
 
   const openSheet = (item) => {
@@ -141,12 +118,6 @@ export default function OwnerHomeScreen({ navigation }) {
 
   const preview = MOCK_TARTANILLAS.slice(0, 2);
 
-  // Earnings values (swap with real data later)
-  const totalEarnings = MOCK_EARNINGS.total_owner_earnings || 0;
-  const todayEarnings = MOCK_EARNINGS.earnings_today || 0;
-  const changeData =
-    MOCK_EARNINGS.trend || { percentage_change: 0, is_increase: true };
-
   return (
     <View style={styles.container}>
       {/* Custom Header with Chat + Notification */}
@@ -159,91 +130,9 @@ export default function OwnerHomeScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Earnings Card */}
-        <View style={styles.incomeCard}>
-          <View style={styles.incomeTopRow}>
-            <Text style={styles.incomeTitle}>Owner Earnings (Month)</Text>
-            <View
-              style={[
-                styles.trendChip,
-                { backgroundColor: changeData.is_increase ? '#EAF7EE' : '#FDEEEE' },
-              ]}
-            >
-              <Ionicons
-                name={
-                  changeData.is_increase
-                    ? 'trending-up-outline'
-                    : 'trending-down-outline'
-                }
-                size={14}
-                color={changeData.is_increase ? '#2E7D32' : '#C62828'}
-              />
-              <Text
-                style={[
-                  styles.trendText,
-                  { color: changeData.is_increase ? '#2E7D32' : '#C62828' },
-                ]}
-              >
-                {changeData.is_increase ? '+' : '-'}
-                {formatPercentage(changeData.percentage_change)}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.incomeMainRow}>
-            <View style={{ flex: 1 }}>
-              {loadingEarnings ? (
-                <ActivityIndicator />
-              ) : (
-                <>
-                  <Text style={styles.incomeAmount}>
-                    {formatCurrency(totalEarnings)}
-                  </Text>
-                  <Text style={styles.incomeSub}>
-                    {todayEarnings > 0
-                      ? `Today: ${formatCurrency(todayEarnings)}`
-                      : 'No earnings yet today'}
-                  </Text>
-                </>
-              )}
-            </View>
-            <TouchableOpacity
-              style={styles.detailBtn}
-              onPress={() => navigation?.navigate?.('OwnerEarningsScreen')}
-            >
-              <Ionicons name="arrow-forward" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Bottom stats */}
-          <View style={styles.splitRow}>
-            <View style={styles.splitCol}>
-              <Text style={styles.splitLabel}>Tartanillas</Text>
-              <Text style={styles.splitValue}>
-                {MOCK_EARNINGS.number_tartanillas || 0}
-              </Text>
-            </View>
-            <View style={styles.vDivider} />
-            <View style={styles.splitCol}>
-              <Text style={styles.splitLabel}>Avg / tartanilla</Text>
-              <Text style={styles.splitValue}>
-                {formatCurrency(MOCK_EARNINGS.avg_earning_per_tartanilla || 0)}
-              </Text>
-            </View>
-            <View style={styles.vDivider} />
-            <View style={styles.splitCol}>
-              <Text style={styles.splitLabel}>Today</Text>
-              <Text style={styles.splitValue}>
-                {formatCurrency(todayEarnings || 0)}
-              </Text>
-            </View>
-          </View>
-        </View>
-
         {/* Latest Notifications */}
         <View style={styles.headerRow}>
           <Text style={styles.sectionTitle}>Latest Notifications</Text>
-          {/* CHANGED: unify with header to use 'Notification' route */}
           <TouchableOpacity onPress={() => navigation?.navigate?.('Notification')}>
             <Text style={styles.link}>View all</Text>
           </TouchableOpacity>
@@ -441,57 +330,6 @@ const styles = StyleSheet.create({
   notifTitle: { fontWeight: '700', color: TEXT_DARK },
   notifTime: { color: '#9A9A9A', fontSize: 11 },
   notifBody: { color: '#6D6D6D', fontSize: 12, marginTop: 2 },
-
-  // Earnings
-  incomeCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginTop: 14,
-    padding: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    borderWidth: 1,
-    borderColor: '#F0E7E3',
-  },
-  incomeTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  incomeTitle: { color: TEXT_DARK, fontWeight: '800', fontSize: 14 },
-  trendChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 6,
-  },
-  trendText: { fontWeight: '800', fontSize: 12 },
-  incomeMainRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  incomeAmount: { fontSize: 28, fontWeight: '900', color: TEXT_DARK, letterSpacing: 0.2 },
-  incomeSub: { color: MUTED, marginTop: 2, fontSize: 12 },
-  detailBtn: {
-    backgroundColor: MAROON,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 12,
-  },
-  splitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    padding: 10,
-    marginTop: 12,
-  },
-  vDivider: { width: 1, height: 24, backgroundColor: '#EAEAEA' },
-  splitCol: { flex: 1, alignItems: 'center' },
-  splitLabel: { color: MUTED, fontSize: 11, marginBottom: 2 },
-  splitValue: { color: TEXT_DARK, fontSize: 13, fontWeight: '800' },
 
   // Quick card
   quickCard: {

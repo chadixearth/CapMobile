@@ -46,9 +46,16 @@ export default function MenuScreen({ navigation }) {
         let userData = currentUser;
         if (profileResult.success && profileResult.data) {
           userData = { ...currentUser, ...profileResult.data };
-          // Ensure name is properly constructed from profile data
-          if (profileResult.data.first_name || profileResult.data.middle_name || profileResult.data.last_name) {
-            const fullName = [profileResult.data.first_name, profileResult.data.middle_name, profileResult.data.last_name]
+          if (
+            profileResult.data.first_name ||
+            profileResult.data.middle_name ||
+            profileResult.data.last_name
+          ) {
+            const fullName = [
+              profileResult.data.first_name,
+              profileResult.data.middle_name,
+              profileResult.data.last_name,
+            ]
               .filter(Boolean)
               .join(' ');
             userData.name = fullName;
@@ -106,7 +113,10 @@ export default function MenuScreen({ navigation }) {
 
     setDeletingAccount(true);
     try {
-      const result = await requestAccountDeletion(user.id, 'User requested account deletion from mobile app');
+      const result = await requestAccountDeletion(
+        user.id,
+        'User requested account deactivation from mobile app'
+      );
 
       if (result.success) {
         const days = result.days_remaining || 7;
@@ -115,22 +125,28 @@ export default function MenuScreen({ navigation }) {
           : 'in 7 days';
 
         alert(
-          `Account Deletion Scheduled\n\n` +
-          `Your account will be permanently deleted on ${deletionDate}.\n\n` +
-          `You have ${days} days to change your mind.\n\n` +
-          `To cancel the deletion, simply log in again and your account will be automatically reactivated.\n\n` +
-          `You will now be logged out.`
+          `Account Deactivation Scheduled\n\n` +
+            `Your account will be deactivated now and permanently deleted on ${deletionDate}.\n\n` +
+            `You have ${days} days to change your mind.\n\n` +
+            `To cancel the deactivation, simply log in again and your account will be automatically reactivated.\n\n` +
+            `You will now be logged out.`
         );
 
         setTimeout(async () => {
           await auth.logout();
         }, 100);
       } else {
-        alert(`Failed to request account deletion: ${result.error || 'Unknown error occurred'}`);
+        alert(
+          `Failed to request account deactivation: ${
+            result.error || 'Unknown error occurred'
+          }`
+        );
       }
     } catch (error) {
-      console.error('Account deletion error:', error);
-      alert('An error occurred while requesting account deletion. Please try again.');
+      console.error('Account deactivation error:', error);
+      alert(
+        'An error occurred while requesting account deactivation. Please try again.'
+      );
     } finally {
       setDeletingAccount(false);
       setDeleteAccountVisible(false);
@@ -140,20 +156,29 @@ export default function MenuScreen({ navigation }) {
   const name =
     user?.name || user?.full_name || user?.user_metadata?.name || '';
   const email = user?.email || '';
-  const profilePhoto = user?.profile_photo || user?.profile_photo_url || user?.avatar_url || user?.user_metadata?.profile_photo_url || '';
+  const profilePhoto =
+    user?.profile_photo ||
+    user?.profile_photo_url ||
+    user?.avatar_url ||
+    user?.user_metadata?.profile_photo_url ||
+    '';
   const avatarUrl = profilePhoto
     ? profilePhoto
     : name
-    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6B2E2B&color=fff&size=128`
+    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        name
+      )}&background=6B2E2B&color=fff&size=128`
     : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
 
   const navigateToEarningsDetail = () => {
-      if (user) {
-        navigation.navigate(Routes.DRIVER_EARNINGS);
-      } else {
-        Alert.alert('Login Required', 'Please log in to view detailed earnings.');
-      }
-    };
+    if (user) {
+      navigation.navigate(Routes.DRIVER_EARNINGS);
+    } else {
+      Alert.alert('Login Required', 'Please log in to view detailed earnings.');
+    }
+  };
+
+  const role = (auth.user?.role || '').toLowerCase();
 
   return (
     <View style={styles.container}>
@@ -205,7 +230,21 @@ export default function MenuScreen({ navigation }) {
             label={`My Bookings ${hasData ? `(${bookings.length})` : ''}`}
             onPress={() => navigation.navigate('BookingHistory')}
           />
-          {(auth.user?.role === 'driver' || auth.user?.role === 'owner') && (
+
+          {/* Tourist-only: Refunds */}
+          {role === 'tourist' && (
+            <>
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
+                label="Refunds"
+                onPress={() => navigation.navigate(Routes.TOURIST_REFUND )}
+              />
+            </>
+          )}
+
+          {/* Driver/Owner-only items */}
+          {(role === 'driver' || role === 'owner') && (
             <>
               <Divider />
               <ProfileItem
@@ -225,7 +264,7 @@ export default function MenuScreen({ navigation }) {
                 label="My Tour Packages"
                 onPress={() => navigation.navigate('MyTourPackages')}
               />
-              {auth.user?.role === 'driver' && (
+              {role === 'driver' && (
                 <>
                   <Divider />
                   <ProfileItem
@@ -237,6 +276,7 @@ export default function MenuScreen({ navigation }) {
               )}
             </>
           )}
+
           <Divider />
           <ProfileItem
             icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
@@ -249,7 +289,13 @@ export default function MenuScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.card}>
           <ProfileItem
-            icon={<Ionicons name="information-circle-outline" size={22} color={MAROON} />}
+            icon={
+              <Ionicons
+                name="information-circle-outline"
+                size={22}
+                color={MAROON}
+              />
+            }
             label="About TarTrack"
             onPress={() => navigation.navigate(Routes.ABOUT || 'About')}
           />
@@ -275,28 +321,7 @@ export default function MenuScreen({ navigation }) {
             label="Privacy Policy"
             onPress={() => navigation.navigate(Routes.PRIVACY || 'Privacy')}
           />
-          <Divider />
-          <ProfileItem
-            icon={<MaterialIcons name="delete-forever" size={22} color="#DC3545" />}
-            label="Delete Account"
-            onPress={openDeleteAccountConfirm}
-            textStyle={{ color: '#DC3545' }}
-          />
         </View>
-
-        {/* Data Status (for debugging) */}
-        {__DEV__ && (
-          <View style={styles.debugCard}>
-            <Text style={styles.debugTitle}>API Data Status</Text>
-            <Text style={styles.debugText}>Bookings: {bookings.length} loaded</Text>
-            {(auth.user?.role === 'driver' || auth.user?.role === 'owner') && (
-              <>
-                <Text style={styles.debugText}>Carriages: {userCarriages.length} loaded</Text>
-                <Text style={styles.debugText}>Earnings: {earnings.length > 0 ? 'Loaded' : 'Empty'}</Text>
-              </>
-            )}
-          </View>
-        )}
 
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
@@ -308,9 +333,9 @@ export default function MenuScreen({ navigation }) {
             <>
               <Ionicons
                 name="log-out-outline"
-                size={20}
+                size={22}
                 color="#fff"
-                style={{ marginRight: 8 }}
+                style={{ marginRight: 8}}
               />{' '}
               Log Out
             </>
@@ -371,7 +396,7 @@ export default function MenuScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Delete Account Modal */}
+      {/* Deactivate Account Modal */}
       <Modal
         visible={deleteAccountVisible}
         transparent
@@ -384,11 +409,19 @@ export default function MenuScreen({ navigation }) {
               <MaterialIcons name="delete-forever" size={30} color="#DC3545" />
             </View>
 
-            <Text style={styles.modalTitle}>Delete Account</Text>
+            <Text style={styles.modalTitle}>Deactivate Account</Text>
             <Text style={styles.modalDesc}>
-              Your account will be scheduled for deletion in 7 days. During this time, you can change your mind and cancel the deletion by simply logging in again. After 7 days, all your data will be permanently deleted and cannot be recovered.
+              Your account will be deactivated now and scheduled for permanent
+              deletion in 7 days. During this time, you can change your mind and
+              cancel by simply logging in again. After 7 days, all your data
+              will be permanently deleted and cannot be recovered.
             </Text>
-            <Text style={[styles.modalDesc, { fontWeight: '600', color: '#DC3545', marginTop: 4 }]}>
+            <Text
+              style={[
+                styles.modalDesc,
+                { fontWeight: '600', color: '#DC3545', marginTop: 4 },
+              ]}
+            >
               You will be logged out immediately after confirming.
             </Text>
 
@@ -413,7 +446,7 @@ export default function MenuScreen({ navigation }) {
                 {deletingAccount ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.modalPrimaryText}>Delete Account</Text>
+                  <Text style={styles.modalPrimaryText}>Deactivate Account</Text>
                 )}
               </TouchableOpacity>
             </View>

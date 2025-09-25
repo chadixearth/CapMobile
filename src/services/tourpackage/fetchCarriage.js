@@ -121,12 +121,43 @@ export const carriageService = {
   // Update an existing carriage (PATCH by default)
   async updateCarriage(carriageId, updates) {
     try {
+      // First attempt with PATCH
       const data = await apiCall(`/tartanilla-carriages/${carriageId}/`, {
         method: 'PATCH',
         body: JSON.stringify(updates)
       });
       return unwrapObject(data);
     } catch (error) {
+      // Some backends disallow PATCH and require PUT
+      const msg = String(error?.message || '');
+      if (msg.includes('HTTP 405')) {
+        try {
+          // First try straight PUT with provided updates (some servers accept partial PUT)
+          try {
+            const data = await apiCall(`/tartanilla-carriages/${carriageId}/`, {
+              method: 'PUT',
+              body: JSON.stringify(updates)
+            });
+            return unwrapObject(data);
+          } catch (putErr) {
+            const putMsg = String(putErr?.message || '');
+            if (putMsg.includes('HTTP 400') || putMsg.includes('HTTP 422')) {
+              // Server likely requires full resource on PUT. Fetch current, merge, resend.
+              const current = await apiCall(`/tartanilla-carriages/${carriageId}/`);
+              const merged = { ...(unwrapObject(current) || {}), ...updates };
+              const data2 = await apiCall(`/tartanilla-carriages/${carriageId}/`, {
+                method: 'PUT',
+                body: JSON.stringify(merged)
+              });
+              return unwrapObject(data2);
+            }
+            throw putErr;
+          }
+        } catch (e) {
+          console.error('Error updating carriage with PUT fallback:', e);
+          throw e;
+        }
+      }
       console.error('Error updating carriage:', error);
       throw error;
     }
