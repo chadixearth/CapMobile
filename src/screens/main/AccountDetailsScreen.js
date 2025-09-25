@@ -602,68 +602,8 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-<<<<<<< HEAD
-  const handleChangePassword = async () => {
-    try {
-      setChangingPassword(true);
-      setPasswordMessage('');
-      
-      // Validation
-      if (!currentPassword || !newPassword || !confirmPassword) {
-        setPasswordMessage('All password fields are required.');
-        return;
-      }
-      
-      if (newPassword !== confirmPassword) {
-        setPasswordMessage('New passwords do not match.');
-        return;
-      }
-      
-      if (newPassword.length < 6) {
-        setPasswordMessage('New password must be at least 6 characters long.');
-        return;
-      }
-      
-      if (currentPassword === newPassword) {
-        setPasswordMessage('New password must be different from current password.');
-        return;
-      }
-      
-      const currentUser = await getCurrentUser();
-      if (!currentUser) {
-        setPasswordMessage('You must be logged in to change password.');
-        return;
-      }
-      
-      const result = await changePassword(currentUser.id, currentPassword, newPassword);
-      
-      if (result.success) {
-        setPasswordMessage('Password changed successfully!');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        
-        Alert.alert(
-          'Success',
-          'Your password has been changed successfully!',
-          [{ text: 'OK' }]
-        );
-      } else {
-        setPasswordMessage(result.error || 'Failed to change password.');
-      }
-    } catch (error) {
-      console.error('Change password error:', error);
-      setPasswordMessage('Failed to change password. Please try again.');
-    } finally {
-      setChangingPassword(false);
-    }
-  };
-
-  const deleteEnabled = deleteConfirmText.trim().toUpperCase() === 'DELETE';
-=======
   // Change confirmation keyword from DELETE → DEACTIVATE
   const deleteEnabled = deleteConfirmText.trim().toUpperCase() === 'DEACTIVATE';
->>>>>>> 257cfb16649db1cfd75c7c56b333edcfa90ecab2
 
   return (
     <KeyboardAvoidingView

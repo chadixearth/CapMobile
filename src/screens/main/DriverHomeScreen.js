@@ -1,5 +1,5 @@
 // screens/DriverHomeScreen.js
-import React, { useEffect, useState, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import {
   Alert,
   RefreshControl,
@@ -9,11 +9,11 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Svg, Rect, Polyline, G, Line, Circle } from 'react-native-svg';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
-import LocationStatusIndicator from '../../components/LocationStatusIndicator';
 
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
@@ -23,7 +23,7 @@ import {
   getPendingPayoutAmount,
   formatCurrency,
   formatPercentage,
-} from '../../services/earningsService';
+} from '../../services/Earnings/EarningsService';
 import { getCarriagesByDriver } from '../../services/api';
 import NotificationService from '../../services/notificationService';
 import NotificationManager from '../../components/NotificationManager';
@@ -53,7 +53,22 @@ const defaultNotifications = [
   },
 ];
 
+/* ------------------ helpers ------------------ */
+const formatClockTime = (date) => {
+  if (!date) return '';
+  try {
+    return new Date(date).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+};
+
 /* ------------------ Mini Activity Chart ------------------ */
+import { Svg, Rect, Polyline, G, Line, Circle } from 'react-native-svg';
 function ActivityMiniChart({
   data,
   height = 130,
@@ -78,11 +93,9 @@ function ActivityMiniChart({
   const yTrips = (t) => padding + (1 - (t || 0) / maxTrips) * innerH;
   const yGross = (g) => padding + (1 - (g || 0) / maxGross) * innerH;
 
-  // polylines
   const driverPoints = data.map((d, i) => `${xFor(i) + barW / 2},${yGross((d.gross || 0) * 0.8)}`).join(' ');
   const orgPoints = data.map((d, i) => `${xFor(i) + barW / 2},${yGross((d.gross || 0) * 0.2)}`).join(' ');
 
-  // dots
   const driverDots = data.map((d, i) => ({
     cx: xFor(i) + barW / 2,
     cy: yGross((d.gross || 0) * 0.8),
@@ -153,6 +166,78 @@ function ActivityMiniChart({
   );
 }
 
+/* ------------------ Modern Location Card ------------------ */
+function LocationCard({ locationStatus }) {
+  const { isTracking, lastUpdateTime, error } = locationStatus || {};
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isTracking) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1200, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isTracking, pulse]);
+
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.25] });
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] });
+
+  const pillStyle =
+    error
+      ? { bg: '#FDECEC', fg: '#B91C1C', icon: 'warning' }
+      : isTracking
+      ? { bg: '#EAF7EE', fg: '#2E7D32', icon: 'radio' }
+      : { bg: '#EFEFEF', fg: '#4B5563', icon: 'radio-button-off' };
+
+  const timeText = error
+    ? 'Location error'
+    : isTracking
+    ? `Last update ${formatClockTime(lastUpdateTime)}`
+    : 'Tracking is off';
+
+  return (
+    <View style={styles.locCard}>
+      {/* decorative blobs */}
+      <View style={styles.locBlobOne} />
+      <View style={styles.locBlobTwo} />
+
+      <View style={styles.locHeaderRow}>
+        <View style={styles.locIconWrap}>
+          {isTracking && <Animated.View style={[styles.locPulse, { transform: [{ scale }], opacity }]} />}
+          <View style={styles.locIconCircle}>
+            <Ionicons name="location" size={16} color={MAROON} />
+          </View>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={styles.locTitle}>Live Location</Text>
+          <Text style={styles.locSubtitle}>{timeText}</Text>
+        </View>
+
+        <View style={[styles.locPill, { backgroundColor: pillStyle.bg }]}>
+          <Ionicons
+            name={pillStyle.icon}
+            size={12}
+            color={pillStyle.fg}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.locPillText, { color: pillStyle.fg }]}>
+            {error ? 'Error' : isTracking ? 'On' : 'Off'}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /* ------------------ Screen ------------------ */
 export default function DriverHomeScreen({ navigation }) {
   useLayoutEffect(() => {
@@ -173,7 +258,7 @@ export default function DriverHomeScreen({ navigation }) {
   useEffect(() => {
     fetchUserAndEarnings();
 
-    const initNotifications = async () => {
+    const init = async () => {
       try {
         const currentUser = await getCurrentUser();
         if (currentUser && (currentUser.role === 'driver' || currentUser.role === 'driver-owner')) {
@@ -182,6 +267,7 @@ export default function DriverHomeScreen({ navigation }) {
           } catch {
             console.log('[DriverHome] Push notifications not available');
           }
+
           NotificationService.startPolling(currentUser.id, (newNotifications) => {
             if (newNotifications.length > 0) {
               const latestNotif = newNotifications[0];
@@ -198,29 +284,45 @@ export default function DriverHomeScreen({ navigation }) {
             }
           });
           
-          // Start location tracking for drivers
+          // Start location tracking + realtime updates
           try {
             const LocationService = (await import('../../services/locationService')).default;
             await LocationService.startTracking(currentUser.id);
             setLocationStatus({ isTracking: true, lastUpdateTime: new Date(), error: null });
-            
-            // Listen for location updates
-            const interval = setInterval(() => {
-              setLocationStatus(prev => ({ ...prev, lastUpdateTime: new Date() }));
-            }, 5000);
-            
-            return () => clearInterval(interval);
+
+            // Prefer a native subscription if your service exposes one
+            let unsubscribe = null;
+            if (typeof LocationService.onUpdate === 'function') {
+              unsubscribe = LocationService.onUpdate((payload) => {
+                const ts = payload?.timestamp ? new Date(payload.timestamp) : new Date();
+                setLocationStatus(prev => ({ ...prev, isTracking: true, lastUpdateTime: ts, error: null }));
+              });
+            }
+
+            // Fallback: heartbeat to keep "Last update" fresh if no subscription
+            let heartbeat = null;
+            if (!unsubscribe) {
+              heartbeat = setInterval(() => {
+                setLocationStatus(prev => prev.isTracking ? { ...prev, lastUpdateTime: new Date() } : prev);
+              }, 5000);
+            }
+
+            return () => {
+              if (unsubscribe) unsubscribe();
+              if (heartbeat) clearInterval(heartbeat);
+            };
           } catch (error) {
             console.error('Failed to start location tracking:', error);
             setLocationStatus({ isTracking: false, lastUpdateTime: null, error: error.message });
           }
         }
       } catch (error) {
-        console.error('Error initializing notifications:', error);
+        console.error('Init error:', error);
       }
     };
 
-    initNotifications();
+    const cleanupPromise = init();
+
     return () => {
       NotificationService.stopPolling();
       try {
@@ -230,6 +332,9 @@ export default function DriverHomeScreen({ navigation }) {
       } catch (error) {
         console.error('Failed to stop location tracking:', error);
       }
+      Promise.resolve(cleanupPromise).then((cleanup) => {
+        if (typeof cleanup === 'function') cleanup();
+      });
     };
   }, []);
 
@@ -408,15 +513,6 @@ export default function DriverHomeScreen({ navigation }) {
     { label: 'Sun', trips: 7,  gross: 560 },
   ];
 
-  // To-Be-Paid
-  // Admin uses backend "pending" payouts.
-  // Owner is demo-only: fixed ₱500.00 (no backend connection).
-  const OWNER_DEMO_AMOUNT = 500;
-  const toBePaidRows = [
-    { label: 'Admin', amount: pendingPayoutAmount, status: pendingPayoutAmount > 0 ? 'Pending' : '—' },
-    { label: 'Owner', amount: OWNER_DEMO_AMOUNT, status: '—' },
-  ];
-
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <NotificationManager navigation={navigation} />
@@ -424,12 +520,9 @@ export default function DriverHomeScreen({ navigation }) {
         onMessagePress={() => navigation.navigate('Chat')}
         onNotificationPress={() => navigation.navigate('Notification')}
       />
-      
-      <LocationStatusIndicator 
-        isTracking={locationStatus.isTracking}
-        lastUpdateTime={locationStatus.lastUpdateTime}
-        error={locationStatus.error}
-      />
+
+      {/* Modern Location Card (time updates on each location ping) */}
+      <LocationCard locationStatus={locationStatus} />
 
       <ScrollView
         style={styles.container}
@@ -437,8 +530,11 @@ export default function DriverHomeScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Earnings Card */}
+        {/* Earnings Card with moved background design */}
         <View style={styles.incomeCard}>
+          <View style={styles.incomeBgOne} />
+          <View style={styles.incomeBgTwo} />
+
           <View style={styles.incomeTopRow}>
             <Text style={styles.incomeTitle}>Monthly Income</Text>
             <View
@@ -525,23 +621,36 @@ export default function DriverHomeScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* To be Paid — Owner demo, Admin from backend */}
-        {/* <Text style={styles.section}>To be Paid</Text> */}
+        {/* To be Paid (old design, white bg), with admin processed under the pill */}
         <View style={styles.toBePaidCard}>
-          {toBePaidRows.map((item, idx) => (
-            <View key={`${item.label}-${idx}`}>
-              <View style={styles.toBePaidRow}>
-                <Text style={styles.toBePaidLabel}>{item.label}</Text>
-                <Text style={styles.toBePaidAmount}>{formatCurrency(item.amount)}</Text>
-                <View style={[styles.statusPill, item.status === 'Paid' ? styles.pillPaid : styles.pillPending]}>
-                  <Text style={[styles.statusText, item.status === 'Paid' ? styles.paid : styles.pending]}>
-                    {item.status}
-                  </Text>
-                </View>
+          <View style={styles.toBePaidRow}>
+            <Text style={styles.toBePaidLabel}>Pending Payout</Text>
+
+            <Text style={styles.toBePaidAmount}>{formatCurrency(pendingPayoutAmount)}</Text>
+
+            <View style={styles.toBePaidRight}>
+              <View
+                style={[
+                  styles.statusPill,
+                  pendingPayoutAmount > 0 ? styles.pillPending : styles.pillPaid
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusText,
+                    pendingPayoutAmount > 0 ? styles.pending : styles.paid
+                  ]}
+                >
+                  {pendingPayoutAmount > 0 ? 'Pending' : '—'}
+                </Text>
               </View>
-              {idx < toBePaidRows.length - 1 && <View style={styles.rowDivider} />}
+
+              <View style={styles.adminRow}>
+                <Ionicons name="shield-checkmark-outline" size={12} color={MUTED} />
+                <Text style={styles.adminText}>Admin processed</Text>
+              </View>
             </View>
-          ))}
+          </View>
         </View>
 
         {/* Latest Activity */}
@@ -575,11 +684,79 @@ export default function DriverHomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
+  /* --- Location Card (no actions) --- */
+  locCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: '#FFF9F7',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+    overflow: 'hidden',
+
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  locBlobOne: {
+    position: 'absolute',
+    right: -22,
+    top: -20,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: 'rgba(107,46,43,0.06)',
+  },
+  locBlobTwo: {
+    position: 'absolute',
+    left: -30,
+    bottom: -30,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(107,46,43,0.04)',
+  },
+  locHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  locIconWrap: { width: 42, height: 42, marginRight: 10, alignItems: 'center', justifyContent: 'center' },
+  locPulse: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: MAROON,
+  },
+  locIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ECD9D5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locTitle: { fontSize: 14, fontWeight: '800', color: TEXT },
+  locSubtitle: { fontSize: 12, color: MUTED, marginTop: 2 },
+  locPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#00000010',
+  },
+  locPillText: { fontSize: 12, fontWeight: '800' },
+
+  /* --- Earnings Card (with payout-style background design) --- */
   incomeCard: {
-    backgroundColor: CARD_BG,
+    backgroundColor: '#FFF7F8', // tinted background moved here
     borderRadius: 16,
     marginHorizontal: 16,
-    marginTop: 20,
+    marginTop: 16,
     padding: 16,
     elevation: 2,
     shadowColor: '#000',
@@ -588,7 +765,27 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     borderWidth: 1,
     borderColor: '#F0E7E3',
+    overflow: 'hidden',
   },
+  incomeBgOne: {
+    position: 'absolute',
+    right: -18,
+    top: -22,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(107,46,43,0.05)',
+  },
+  incomeBgTwo: {
+    position: 'absolute',
+    left: -28,
+    bottom: -28,
+    width: 95,
+    height: 95,
+    borderRadius: 48,
+    backgroundColor: 'rgba(107,46,43,0.035)',
+  },
+
   incomeTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   incomeTitle: { color: TEXT, fontWeight: '800', fontSize: 14 },
   trendChip: {
@@ -634,10 +831,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: MAROON,
   },
-  pendingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  pendingHeader: { flexDirection: 'row', alignItems: 'center' },
   pendingIcon: {
     width: 40,
     height: 40,
@@ -647,21 +841,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  pendingInfo: {
-    flex: 1,
-  },
-  pendingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: TEXT,
-    marginBottom: 2,
-  },
-  pendingSubtitle: {
-    fontSize: 13,
-    color: MUTED,
-  },
+  pendingInfo: { flex: 1 },
+  pendingTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 2 },
+  pendingSubtitle: { fontSize: 13, color: MUTED },
 
-  /* To be Paid */
+  /* --- To be Paid (old design, white bg) --- */
   toBePaidCard: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -673,18 +857,22 @@ const styles = StyleSheet.create({
   },
   toBePaidRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
   rowDivider: { height: 1, backgroundColor: '#EAEAEA', marginHorizontal: 14 },
-  toBePaidLabel: { flex: 1, color: TEXT, fontWeight: '500', fontSize: 13 },
-  toBePaidAmount: { color: TEXT, fontWeight: '800', marginRight: 10, fontSize: 13 },
+  toBePaidLabel: { flex: 1, color: TEXT, fontWeight: '700', fontSize: 13 },
+  toBePaidAmount: { color: TEXT, fontWeight: '800', marginRight: 24, fontSize: 15 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   statusText: { fontWeight: '800', fontSize: 12 },
   pillPaid: { backgroundColor: '#E8F5E9', borderColor: '#E8F5E9' },
   pillPending: { backgroundColor: '#E5E5E5', borderColor:'#E5E5E5' },
   paid: { color: '#2E7D32' },
   pending: { color: MAROON },
+  toBePaidRight: { alignItems: 'flex-end' },
+  adminRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center' },
+  adminText: { marginLeft: 5, fontSize: 10, color: MUTED },
 
+  /* Section + lists */
   sectionHeader: {
     marginHorizontal: 16,
-    marginTop: 18,
+    marginTop: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',

@@ -543,7 +543,7 @@ export default function EarningsScreen({ navigation, route }) {
           <View style={[card, styles.elevatedCard, { alignItems: 'center' }]}>
             <ActivityIndicator />
             <Text style={{ marginTop: 8, color: colors.textSecondary, fontSize: 12 }}>
-              Loading earnings & breakeven…
+              Loading earnings for breakeven…
             </Text>
           </View>
         )}

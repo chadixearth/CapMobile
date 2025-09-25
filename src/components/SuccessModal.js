@@ -29,23 +29,27 @@ const SuccessModal = ({
   showIcon = true,
   iconName = 'checkmark-circle',
   iconColor = '#22C55E',
-  iconSize = 48,                // 👈 bigger by default; customize as needed
+  iconSize = 48,
   autoCloseMs,
   showClose = true,
   disableBackdropClose = false,
+  /** 'system' | 'light' | 'dark' — forces the palette used by the modal */
+  theme = 'system',
+  /** optional hard override for the card color (e.g. '#fff') */
+  cardColor,
+  /** optional hard override for the overlay color */
+  overlayColor,
 }) => {
-  // register for auto-close on session expiry
   useEffect(() => {
     if (visible && onClose) {
       return ModalManager.registerModal(onClose);
     }
   }, [visible, onClose]);
 
-  // theming
-  const scheme = useColorScheme() || 'light';
-  const isDark = scheme === 'dark';
+  const systemScheme = useColorScheme() || 'light';
+  const resolvedScheme = theme === 'system' ? systemScheme : theme;
+  const isDark = resolvedScheme === 'dark';
 
-  // animations
   const fade = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.96)).current;
 
@@ -61,7 +65,6 @@ const SuccessModal = ({
     }
   }, [visible]);
 
-  // auto-dismiss
   useEffect(() => {
     if (!visible || !autoCloseMs || !onClose) return;
     const t = setTimeout(onClose, autoCloseMs);
@@ -73,6 +76,8 @@ const SuccessModal = ({
   };
 
   const colors = getColors(isDark);
+  const bgCard = cardColor ?? '#FFFFFF'; // force pure white by default
+  const bgOverlay = overlayColor ?? colors.overlay;
 
   return (
     <Modal
@@ -82,15 +87,14 @@ const SuccessModal = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={[styles.overlay, { backgroundColor: colors.overlay }]} onPress={handleBackdropPress}>
-        {/* Prevent closing when tapping inside the card */}
+      <Pressable style={[styles.overlay, { backgroundColor: bgOverlay }]} onPress={handleBackdropPress}>
         <Pressable onPress={() => {}} style={{ width: '100%' }}>
           <Animated.View
             style={[
               styles.modalContainer,
               {
                 width: CARD_W,
-                backgroundColor: colors.card,
+                backgroundColor: bgCard,
                 borderColor: colors.cardBorder,
                 shadowColor: colors.shadow,
                 opacity: fade,
@@ -98,10 +102,7 @@ const SuccessModal = ({
               },
             ]}
           >
-            {/* Top subtle indicator bar */}
             <View style={[styles.accentBar, { backgroundColor: colors.accent }]} />
-
-            {/* Close button */}
             {showClose && (
               <TouchableOpacity
                 onPress={onClose}
@@ -113,8 +114,6 @@ const SuccessModal = ({
                 <Ionicons name="close" size={20} color={colors.accent} />
               </TouchableOpacity>
             )}
-
-            {/* Icon badge (scales with iconSize) */}
             {showIcon && (
               <View
                 style={[
@@ -131,7 +130,7 @@ const SuccessModal = ({
                   style={[
                     styles.badgeInner,
                     {
-                      backgroundColor: colors.badgeInnerBg,
+                      backgroundColor: '#FFFFFF', // inner badge solid white
                       height: iconSize + 12,
                       width: iconSize + 12,
                       borderRadius: (iconSize + 12) / 2,
@@ -142,8 +141,6 @@ const SuccessModal = ({
                 </View>
               </View>
             )}
-
-            {/* Text */}
             <Text style={[styles.title, { color: colors.title }]} numberOfLines={2}>
               {title}
             </Text>
@@ -151,7 +148,6 @@ const SuccessModal = ({
               {message}
             </Text>
 
-            {/* Actions */}
             <View style={styles.buttonRow}>
               {secondaryAction && (
                 <TouchableOpacity
@@ -178,40 +174,30 @@ const SuccessModal = ({
 };
 
 function getColors(isDark) {
-  // brand accent (from your dashboard palette family)
   const accent = '#6B2E2B';
   return isDark
     ? {
         overlay: 'rgba(2, 6, 23, 0.55)',
-        card: 'rgba(17, 24, 39, 0.92)',            // glassy dark
-        cardBorder: 'rgba(148, 163, 184, 0.14)',    // slate-300/20
-        title: '#F8FAFC',
-        body: 'rgba(226, 232, 240, 0.85)',
-        accent,
-        badgeBg: 'rgba(34,197,94,0.12)',
-        badgeInnerBg: 'rgba(255,255,255,0.08)',
-        shadow: '#000',
-      }
-    : {
-        overlay: 'rgba(17, 24, 39, 0.45)',
-        card: 'rgba(255,255,255,0.96)',            // glassy light
-        cardBorder: 'rgba(2, 6, 23, 0.06)',         // subtle hairline
+        cardBorder: 'rgba(148, 163, 184, 0.14)',
         title: '#0F172A',
         body: 'rgba(15, 23, 42, 0.7)',
         accent,
         badgeBg: 'rgba(34,197,94,0.12)',
-        badgeInnerBg: 'rgba(255,255,255,0.9)',
+        shadow: '#000',
+      }
+    : {
+        overlay: 'rgba(17, 24, 39, 0.45)',
+        cardBorder: 'rgba(2, 6, 23, 0.06)',
+        title: '#0F172A',
+        body: 'rgba(15, 23, 42, 0.7)',
+        accent,
+        badgeBg: 'rgba(34,197,94,0.12)',
         shadow: '#000',
       };
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
   modalContainer: {
     alignSelf: 'center',
     borderRadius: 18,
@@ -219,99 +205,31 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 16,
     borderWidth: 1,
+    borderTopWidth: 0,     // avoid the tiny top hairline
+    overflow: 'hidden',     // hide any child overflow (e.g., accent bar)
     ...Platform.select({
-      ios: {
-        shadowOpacity: 0.18,
-        shadowRadius: 22,
-        shadowOffset: { width: 0, height: 14 },
-      },
-      android: {
-        elevation: 12,
-      },
+      ios: { shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 14 } },
+      android: { elevation: 12 },
     }),
   },
-  accentBar: {
-    height: 3,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    padding: 8,
-    borderRadius: 999,
-  },
-  // base badge styles (sizes are overridden dynamically above)
-  badgeOuter: {
-    alignSelf: 'center',
-    marginTop: 6,
-    marginBottom: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    marginBottom: 6,
-    paddingHorizontal: 6,
-  },
-  message: {
-    textAlign: 'center',
-    fontSize: 15.5,
-    lineHeight: 22,
-    marginBottom: 18,
-    paddingHorizontal: 8,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  accentBar: { height: 4, borderTopLeftRadius: 18, borderTopRightRadius: 18, position: 'absolute', top: 0, left: 0, right: 0 },
+  closeBtn: { position: 'absolute', top: 10, right: 10, padding: 8, borderRadius: 999 },
+  badgeOuter: { alignSelf: 'center', marginTop: 6, marginBottom: 12, alignItems: 'center', justifyContent: 'center' },
+  badgeInner: { alignItems: 'center', justifyContent: 'center' },
+  title: { textAlign: 'center', fontSize: 20, fontWeight: '800', letterSpacing: 0.2, marginBottom: 6, paddingHorizontal: 6 },
+  message: { textAlign: 'center', fontSize: 15.5, lineHeight: 22, marginBottom: 18, paddingHorizontal: 8 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   btnSpacer: { marginRight: 12 },
-  btn: {
-    minWidth: 100,
-    paddingVertical: 14,
-    paddingHorizontal: 22,
-    borderRadius: 999, // pill
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  btn: { minWidth: 100, paddingVertical: 14, paddingHorizontal: 22, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   btnPrimary: {
     ...Platform.select({
-      ios: {
-        shadowOpacity: 0.22,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
-      },
+      ios: { shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } },
       android: { elevation: 3 },
     }),
   },
-  btnPrimaryText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    textAlign: 'center',
-  },
-  btnGhost: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-  },
-  btnGhostText: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    textAlign: 'center',
-  },
+  btnPrimaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.2, textAlign: 'center' },
+  btnGhost: { backgroundColor: 'transparent', borderWidth: 1 },
+  btnGhostText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.2, textAlign: 'center' },
 });
 
 export default SuccessModal;

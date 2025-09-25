@@ -9,6 +9,7 @@ import {
   ScrollView,
   Modal,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -36,7 +37,7 @@ export default function MenuScreen({ navigation }) {
   const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const auth = useAuth();
-  const { bookings, userCarriages, earnings, hasData } = useAuthData();
+  const { bookings, userCarriages, hasData } = useAuthData();
 
   const fetchUser = async () => {
     try {
@@ -182,33 +183,42 @@ export default function MenuScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* TOP APP BAR: Back (left) + Notifications (right) ONLY */}
-      <TARTRACKHeader
-        showBack
-        onBackPress={() => navigation.goBack?.()}
-        showMessage={false}
-        showNotification
-        onNotificationPress={() =>
-          navigation.navigate(Routes.NOTIFICATIONS || 'Notification')
-        }
-        containerStyle={{ backgroundColor: MAROON }}
-        headerStyle={{ backgroundColor: MAROON, borderBottomWidth: 0 }}
-        tint="#fff"
-      />
+      {/* Compact header area */}
+      <View style={styles.hero}>
+        {/* Your requested TARTRACKHeader usage (shows chat+bell via handlers) */}
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      </View>
 
-      {/* User banner (kept) */}
-      <View style={styles.header}>
-        <View style={styles.avatarRow}>
-          <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-          <View style={styles.userInfo}>
-            <Text style={styles.name} numberOfLines={1}>
+      {/* Floating profile card */}
+      <View style={styles.profileCard}>
+        <View style={styles.profileLeft}>
+          <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.profileName} numberOfLines={1}>
               {name || 'Set your account details'}
             </Text>
-            <Text style={styles.email} numberOfLines={1}>
-              {email || ' '}
-            </Text>
+            {!!email && (
+              <Text style={styles.profileEmail} numberOfLines={1}>
+                {email}
+              </Text>
+            )}
           </View>
         </View>
+
+        {/* Icon-only edit */}
+        <TouchableOpacity
+          style={styles.editIconBtn}
+          onPress={() => navigation.navigate(Routes.ACCOUNT_DETAILS)}
+          activeOpacity={0.85}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile"
+        >
+          <Ionicons name="create-outline" size={20} color={MAROON} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -231,19 +241,19 @@ export default function MenuScreen({ navigation }) {
             onPress={() => navigation.navigate('BookingHistory')}
           />
 
-          {/* Tourist-only: Refunds */}
+          {/* Tourist-only */}
           {role === 'tourist' && (
             <>
               <Divider />
               <ProfileItem
                 icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
                 label="Refunds"
-                onPress={() => navigation.navigate(Routes.TOURIST_REFUND )}
+                onPress={() => navigation.navigate(Routes.TOURIST_REFUND)}
               />
             </>
           )}
 
-          {/* Driver/Owner-only items */}
+          {/* Driver/Owner-only */}
           {(role === 'driver' || role === 'owner') && (
             <>
               <Divider />
@@ -323,31 +333,32 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
+        {/* Log Out (inside scroll, right below Legal) */}
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <Button
+            title={
+              <>
+                <Ionicons
+                  name="log-out-outline"
+                  size={22}
+                  color="#fff"
+                  style={{ marginRight: 8 }}
+                />{' '}
+                Log Out
+              </>
+            }
+            onPress={openLogoutConfirm}
+            textStyle={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          />
+        </View>
+
+        {/* Version label right after logout */}
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
-
-      {/* Log Out Button */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
-        <Button
-          title={
-            <>
-              <Ionicons
-                name="log-out-outline"
-                size={22}
-                color="#fff"
-                style={{ marginRight: 8}}
-              />{' '}
-              Log Out
-            </>
-          }
-          onPress={openLogoutConfirm}
-          textStyle={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        />
-      </View>
 
       {/* Logout Modal */}
       <Modal
@@ -473,35 +484,79 @@ function Divider() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
 
-  // Maroon banner holding avatar + name (icons row removed)
-  header: {
+  // Compact header container (just enough space for the header)
+  hero: {
     backgroundColor: MAROON,
-    paddingTop: 12,
-    paddingBottom: 20,
+    paddingTop: 6,
+    paddingBottom: 18, // minimal to keep it tight
     paddingHorizontal: 16,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
+    overflow: 'hidden',
   },
-  avatarRow: { flexDirection: 'row', alignItems: 'center' },
-  avatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    marginRight: 14,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  userInfo: { flex: 1 },
-  name: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  email: { color: '#f3e6e6', fontSize: 13, marginTop: 2 },
 
-  sections: { flex: 1, marginTop: 12 },
+  // Floating profile card
+    profileCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,           // 16 → 18
+    paddingVertical: 14,        // 10 → 14
+    paddingHorizontal: 14,      // 10 → 14
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  profileLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  profileAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: MAROON,
+  },
+  profileName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+  profileEmail: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  editIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8DCD8',
+  },
+
+  // Content
+  sections: { flex: 1, marginTop: 10 },
 
   sectionTitle: {
     color: '#8A8A8A',
     fontSize: 13,
     marginLeft: 20,
-    marginTop: 16,
+    marginTop: 14,
     marginBottom: 6,
     fontWeight: '700',
     letterSpacing: 0.4,
@@ -527,27 +582,6 @@ const styles = StyleSheet.create({
     color: '#9A9A9A',
     fontSize: 12,
     marginTop: 10,
-  },
-
-  debugCard: {
-    backgroundColor: '#F0F8FF',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E0E8F0',
-  },
-  debugTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2E5BBA',
-    marginBottom: 6,
-  },
-  debugText: {
-    fontSize: 11,
-    color: '#5A7BA7',
-    marginBottom: 2,
   },
 
   /* Modals */

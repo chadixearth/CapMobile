@@ -15,9 +15,10 @@ const TARTRACKHeader = ({
   logoSource,
   showMessage = true,
   showNotification = true,
-  tint = '#6B2E2B',
+  // default to white so icons contrast with the dark brand bar
+  tint = '#FFFFFF',
 }) => {
-  const defaultLogo = require('../../assets/TarTrack Logo_sakto.png');
+  const defaultLogo = require('../../assets/tartrack_whitel.png');
   const { unreadCount } = useNotifications();
 
   return (
@@ -88,15 +89,16 @@ const TARTRACKHeader = ({
   );
 };
 
+const BRAND = '#6B2E2B';
+
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#fff',
+    backgroundColor: BRAND,   // brand color behind status bar / notch
   },
   header: {
     height: 56,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: BRAND,   // brand color for the header bar
+    borderBottomWidth: 0,     // remove light border (optional)
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

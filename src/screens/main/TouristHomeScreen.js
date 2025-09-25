@@ -339,41 +339,10 @@ export default function TouristHomeScreen({ navigation }) {
       else setDestination(point);
       return;
     }
-<<<<<<< HEAD
-    
-    // Find nearest map marker instead of road highlight
-    let nearestMarker = null;
-    let minDistance = Infinity;
-    
-    markers.forEach(marker => {
-      const distance = Math.sqrt(
-        Math.pow(marker.latitude - latitude, 2) + 
-        Math.pow(marker.longitude - longitude, 2)
-      ) * 111000; // Rough conversion to meters
-      
-      if (distance < minDistance && distance < 500) { // Within 500m
-        minDistance = distance;
-        nearestMarker = marker;
-      }
-    });
-    
-    console.log('Nearest marker found:', nearestMarker);
-    
-    if (nearestMarker) {
-      const point = {
-        name: nearestMarker.title,
-        latitude: nearestMarker.latitude,
-        longitude: nearestMarker.longitude,
-        id: nearestMarker.id
-      };
-      
-      if (activePicker === 'pickup' && nearestMarker.pointType === 'pickup') {
-=======
     const nearestPoint = findNearestRoadPoint(roadHighlights, latitude, longitude, Infinity);
     if (nearestPoint) {
       const point = { name: nearestPoint.name, latitude: nearestPoint.latitude, longitude: nearestPoint.longitude, id: nearestPoint.id };
       if (activePicker === 'pickup' && nearestPoint.pointType === 'pickup') {
->>>>>>> 257cfb16649db1cfd75c7c56b333edcfa90ecab2
         setPickup(point);
         if (point.id) {
           try {

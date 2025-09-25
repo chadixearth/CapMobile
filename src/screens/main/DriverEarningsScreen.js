@@ -19,7 +19,7 @@ import {
   formatCurrency,
   formatPercentage,
   getDriverEarnings,
-} from '../../services/earningsService';
+} from '../../services/Earnings/EarningsService';
 
 const { width } = Dimensions.get('window');
 
