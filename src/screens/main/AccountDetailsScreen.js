@@ -23,6 +23,7 @@ import {
   getUserProfile,
   updateUserProfile,
   uploadProfilePhoto,
+  changePassword,
 } from '../../services/authService';
 import {
   getGoodsServicesProfileByAuthor,
@@ -68,6 +69,14 @@ export default function AccountDetailsScreen({ navigation }) {
   const [bioMessage, setBioMessage] = useState('');
   const [bioPhotos, setBioPhotos] = useState([]); // array of { uri }
   const [existingBioId, setExistingBioId] = useState(null);
+
+  // Change password state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
 
   // Danger Zone modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -499,6 +508,14 @@ export default function AccountDetailsScreen({ navigation }) {
           const id = returned.id || returned[0]?.id;
           setExistingBioId(id);
         }
+        
+        // Show success alert
+        Alert.alert(
+          'Success',
+          'Your bio has been saved successfully!',
+          [{ text: 'OK' }]
+        );
+        
         setTimeout(async () => {
           try {
             const refreshResult = await getGoodsServicesProfileByAuthor(
@@ -584,6 +601,62 @@ export default function AccountDetailsScreen({ navigation }) {
       Alert.alert('Error', e?.message || 'Failed to schedule deletion.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    try {
+      setChangingPassword(true);
+      setPasswordMessage('');
+      
+      // Validation
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        setPasswordMessage('All password fields are required.');
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        setPasswordMessage('New passwords do not match.');
+        return;
+      }
+      
+      if (newPassword.length < 6) {
+        setPasswordMessage('New password must be at least 6 characters long.');
+        return;
+      }
+      
+      if (currentPassword === newPassword) {
+        setPasswordMessage('New password must be different from current password.');
+        return;
+      }
+      
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        setPasswordMessage('You must be logged in to change password.');
+        return;
+      }
+      
+      const result = await changePassword(currentUser.id, currentPassword, newPassword);
+      
+      if (result.success) {
+        setPasswordMessage('Password changed successfully!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        
+        Alert.alert(
+          'Success',
+          'Your password has been changed successfully!',
+          [{ text: 'OK' }]
+        );
+      } else {
+        setPasswordMessage(result.error || 'Failed to change password.');
+      }
+    } catch (error) {
+      console.error('Change password error:', error);
+      setPasswordMessage('Failed to change password. Please try again.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -716,6 +789,105 @@ export default function AccountDetailsScreen({ navigation }) {
           onPress={handleSave}
           loading={loading}
         />
+
+        {/* Change Password */}
+        <Section 
+          icon="lock-closed-outline" 
+          title="Security"
+          right={
+            <TouchableOpacity
+              onPress={() => setShowPasswords(!showPasswords)}
+              style={styles.iconPill}
+              activeOpacity={0.85}
+            >
+              <Ionicons 
+                name={showPasswords ? "eye-off-outline" : "eye-outline"} 
+                size={16} 
+                color={COLORS.maroon} 
+              />
+            </TouchableOpacity>
+          }
+        >
+          <View style={styles.passwordCard}>
+            <Text style={styles.passwordLabel}>Change Password</Text>
+            <Text style={styles.passwordHelp}>
+              Update your password to keep your account secure.
+            </Text>
+            
+            <View style={styles.fieldStack}>
+              <View style={styles.passwordField}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Current Password"
+                  placeholderTextColor={COLORS.muted}
+                  secureTextEntry={!showPasswords}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              
+              <View style={styles.passwordField}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="New Password (min 6 characters)"
+                  placeholderTextColor={COLORS.muted}
+                  secureTextEntry={!showPasswords}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              
+              <View style={styles.passwordField}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm New Password"
+                  placeholderTextColor={COLORS.muted}
+                  secureTextEntry={!showPasswords}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+            
+            {!!passwordMessage && (
+              <Text
+                style={[
+                  styles.passwordMessage,
+                  /success/i.test(passwordMessage)
+                    ? { color: COLORS.green }
+                    : { color: COLORS.red },
+                ]}
+              >
+                {passwordMessage}
+              </Text>
+            )}
+            
+            <TouchableOpacity
+              onPress={handleChangePassword}
+              style={[
+                styles.passwordBtn,
+                changingPassword && { opacity: 0.7 }
+              ]}
+              disabled={changingPassword}
+              activeOpacity={0.9}
+            >
+              {changingPassword ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="shield-checkmark" size={16} color="#fff" />
+                  <Text style={styles.passwordBtnText}>Change Password</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Section>
 
         {/* Bio (Drivers / Owners) — redesigned */}
         {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
@@ -1403,6 +1575,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+  },
+
+  // ===== Change Password Section =====
+  passwordCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  passwordLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  passwordHelp: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginBottom: 12,
+  },
+  passwordField: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    backgroundColor: '#FBFBFB',
+  },
+  passwordInput: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  passwordMessage: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  passwordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.maroon,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  passwordBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
   },
 
   // ===== Goods & Services Bio (redesign) =====

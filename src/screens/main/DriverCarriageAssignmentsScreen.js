@@ -22,10 +22,12 @@ const CARD_BG = '#FFFFFF';
 const SUCCESS = '#2E7D32';
 const WARNING = '#F57C00';
 
-export default function DriverCarriageAssignmentsScreen({ navigation }) {
+export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader = false }) {
   useLayoutEffect(() => {
-    navigation.setOptions?.({ headerShown: false });
-  }, [navigation]);
+    if (!hideHeader) {
+      navigation.setOptions?.({ headerShown: false });
+    }
+  }, [navigation, hideHeader]);
 
   const [user, setUser] = useState(null);
   const [carriages, setCarriages] = useState([]);
@@ -150,10 +152,12 @@ export default function DriverCarriageAssignmentsScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <TARTRACKHeader
-          onMessagePress={() => navigation.navigate('Chat')}
-          onNotificationPress={() => navigation.navigate('Notification')}
-        />
+        {!hideHeader && (
+          <TARTRACKHeader
+            onMessagePress={() => navigation.navigate('Chat')}
+            onNotificationPress={() => navigation.navigate('Notification')}
+          />
+        )}
         <ActivityIndicator size="large" color={MAROON} />
         <Text style={styles.loadingText}>Loading assignments...</Text>
       </View>
@@ -162,10 +166,12 @@ export default function DriverCarriageAssignmentsScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <TARTRACKHeader
-        onMessagePress={() => navigation.navigate('Chat')}
-        onNotificationPress={() => navigation.navigate('Notification')}
-      />
+      {!hideHeader && (
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      )}
 
       <ScrollView
         style={styles.container}
@@ -173,15 +179,17 @@ export default function DriverCarriageAssignmentsScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color={MAROON} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Carriage Assignments</Text>
-        </View>
+        {!hideHeader && (
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color={MAROON} />
+            </TouchableOpacity>
+            <Text style={styles.title}>Carriage Assignments</Text>
+          </View>
+        )}
 
         {/* Pending Assignments */}
         {pendingCarriages.length > 0 && (

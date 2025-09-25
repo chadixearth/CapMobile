@@ -44,19 +44,13 @@ class LocationService {
         },
         async (location) => {
           const { latitude, longitude, speed, heading } = location.coords;
+          console.log(`[LocationService] New location for ${userId}:`, { latitude, longitude, speed, heading });
           
           try {
-            // Update location in database
-            await supabase
-              .from('driver_locations')
-              .upsert({
-                user_id: userId,
-                latitude,
-                longitude,
-                speed: speed || 0,
-                heading: heading || 0,
-                updated_at: new Date().toISOString(),
-              });
+            // Update location via API
+            const { updateDriverLocation } = await import('./rideHailingService');
+            const result = await updateDriverLocation(userId, latitude, longitude, speed || 0, heading || 0);
+            console.log(`[LocationService] Location update result:`, result);
 
             // Call callback if provided
             if (onLocationUpdate) {
@@ -69,7 +63,7 @@ class LocationService {
               });
             }
           } catch (error) {
-            console.error('Error updating location in database:', error);
+            console.error('Error updating location:', error);
           }
         }
       );
@@ -119,19 +113,23 @@ class LocationService {
   // Get driver locations for tracking
   static async getDriverLocations(driverIds = []) {
     try {
-      let query = supabase
-        .from('driver_locations')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
+      // Use API instead of direct Supabase query
+      const { getDriverLocation } = await import('./rideHailingService');
+      
       if (driverIds.length > 0) {
-        query = query.in('user_id', driverIds);
+        const locations = await Promise.all(
+          driverIds.map(async (driverId) => {
+            const result = await getDriverLocation(driverId);
+            return result.success ? result.data : null;
+          })
+        );
+        return locations.filter(loc => loc !== null);
+      } else {
+        // Get all driver locations via API
+        const { apiRequest } = await import('./authService');
+        const result = await apiRequest('/location/drivers/');
+        return result.success && Array.isArray(result.data) ? result.data : [];
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      return data || [];
     } catch (error) {
       console.error('Error getting driver locations:', error);
       return [];

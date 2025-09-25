@@ -1,5 +1,6 @@
 import { apiBaseUrl } from './networkConfig';
 import { getCurrentUser } from './authService';
+import { supabase } from './supabase';
 
 // Request limiter for tartanilla service
 let lastRequest = 0;
@@ -29,10 +30,9 @@ async function request(path, options = {}) {
     
     clearTimeout(timeoutId);
     
-    // Handle connection errors gracefully
-    if (!response.ok && response.status >= 500) {
-      console.warn(`Server error ${response.status}, returning empty data`);
-      return { ok: true, data: { success: true, data: [] } };
+    // Don't mask server errors - let them bubble up
+    if (!response.ok) {
+      console.error(`Server error ${response.status}:`, response.statusText);
     }
     
     const data = await response.json();
@@ -46,6 +46,18 @@ async function request(path, options = {}) {
   }
 }
 
+export async function testConnection() {
+  try {
+    console.log('Testing API connection...');
+    const res = await request('/tartanilla-carriages/test_connection/');
+    console.log('Test connection response:', res);
+    return res;
+  } catch (error) {
+    console.error('Test connection error:', error);
+    return { ok: false, data: { success: false, error: error.message } };
+  }
+}
+
 export async function getMyCarriages() {
   try {
     const user = await getCurrentUser();
@@ -53,21 +65,40 @@ export async function getMyCarriages() {
       return { success: false, error: 'User not authenticated' };
     }
     
-    // For drivers, get carriages assigned to them
-    if (user.role === 'driver' || user.role === 'driver-owner') {
+    // Test connection first
+    console.log('Testing connection before fetching carriages...');
+    const testRes = await testConnection();
+    console.log('Connection test result:', testRes);
+    
+    // For drivers, get carriages assigned to them (but driver-owners should see owned carriages instead)
+    if (user.role === 'driver') {
+      console.log('Fetching carriages for driver:', user.id);
       const res = await request(`/tartanilla-carriages/get_by_driver/?driver_id=${user.id}`);
+      console.log('Driver carriages response:', res);
+      
       if (res.ok) {
         return { success: true, data: res.data?.data || [] };
       }
+      console.error('Failed to fetch driver carriages:', res.data);
       return { success: false, error: res.data?.error || 'Failed to fetch carriages' };
     }
     
-    // For owners, get carriages they own
-    const res = await request(`/tartanilla-carriages/get_by_owner/?owner_id=${user.id}`);
-    if (res.ok) {
-      return { success: true, data: res.data?.data || [] };
+    // For owners and driver-owners, get carriages they own
+    if (user.role === 'owner' || user.role === 'driver-owner') {
+      console.log('Fetching carriages for owner:', user.id);
+      const res = await request(`/tartanilla-carriages/get_by_owner/?owner_id=${user.id}`);
+      console.log('Owner carriages response:', res);
+      
+      if (res.ok) {
+        return { success: true, data: res.data?.data || [] };
+      }
+      console.error('Failed to fetch owner carriages:', res.data);
+      return { success: false, error: res.data?.error || 'Failed to fetch carriages' };
     }
-    return { success: false, error: res.data?.error || 'Failed to fetch carriages' };
+    
+    // Default case - no carriages
+    return { success: true, data: [] };
+
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -101,6 +132,32 @@ export async function getAvailableDrivers() {
     };
   } catch (error) {
     console.error('Error in getAvailableDrivers:', error);
+    return { 
+      success: false, 
+      error: error.message,
+      data: []
+    };
+  }
+}
+
+export async function getAllDrivers() {
+  try {
+    const res = await request('/tartanilla-carriages/get_all_drivers/');
+    
+    if (res.ok) {
+      const drivers = res.data?.data || [];
+      return { 
+        success: true, 
+        data: drivers
+      };
+    }
+    
+    return { 
+      success: false, 
+      error: res.data?.error || 'Failed to fetch all drivers',
+      data: []
+    };
+  } catch (error) {
     return { 
       success: false, 
       error: error.message,
@@ -151,6 +208,29 @@ export async function assignDriverToCarriage(carriageId, driverId) {
   }
 }
 
+export async function cancelDriverAssignment(carriageId) {
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const res = await request(`/tartanilla-carriages/${carriageId}/cancel-assignment/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        owner_id: user.id
+      }),
+    });
+    
+    if (res.ok) {
+      return { success: true, data: res.data?.data };
+    }
+    return { success: false, error: res.data?.error || 'Failed to cancel assignment' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 export async function createCarriage(carriageData) {
   try {
     const user = await getCurrentUser();
@@ -170,6 +250,30 @@ export async function createCarriage(carriageData) {
       return { success: true, data: res.data?.data };
     }
     return { success: false, error: res.data?.error || 'Failed to create carriage' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function reassignDriver(carriageId, newDriverId) {
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const res = await request(`/tartanilla-carriages/${carriageId}/reassign-driver/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        owner_id: user.id,
+        new_driver_id: newDriverId
+      }),
+    });
+    
+    if (res.ok) {
+      return { success: true, data: res.data?.data };
+    }
+    return { success: false, error: res.data?.error || 'Failed to reassign driver' };
   } catch (error) {
     return { success: false, error: error.message };
   }

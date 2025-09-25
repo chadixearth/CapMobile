@@ -2,6 +2,7 @@
 import { getAccessToken } from './authService';
 import { Platform, NativeModules } from 'react-native';
 import { apiBaseUrl } from './networkConfig';
+import ResponseHandler from './responseHandler';
 
 function getDevServerHost() {
   try {
@@ -50,9 +51,13 @@ function processQueue() {
 
 export async function getDriverEarnings(driverId, filters = {}) {
   return queueRequest(async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // Reduced timeout
+    const maxRetries = 2;
+    let lastError = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // Much shorter timeout
     
     // Build query parameters
     const queryParams = new URLSearchParams();
@@ -71,6 +76,8 @@ export async function getDriverEarnings(driverId, filters = {}) {
     const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       signal: controller.signal,
@@ -78,9 +85,11 @@ export async function getDriverEarnings(driverId, filters = {}) {
     
     clearTimeout(timeoutId);
     
+    // Use enhanced response handler
+    const data = await ResponseHandler.parseResponse(response);
+    
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Earnings API Error Response:', errorText);
+      console.error('Earnings API Error Response:', data);
       
       // Return empty data instead of throwing for 500 errors
       if (response.status >= 500) {
@@ -101,34 +110,51 @@ export async function getDriverEarnings(driverId, filters = {}) {
         };
       }
       
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText.substring(0, 200)}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+        console.log('Driver earnings response:', data);
+        return data;
+      } catch (error) {
+        lastError = error;
+        const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
+        const isNetwork = error?.message?.includes('Network request failed');
+        
+        if ((isAbort || isNetwork) && attempt < maxRetries - 1) {
+          console.warn(`Attempt ${attempt + 1} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        
+        if (isAbort || isNetwork) {
+          console.warn('Driver earnings request failed. Returning empty data.');
+          return { 
+            success: true, 
+            data: { 
+              earnings: [], 
+              statistics: {
+                total_driver_earnings: 0,
+                count: 0
+              }
+            } 
+          };
+        }
+        
+        throw error;
+      }
     }
     
-    const data = await response.json();
-    console.log('Driver earnings response:', data);
-    return data;
-  } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Driver earnings request aborted/timeout. Returning empty data.');
-      return { 
-        success: true, 
-        data: { 
-          earnings: [], 
-          statistics: {
-            total_revenue: 0,
-            total_driver_earnings: 0,
-            total_admin_earnings: 0,
-            admin_percentage: 20,
-            driver_percentage: 80,
-            count: 0
-          }
-        } 
-      };
-    }
-    console.error('Error fetching driver earnings:', error);
-    throw error;
-  }
+    // If all retries failed, return safe fallback
+    console.error('All retries failed:', lastError);
+    return { 
+      success: true, 
+      data: { 
+        earnings: [], 
+        statistics: {
+          total_driver_earnings: 0,
+          count: 0
+        }
+      } 
+    };
   });
 }
 
@@ -419,7 +445,7 @@ export async function getPendingPayoutAmount(driverId) {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // Very short timeout
 
     const url = `${EARNINGS_API_BASE_URL}pending/`;
     const token = await getAccessToken().catch(() => null);
@@ -437,7 +463,8 @@ export async function getPendingPayoutAmount(driverId) {
       throw new Error(`HTTP ${resp.status}: ${txt.substring(0, 200)}`);
     }
 
-    const rows = await resp.json(); // array of { id, driver_id, driver_name, total_amount, payout_date, remarks, status }
+    // Use ResponseHandler for safe JSON parsing
+    const rows = await ResponseHandler.parseResponse(resp); // array of { id, driver_id, driver_name, total_amount, payout_date, remarks, status }
     const mine = (Array.isArray(rows) ? rows : []).filter(
       (p) => String(p?.driver_id || '') === String(driverId) && String(p?.status || '').toLowerCase() === 'pending'
     );

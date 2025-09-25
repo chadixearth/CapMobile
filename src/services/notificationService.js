@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { invalidateData } from './dataInvalidationService';
 import networkClient from './networkClient';
+import ResponseHandler from './responseHandler';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -45,22 +46,34 @@ class NotificationService {
     try {
       if (!userId) {
         console.warn('[NotificationService] No user ID provided');
-        return { success: true, data: [] };
+        return ResponseHandler.createSafeResponse([]);
       }
       
       console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
       
-      const result = await networkClient.get(`/notifications/?user_id=${userId}`);
-      console.log(`[NotificationService] Received ${result.data?.data?.length || 0} notifications for user ${userId}`);
-      return result.data;
+      // Use shorter timeout for notifications to prevent blocking
+      const result = await networkClient.get(`/notifications/?user_id=${userId}`, {
+        timeout: 8000, // Reduced from 15s to 8s
+        retries: 2     // Reduced from 3 to 2 retries
+      });
+      
+      // Ensure result has proper structure
+      if (!result || !result.data) {
+        return ResponseHandler.createSafeResponse([]);
+      }
+      
+      const notifications = result.data?.data || result.data || [];
+      console.log(`[NotificationService] Received ${notifications.length} notifications for user ${userId}`);
+      
+      return ResponseHandler.createSafeResponse(notifications);
     } catch (error) {
-      // Don't log timeout errors as errors
-      if ((error.message && error.message.includes('timeout')) || (error.message && error.message.includes('Aborted'))) {
-        console.log('[NotificationService] Request timeout, returning empty notifications');
+      // Don't log timeout errors as errors - they're expected sometimes
+      if (error.message && error.message.includes('timeout')) {
+        console.log('[NotificationService] Request timeout - returning cached data');
       } else {
         console.error('[NotificationService] Error fetching notifications:', error);
       }
-      return { success: true, data: [] }; // Return empty array on error
+      return ResponseHandler.handleError(error, []);
     }
   }
 
@@ -99,7 +112,7 @@ class NotificationService {
       }
     });
     
-    // Poll every 30 seconds for new notifications (reduced frequency to prevent rate limiting)
+    // Poll every 45 seconds for new notifications (increased to reduce server load)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
@@ -168,14 +181,22 @@ class NotificationService {
           this.lastNotificationCheck = new Date();
         }
       } catch (error) {
-        // Ignore polling errors
+        // Silently handle polling errors - don't log timeouts
+        if (!error.message || !error.message.includes('timeout')) {
+          console.warn('[NotificationService] Polling error (non-timeout):', error.message);
+        }
       }
-    }, 30000);
+    }, 45000);
 
-    // Initial load
+    // Initial load with timeout handling
     this.getNotifications(userId).then(result => {
       if (result.success && callback) {
         callback(result.data || []);
+      }
+    }).catch(error => {
+      // Handle initial load errors gracefully
+      if (callback) {
+        callback([]);
       }
     });
   }

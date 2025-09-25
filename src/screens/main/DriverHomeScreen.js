@@ -13,6 +13,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Svg, Rect, Polyline, G, Line, Circle } from 'react-native-svg';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import LocationStatusIndicator from '../../components/LocationStatusIndicator';
 
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
@@ -167,6 +168,7 @@ export default function DriverHomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [locationStatus, setLocationStatus] = useState({ isTracking: false, lastUpdateTime: null, error: null });
 
   useEffect(() => {
     fetchUserAndEarnings();
@@ -195,6 +197,23 @@ export default function DriverHomeScreen({ navigation }) {
               }
             }
           });
+          
+          // Start location tracking for drivers
+          try {
+            const LocationService = (await import('../../services/locationService')).default;
+            await LocationService.startTracking(currentUser.id);
+            setLocationStatus({ isTracking: true, lastUpdateTime: new Date(), error: null });
+            
+            // Listen for location updates
+            const interval = setInterval(() => {
+              setLocationStatus(prev => ({ ...prev, lastUpdateTime: new Date() }));
+            }, 5000);
+            
+            return () => clearInterval(interval);
+          } catch (error) {
+            console.error('Failed to start location tracking:', error);
+            setLocationStatus({ isTracking: false, lastUpdateTime: null, error: error.message });
+          }
         }
       } catch (error) {
         console.error('Error initializing notifications:', error);
@@ -202,7 +221,16 @@ export default function DriverHomeScreen({ navigation }) {
     };
 
     initNotifications();
-    return () => NotificationService.stopPolling();
+    return () => {
+      NotificationService.stopPolling();
+      try {
+        import('../../services/locationService').then(({ default: LocationService }) => {
+          LocationService.stopTracking();
+        });
+      } catch (error) {
+        console.error('Failed to stop location tracking:', error);
+      }
+    };
   }, []);
 
   const fetchUserAndEarnings = async () => {
@@ -395,6 +423,12 @@ export default function DriverHomeScreen({ navigation }) {
       <TARTRACKHeader
         onMessagePress={() => navigation.navigate('Chat')}
         onNotificationPress={() => navigation.navigate('Notification')}
+      />
+      
+      <LocationStatusIndicator 
+        isTracking={locationStatus.isTracking}
+        lastUpdateTime={locationStatus.lastUpdateTime}
+        error={locationStatus.error}
       />
 
       <ScrollView

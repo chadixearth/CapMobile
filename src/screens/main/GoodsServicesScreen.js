@@ -412,7 +412,7 @@ export default function GoodsServicesScreen() {
         data={posts}
         keyExtractor={(item, index) => `${item.id || index}`}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={!loading ? (
           <View style={styles.emptyContainer}>
@@ -421,19 +421,22 @@ export default function GoodsServicesScreen() {
             <Text style={styles.emptySubtext}>Drivers and owners can create posts to showcase their services.</Text>
           </View>
         ) : null}
-        showsVerticalScrollIndicator={false}
+        ListFooterComponent={
+          <View style={styles.footer}>
+            <Button
+              title={loading ? 'Loading...' : 'Refresh'}
+              onPress={() => {
+                fetchPosts();
+                fetchRecentReviews();
+              }}
+            />
+          </View>
+        }
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+        scrollEnabled={true}
+        bounces={true}
       />
-
-      {/* ✅ Keep the refresh button (no custom request button) */}
-      <View style={styles.footer}>
-        <Button
-          title={loading ? 'Loading...' : 'Refresh'}
-          onPress={() => {
-            fetchPosts();
-            fetchRecentReviews();
-          }}
-        />
-      </View>
     </View>
   );
 }
@@ -459,7 +462,7 @@ const RADIUS = 14;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  listContent: { padding: 16, paddingBottom: 24 },
+  listContent: { padding: 16, paddingBottom: 100 },
   error: { color: 'red', padding: 16 },
   emptyContainer: {
     alignItems: 'center',

@@ -19,12 +19,24 @@ const RideStatusCard = ({ ride, onRefresh }) => {
 
   const fetchDriverLocation = async () => {
     try {
+      console.log(`[RideStatusCard] Fetching location for driver: ${ride.driver_id}`);
       const result = await getDriverLocation(ride.driver_id);
+      console.log(`[RideStatusCard] Location result:`, result);
+      
       if (result.success && result.data) {
-        setDriverLocation(result.data);
+        const locationData = {
+          ...result.data,
+          latitude: parseFloat(result.data.latitude),
+          longitude: parseFloat(result.data.longitude),
+          lastUpdate: new Date(result.data.updated_at || Date.now())
+        };
+        console.log(`[RideStatusCard] Setting driver location:`, locationData);
+        setDriverLocation(locationData);
+      } else {
+        console.log('[RideStatusCard] No driver location found:', result.error);
       }
     } catch (error) {
-      console.error('Error fetching driver location:', error);
+      console.error('[RideStatusCard] Error fetching driver location:', error);
     }
   };
 
@@ -55,10 +67,10 @@ const RideStatusCard = ({ ride, onRefresh }) => {
         return {
           icon: 'car-outline',
           color: '#007AFF',
-          text: `${ride.driver_name} is on the way`,
+          text: `${ride.driver_name || 'Driver'} is on the way`,
           subtitle: driverLocation ? 
-            `Driver is ${Math.round(driverLocation.distance || 0)}m away` : 
-            'Driver location updating...'
+            `Location updated ${driverLocation.lastUpdate ? driverLocation.lastUpdate.toLocaleTimeString() : 'recently'}` : 
+            'Getting driver location...'
         };
       case 'in_progress':
         return {

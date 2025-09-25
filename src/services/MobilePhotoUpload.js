@@ -109,9 +109,11 @@ export default class MobilePhotoUpload {
    * @param {string} imageUri - The image URI to upload
    * @returns {Promise<Object>} Upload result
    */
-  async uploadProfilePhoto(userId, imageUri) {
+  async uploadProfilePhoto(userId, imageUri, retryCount = 0) {
+    const maxRetries = 2;
+    
     try {
-      console.log('MobilePhotoUpload: Uploading profile photo for user:', userId);
+      console.log('MobilePhotoUpload: Uploading profile photo for user:', userId, `(attempt ${retryCount + 1})`);
       console.log('Image URI:', imageUri.substring(0, 100) + '...');
       
       // Create FormData for file upload
@@ -141,6 +143,7 @@ export default class MobilePhotoUpload {
         body: formData,
         signal: controller.signal,
         headers: {
+          'Accept': 'application/json',
           // Don't set Content-Type - let FormData set it with boundary
         },
       });
@@ -189,10 +192,24 @@ export default class MobilePhotoUpload {
     } catch (error) {
       console.error('Profile photo upload error:', error);
       
+      // Retry logic for network failures
+      if (retryCount < maxRetries && (error.message.includes('Network request failed') || error.name === 'TypeError')) {
+        console.log(`Retrying upload... (${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Progressive delay
+        return this.uploadProfilePhoto(userId, imageUri, retryCount + 1);
+      }
+      
       if (error.name === 'AbortError') {
         return {
           success: false,
           error: 'Upload timeout - please check your connection and try again'
+        };
+      }
+      
+      if (error.message.includes('Network request failed')) {
+        return {
+          success: false,
+          error: 'Network connection failed. Please check your internet connection and try again.'
         };
       }
       

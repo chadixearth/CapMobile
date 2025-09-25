@@ -268,7 +268,7 @@ export default function TouristHomeScreen({ navigation }) {
             };
           });
           setAllMarkers(processedMarkers);
-          setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
+          setMarkers(processedMarkers); // Show all markers initially
         }
         
         // Load road highlights for ride hailing
@@ -395,19 +395,33 @@ export default function TouristHomeScreen({ navigation }) {
       return;
     }
     
-    // Auto-snap to nearest road highlight
-    const nearestPoint = findNearestRoadPoint(roadHighlights, latitude, longitude, Infinity);
-    console.log('Nearest point found:', nearestPoint);
+    // Find nearest map marker instead of road highlight
+    let nearestMarker = null;
+    let minDistance = Infinity;
     
-    if (nearestPoint) {
+    markers.forEach(marker => {
+      const distance = Math.sqrt(
+        Math.pow(marker.latitude - latitude, 2) + 
+        Math.pow(marker.longitude - longitude, 2)
+      ) * 111000; // Rough conversion to meters
+      
+      if (distance < minDistance && distance < 500) { // Within 500m
+        minDistance = distance;
+        nearestMarker = marker;
+      }
+    });
+    
+    console.log('Nearest marker found:', nearestMarker);
+    
+    if (nearestMarker) {
       const point = {
-        name: nearestPoint.name,
-        latitude: nearestPoint.latitude,
-        longitude: nearestPoint.longitude,
-        id: nearestPoint.id
+        name: nearestMarker.title,
+        latitude: nearestMarker.latitude,
+        longitude: nearestMarker.longitude,
+        id: nearestMarker.id
       };
       
-      if (activePicker === 'pickup' && nearestPoint.pointType === 'pickup') {
+      if (activePicker === 'pickup' && nearestMarker.pointType === 'pickup') {
         setPickup(point);
         // Load routes for this pickup point
         if (point.id) {
@@ -451,7 +465,7 @@ export default function TouristHomeScreen({ navigation }) {
             console.error('Error loading routes:', error);
           }
         }
-      } else if (activePicker === 'destination' && nearestPoint.pointType === 'dropoff') {
+      } else if (activePicker === 'destination' && nearestMarker.pointType === 'dropoff') {
         setDestination(point);
       }
     } else {
@@ -990,7 +1004,7 @@ export default function TouristHomeScreen({ navigation }) {
                   setPickup(null);
                   setDestination(null);
                   setRoads([]);
-                  setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
+                  setMarkers(allMarkers); // Show all markers when clearing routes
                 }}
               >
                 <Ionicons name="close-circle-outline" size={16} color="#D32F2F" />

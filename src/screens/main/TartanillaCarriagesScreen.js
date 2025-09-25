@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { supabase } from '../../services/supabase';
-import { getMyCarriages, getAvailableDrivers, assignDriverToCarriage, createCarriage, createTestDrivers } from '../../services/tartanillaService';
+import { getMyCarriages, getAvailableDrivers, getAllDrivers, assignDriverToCarriage, cancelDriverAssignment, reassignDriver, createCarriage, createTestDrivers } from '../../services/tartanillaService';
 import { useAuth } from '../../hooks/useAuth';
 
 const { width } = Dimensions.get('window');
@@ -12,7 +12,7 @@ const MAROON = '#6B2E2B';
 const LIGHT_GRAY = '#f5f5f5';
 const DARK_GRAY = '#333';
 
-export default function TartanillaCarriagesScreen({ navigation }) {
+export default function TartanillaCarriagesScreen({ navigation, hideHeader = false }) {
   const auth = useAuth();
   const [carriages, setCarriages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,15 +33,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [assigningDriver, setAssigningDriver] = useState(false);
+  const [modalAction, setModalAction] = useState('assign'); // 'assign', 'reassign', 'cancel'
 
-  // All callback functions need to be defined before the conditional return
-  const fetchAvailableDrivers = async () => {
+  const fetchDrivers = async (action = 'assign') => {
     try {
-      const result = await getAvailableDrivers();
+      let result;
+      if (action === 'reassign') {
+        result = await getAllDrivers();
+      } else {
+        result = await getAvailableDrivers();
+      }
+      
       if (result.success) {
         setAvailableDrivers(result.data || []);
         
-        // Show debug info if no drivers found
         if (result.data.length === 0 && result.debug) {
           console.log('No drivers found. Debug info:', result.debug);
           const debugMsg = `Debug Info:\n` +
@@ -60,7 +65,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                   const createResult = await createTestDrivers();
                   if (createResult.success) {
                     Alert.alert('Success', 'Test drivers created! Refreshing list...');
-                    await fetchAvailableDrivers();
+                    await fetchDrivers(action);
                   } else {
                     Alert.alert('Error', createResult.error || 'Failed to create test drivers');
                   }
@@ -70,55 +75,143 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           );
         }
       } else {
-        console.error('Error fetching available drivers:', result.error);
-        Alert.alert('Error', result.error || 'Failed to load available drivers');
+        console.error('Error fetching drivers:', result.error);
+        Alert.alert('Error', result.error || 'Failed to load drivers');
       }
     } catch (error) {
-      console.error('Error fetching available drivers:', error);
-      Alert.alert('Error', 'Failed to load available drivers');
+      console.error('Error fetching drivers:', error);
+      Alert.alert('Error', 'Failed to load drivers');
     }
   };
 
-  const handleAssignDriver = async (driverId) => {
+  const handleDriverAction = async (driverId) => {
     if (!selectedCarriage) return;
     
     setAssigningDriver(true);
     try {
-      const result = await assignDriverToCarriage(selectedCarriage.id, driverId);
+      let result;
+      let successMessage;
+      
+      if (modalAction === 'assign') {
+        result = await assignDriverToCarriage(selectedCarriage.id, driverId);
+        successMessage = 'Driver invitation sent! Waiting for driver acceptance.';
+      } else if (modalAction === 'reassign') {
+        result = await reassignDriver(selectedCarriage.id, driverId);
+        successMessage = 'Driver reassignment request sent!';
+      }
       
       if (result.success) {
         setShowDriverModal(false);
-        Alert.alert('Success', 'Driver invitation sent! Waiting for driver acceptance.', [
+        Alert.alert('Success', successMessage, [
           {
             text: 'OK',
             onPress: async () => {
-              // Force refresh the carriages list
               await fetchUserAndCarriages();
             }
           }
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to assign driver');
+        Alert.alert('Error', result.error || `Failed to ${modalAction} driver`);
       }
     } catch (error) {
-      console.error('Error assigning driver:', error);
-      Alert.alert('Error', 'Failed to assign driver');
+      console.error(`Error ${modalAction} driver:`, error);
+      Alert.alert('Error', `Failed to ${modalAction} driver`);
     } finally {
       setAssigningDriver(false);
     }
   };
+  
+  const handleCancelAssignment = async () => {
+    if (!selectedCarriage) return;
+    
+    Alert.alert(
+      'Cancel Assignment',
+      'Are you sure you want to cancel this driver assignment?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setAssigningDriver(true);
+            try {
+              const result = await cancelDriverAssignment(selectedCarriage.id);
+              
+              if (result.success) {
+                setShowDriverModal(false);
+                Alert.alert('Success', 'Driver assignment cancelled.', [
+                  {
+                    text: 'OK',
+                    onPress: async () => {
+                      await fetchUserAndCarriages();
+                    }
+                  }
+                ]);
+              } else {
+                Alert.alert('Error', result.error || 'Failed to cancel assignment');
+              }
+            } catch (error) {
+              console.error('Error cancelling assignment:', error);
+              Alert.alert('Error', 'Failed to cancel assignment');
+            } finally {
+              setAssigningDriver(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
-  const openDriverModal = async (carriage) => {
+  const openDriverModal = async (carriage, action = 'assign') => {
     setSelectedCarriage(carriage);
+    setModalAction(action);
     setShowDriverModal(true);
-    await fetchAvailableDrivers();
+    await fetchDrivers(action);
+  };
+
+  const handleAddCarriage = async () => {
+    if (!newCarriage.plate_number.trim()) {
+      Alert.alert('Error', 'Please enter a plate number');
+      return;
+    }
+
+    setAddingCarriage(true);
+    try {
+      const result = await createCarriage({
+        plate_number: newCarriage.plate_number.trim(),
+        capacity: parseInt(newCarriage.capacity) || 4,
+        status: newCarriage.status || 'available',
+        notes: newCarriage.notes || ''
+      });
+      
+      if (result.success) {
+        setShowAddModal(false);
+        setNewCarriage({
+          plate_number: '',
+          capacity: '4', 
+          status: 'available',
+          notes: ''
+        });
+        Alert.alert('Success', 'Tartanilla added successfully!', [
+          {
+            text: 'OK',
+            onPress: () => fetchUserAndCarriages()
+          }
+        ]);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to add tartanilla');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add tartanilla');
+    } finally {
+      setAddingCarriage(false);
+    }
   };
 
   const fetchUserAndCarriages = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Use the authenticated user from auth hook
       const currentUser = auth.user;
       if (!currentUser) {
         Alert.alert('Error', 'Please log in to view your carriages');
@@ -128,9 +221,8 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
       setUser(currentUser);
 
-      // Only owners should see their carriages
       const role = currentUser.role;
-      if (role !== 'owner') {
+      if (role !== 'owner' && role !== 'driver-owner') {
         setCarriages([]);
         setLoading(false);
         return;
@@ -163,7 +255,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (auth.user?.role === 'owner') {
+      if (auth.user?.role === 'owner' || auth.user?.role === 'driver-owner') {
         const result = await getMyCarriages();
         if (result.success) {
           setCarriages(result.data || []);
@@ -177,7 +269,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   }, [auth.user]);
 
   useEffect(() => {
-    // Handle authentication redirect
     if (!auth.loading && !auth.isAuthenticated) {
       navigation.reset({
         index: 0,
@@ -186,17 +277,17 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       return;
     }
     
-    // Load data when authenticated
     if (auth.isAuthenticated) {
       fetchUserAndCarriages();
     }
   }, [auth.loading, auth.isAuthenticated, fetchUserAndCarriages, navigation]);
 
-  // Show loading while checking authentication
   if (auth.loading) {
     return (
       <View style={styles.container}>
-        <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+        {!hideHeader && (
+          <TARTRACKHeader onNotificationPress={() => navigation.navigate('NotificationScreen')} />
+        )}
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
@@ -204,209 +295,9 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     );
   }
 
-  // Don't render anything if not authenticated (will redirect)
   if (!auth.isAuthenticated) {
     return null;
   }
-
-  const testConnection = async () => {
-    try {
-      setConnectionStatus('Testing...');
-      const result = await testCarriageConnection();
-      setConnectionStatus(result);
-      
-      if (result.success) {
-        // Update the API base URL to the working endpoint
-        const workingUrl = result.url;
-        setApiBaseUrl(workingUrl);
-        setCurrentApiUrl(workingUrl);
-        
-        Alert.alert(
-          'Connection Test', 
-          `Success! Found working endpoint: ${workingUrl}\n\nAPI URL has been updated automatically.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Refresh the data with the new URL
-                fetchUserAndCarriages();
-              }
-            }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Connection Test', 
-          `Failed to connect. Error: ${result.error}\n\nPlease check:\n1. Django server is running\n2. URL patterns in urls.py\n3. ViewSet is properly registered`,
-          [
-            {
-              text: 'Show Tested URLs',
-              onPress: () => {
-                Alert.alert('Tested URLs', result.testedUrls.join('\n'));
-              }
-            },
-            { text: 'OK' }
-          ]
-        );
-      }
-    } catch (error) {
-      setConnectionStatus({ success: false, error: error.message });
-      Alert.alert('Connection Test', `Error: ${error.message}`);
-    }
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    if (!newCarriage.plate_number.trim()) {
-      errors.plate_number = 'Plate number is required';
-    } else if (!/^[A-Z0-9-]+$/i.test(newCarriage.plate_number)) {
-      errors.plate_number = 'Enter a valid plate number';
-    }
-    
-    const capacity = parseInt(newCarriage.capacity);
-    if (isNaN(capacity) || capacity < 1 || capacity > 10) {
-      errors.capacity = 'Capacity must be between 1 and 10';
-    }
-    
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleAddCarriage = async () => {
-    if (!validateForm()) {
-      return;
-    }
-
-    setAddingCarriage(true);
-    try {
-      // Format the data exactly as the API expects it
-      const carriageData = {
-        plate_number: newCarriage.plate_number.trim(),
-        capacity: parseInt(newCarriage.capacity) || 4,
-        status: newCarriage.status || 'available',
-        eligibility: newCarriage.eligibility || 'eligible',
-        notes: newCarriage.notes || ''
-      };
-      
-      // Remove any empty fields
-      Object.keys(carriageData).forEach(key => {
-        if (carriageData[key] === '' || carriageData[key] === null || carriageData[key] === undefined) {
-          delete carriageData[key];
-        }
-      });
-
-      console.log('Creating carriage with data:', carriageData);
-      
-      // First, check if a carriage with this plate number already exists
-      const existingResult = await getMyCarriages();
-      const existingCarriages = existingResult.success ? existingResult.data : [];
-      const duplicate = Array.isArray(existingCarriages) && 
-        existingCarriages.some(carriage => 
-          carriage.plate_number?.toLowerCase() === carriageData.plate_number?.toLowerCase()
-        );
-      
-      if (duplicate) {
-        Alert.alert('Error', 'A carriage with this plate number already exists');
-        setAddingCarriage(false);
-        return;
-      }
-
-      // Use the service function
-      const result = await createCarriage(carriageData);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to add carriage');
-      }
-
-      // Reset form and close modal on success
-      setShowAddModal(false);
-      setNewCarriage({
-        plate_number: '',
-        capacity: '4',
-        status: 'available',
-        notes: ''
-      });
-      
-      // Show success message
-      Alert.alert('Success', 'Carriage added successfully!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            // Refresh the list after a short delay to ensure the modal is closed
-            setTimeout(() => fetchUserAndCarriages(), 100);
-          }
-        }
-      ]);
-    } catch (error) {
-      console.error('Error adding carriage:', error);
-      
-      // Check for authentication errors
-      if (error.message.includes('Owner not found') || error.message.includes('not authenticated')) {
-        Alert.alert('Session Expired', 'Please log in again.', [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Welcome' }],
-              });
-            }
-          }
-        ]);
-        return;
-      }
-      
-      let errorMessage = 'Failed to add carriage. Please try again.';
-      
-      if (error.message.includes('plate_number')) {
-        errorMessage = 'Invalid plate number format. Please check and try again.';
-      } else if (error.message.includes('status')) {
-        errorMessage = 'Invalid status value. Please select a valid status.';
-      } else if (error.message.includes('400')) {
-        errorMessage = 'Invalid data. Please check all fields and try again.';
-      } else if (error.message.includes('Network request failed')) {
-        errorMessage = 'Network error. Please check your internet connection.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setAddingCarriage(false);
-    }
-  };
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="car-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No Carriages Found</Text>
-      <Text style={styles.emptyStateSubtitle}>
-        {auth.user?.role === 'owner'
-          ? 'You have not registered any tartanilla carriages yet.'
-          : 'Only owners can view their tartanilla carriages.'}
-      </Text>
-      {auth.user?.role === 'owner' && (
-        <TouchableOpacity style={styles.testConnectionButton} onPress={testConnection}>
-          <Text style={styles.testConnectionButtonText}>Test API Connection</Text>
-        </TouchableOpacity>
-      )}
-      
-      {loading && <ActivityIndicator size="large" color={MAROON} style={{marginTop: 20}} />}
-    </View>
-  );
-
-  const getStatusTextStyle = (status) => {
-    switch (status) {
-      case 'available':
-        return { color: '#28a745' };
-      case 'in_use':
-        return { color: '#dc3545' };
-      case 'maintenance':
-        return { color: '#ffc107' };
-      default:
-        return { color: DARK_GRAY };
-    }
-  };
 
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
@@ -456,18 +347,9 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
     const status = statusConfig[carriage.status?.toLowerCase()] || statusConfig.default;
     
-    // Debug: Log the actual carriage data structure
-    console.log('Carriage debug:', {
-      plate: carriage.plate_number,
-      driver_id: carriage.assigned_driver_id,
-      driver_obj: carriage.assigned_driver,
-      status: carriage.status
-    });
-    
     const driverName = carriage.assigned_driver?.name || (carriage.assigned_driver_id ? `Driver ID: ${carriage.assigned_driver_id}` : 'Not assigned');
     const driverEmail = carriage.assigned_driver?.email || (carriage.assigned_driver_id ? `ID: ${carriage.assigned_driver_id}` : '');
     
-    // Show assignment status for owners
     const assignmentStatus = carriage.status === 'waiting_driver_acceptance' 
       ? 'Waiting for driver acceptance'
       : carriage.status === 'driver_assigned'
@@ -490,6 +372,27 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         </View>
         
         <View style={styles.cardContent}>
+          {/* Status Indicator */}
+          {(carriage.status === 'waiting_driver_acceptance' || carriage.status === 'driver_assigned') && (
+            <View style={[styles.statusIndicatorBar, 
+              carriage.status === 'waiting_driver_acceptance' ? styles.pendingBar : styles.assignedBar
+            ]}>
+              <Ionicons 
+                name={carriage.status === 'waiting_driver_acceptance' ? 'hourglass-outline' : 'checkmark-circle'} 
+                size={16} 
+                color={carriage.status === 'waiting_driver_acceptance' ? '#ff8f00' : '#28a745'} 
+              />
+              <Text style={[styles.statusIndicatorText,
+                carriage.status === 'waiting_driver_acceptance' ? styles.pendingText : styles.assignedStatusText
+              ]}>
+                {carriage.status === 'waiting_driver_acceptance' 
+                  ? 'Pending Driver Confirmation' 
+                  : 'Driver Confirmed & Active'
+                }
+              </Text>
+            </View>
+          )}
+          
           <View style={styles.infoRow}>
             <Ionicons name="person" size={16} color="#555" style={styles.infoIcon} />
             <View style={styles.infoTextContainer}>
@@ -499,22 +402,41 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 <Text style={[styles.infoLabel, { marginTop: 2, fontSize: 11, color: '#888' }]} numberOfLines={1}>{driverEmail}</Text>
               )}
             </View>
-            {carriage.status !== 'driver_assigned' && (
-              <TouchableOpacity 
-                style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
-                onPress={() => openDriverModal(carriage)}
-                disabled={assigningDriver}
-              >
-                <Ionicons 
-                  name={carriage.assigned_driver ? "sync-outline" : "person-add"} 
-                  size={14} 
-                  color="#fff"
-                />
-                <Text style={styles.assignButtonText}>
-                  {carriage.assigned_driver ? 'Change' : 'Assign'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <View style={styles.actionButtons}>
+              {carriage.status === 'driver_assigned' ? (
+                <View style={styles.assignedIndicator}>
+                  <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+                  <Text style={styles.assignedText}>Driver Confirmed</Text>
+                </View>
+              ) : carriage.status === 'waiting_driver_acceptance' ? (
+                <TouchableOpacity 
+                  style={[styles.cancelButton, { opacity: assigningDriver ? 0.6 : 1 }]}
+                  onPress={() => {
+                    setSelectedCarriage(carriage);
+                    handleCancelAssignment();
+                  }}
+                  disabled={assigningDriver}
+                >
+                  <Ionicons name="close" size={14} color="#fff" />
+                  <Text style={styles.cancelButtonText}>Cancel Assignment</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity 
+                  style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
+                  onPress={() => openDriverModal(carriage, carriage.assigned_driver ? 'reassign' : 'assign')}
+                  disabled={assigningDriver}
+                >
+                  <Ionicons 
+                    name={carriage.assigned_driver ? "sync-outline" : "person-add"} 
+                    size={14} 
+                    color="#fff"
+                  />
+                  <Text style={styles.assignButtonText}>
+                    {carriage.assigned_driver ? 'Reassign' : 'Assign'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           <View style={styles.infoRow}>
@@ -565,98 +487,212 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     );
   };
 
-  const renderDriverModal = () => (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={showDriverModal}
-      onRequestClose={() => !assigningDriver && setShowDriverModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Assign Driver</Text>
-            <TouchableOpacity 
-              onPress={() => !assigningDriver && setShowDriverModal(false)}
-              disabled={assigningDriver}
-            >
-              <Ionicons name="close" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.modalBody}>
-            {availableDrivers.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={48} color="#ccc" />
-                <Text style={styles.emptyStateText}>No available drivers found</Text>
-                <Text style={styles.emptyStateSubtext}>
-                  All drivers are currently assigned to carriages.
-                </Text>
-              </View>
-            ) : (
-              <FlatList
-                data={availableDrivers}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    style={[styles.driverItem, assigningDriver && styles.driverItemDisabled]}
-                    onPress={() => handleAssignDriver(item.id)}
-                    disabled={assigningDriver}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.driverAvatar}>
-                      <Ionicons name="person-circle-outline" size={40} color={MAROON} />
-                    </View>
-                    <View style={styles.driverInfo}>
-                      <Text style={styles.driverName}>
-                        {item.name || 'Unknown Driver'}
-                      </Text>
-                      <Text style={styles.driverEmail} numberOfLines={1}>
-                        {item.email || 'No email'}
-                      </Text>
-                      <Text style={styles.driverRole}>
-                        {item.role || 'driver'}
-                      </Text>
-                    </View>
-                    <View style={styles.selectDriverButton}>
-                      <Ionicons name="chevron-forward" size={20} color={MAROON} />
-                    </View>
-                  </TouchableOpacity>
-                )}
-                ItemSeparatorComponent={() => <View style={styles.divider} />}
-              />
-            )}
+  const renderDriverModal = () => {
+    const getModalTitle = () => {
+      switch (modalAction) {
+        case 'reassign': return 'Reassign Driver';
+        case 'assign': return 'Assign Driver';
+        default: return 'Select Driver';
+      }
+    };
+    
+    const getEmptyMessage = () => {
+      switch (modalAction) {
+        case 'reassign': return 'No drivers found';
+        case 'assign': return 'No available drivers found';
+        default: return 'No drivers found';
+      }
+    };
+    
+    const getEmptySubtext = () => {
+      switch (modalAction) {
+        case 'reassign': return 'Unable to load driver list.';
+        case 'assign': return 'All drivers are currently assigned to carriages.';
+        default: return 'Unable to load drivers.';
+      }
+    };
+    
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showDriverModal}
+        onRequestClose={() => !assigningDriver && setShowDriverModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.driverModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{getModalTitle()}</Text>
+              <TouchableOpacity 
+                onPress={() => !assigningDriver && setShowDriverModal(false)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.scrollableModalBody}>
+              {availableDrivers.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={48} color="#ccc" />
+                  <Text style={styles.emptyStateText}>{getEmptyMessage()}</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    {getEmptySubtext()}
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={availableDrivers}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity 
+                      style={[styles.driverItem, assigningDriver && styles.driverItemDisabled]}
+                      onPress={() => handleDriverAction(item.id)}
+                      disabled={assigningDriver}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.driverAvatar}>
+                        <View style={styles.defaultAvatar}>
+                          <Ionicons name="person" size={24} color={MAROON} />
+                        </View>
+                      </View>
+                      <View style={styles.driverInfo}>
+                        <Text style={styles.driverName}>
+                          {item.name || 'Unknown Driver'}
+                        </Text>
+                        <Text style={styles.driverEmail} numberOfLines={1}>
+                          {item.email || 'No email'}
+                        </Text>
+                        <Text style={styles.driverRole}>
+                          {item.role || 'driver'}
+                        </Text>
+                      </View>
+                      <View style={styles.selectDriverButton}>
+                        <Ionicons name="chevron-forward" size={20} color={MAROON} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  ItemSeparatorComponent={() => <View style={styles.divider} />}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                  contentContainerStyle={{ flexGrow: 1 }}
+                />
+              )}
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  };
 
-  // Main render function
   return (
     <View style={styles.container}>
-      <TARTRACKHeader 
-        title="My Tartanilla Carriages"
-        onNotificationPress={() => navigation.navigate('NotificationScreen')} 
-      />
+      {!hideHeader && (
+        <TARTRACKHeader 
+          title="My Tartanilla Carriages"
+          onNotificationPress={() => navigation.navigate('NotificationScreen')} 
+        />
+      )}
       
-      <View style={styles.headerContainer}>
-        <Text style={styles.heading}>Carriage Management</Text>
-        <Text style={styles.subheading}>Manage your tartanilla carriages and drivers</Text>
-      </View>
+      {!hideHeader && (
+        <View style={styles.headerContainer}>
+          <Text style={styles.heading}>Carriage Management</Text>
+          <Text style={styles.subheading}>Manage your tartanilla carriages and drivers</Text>
+        </View>
+      )}
       
-      {/* Driver Assignment Modal */}
       {renderDriverModal()}
       
-      {user?.role === 'owner' && (
+      {(user?.role === 'owner' || user?.role === 'driver-owner') && (
         <TouchableOpacity 
           style={styles.addButton}
           onPress={() => setShowAddModal(true)}
         >
           <Ionicons name="add" size={24} color="#fff" />
-          {/* <Text style={styles.addButtonText}>Add Carriage</Text> */}
         </TouchableOpacity>
       )}
+      
+      {/* Add Carriage Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showAddModal}
+        onRequestClose={() => !addingCarriage && setShowAddModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add New Tartanilla</Text>
+              <TouchableOpacity 
+                onPress={() => !addingCarriage && setShowAddModal(false)}
+                disabled={addingCarriage}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Plate Number *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., ABC 123"
+                  value={newCarriage.plate_number}
+                  onChangeText={(text) => setNewCarriage({...newCarriage, plate_number: text})}
+                  editable={!addingCarriage}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Capacity</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="4"
+                  value={newCarriage.capacity}
+                  onChangeText={(text) => setNewCarriage({...newCarriage, capacity: text})}
+                  keyboardType="numeric"
+                  editable={!addingCarriage}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Notes (Optional)</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Any additional notes"
+                  value={newCarriage.notes}
+                  onChangeText={(text) => setNewCarriage({...newCarriage, notes: text})}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  editable={!addingCarriage}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={() => setShowAddModal(false)}
+                disabled={addingCarriage}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.saveButton]}
+                onPress={handleAddCarriage}
+                disabled={addingCarriage}
+              >
+                {addingCarriage ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Add Tartanilla</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -672,371 +708,29 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           contentContainerStyle={styles.scrollViewContent}
         >
           {carriages.length === 0 ? (
-            renderEmptyState()
+            <View style={styles.emptyState}>
+              <Ionicons name="car-outline" size={64} color="#ccc" />
+              <Text style={styles.emptyStateTitle}>No Carriages Found</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                {auth.user?.role === 'owner'
+                  ? 'You have not registered any tartanilla carriages yet.'
+                  : 'Only owners can view their tartanilla carriages.'}
+              </Text>
+            </View>
           ) : (
             carriages.map((carriage) => renderCarriageCard(carriage))
           )}
         </ScrollView>
       )}
-      
-      {/* Add Carriage Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showAddModal}
-        onRequestClose={() => !addingCarriage && setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Carriage</Text>
-              <TouchableOpacity 
-                onPress={() => !addingCarriage && setShowAddModal(false)}
-                disabled={addingCarriage}
-              >
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modalBody}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Plate Number *</Text>
-                <TextInput
-                  style={[styles.input, formErrors.plate_number && styles.inputError]}
-                  placeholder="e.g., ABC 123"
-                  value={newCarriage.plate_number}
-                  onChangeText={(text) => setNewCarriage({...newCarriage, plate_number: text})}
-                  editable={!addingCarriage}
-                />
-                {formErrors.plate_number && (
-                  <Text style={styles.errorText}>{formErrors.plate_number}</Text>
-                )}
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Capacity *</Text>
-                <View style={styles.capacityContainer}>
-                  <TouchableOpacity 
-                    style={styles.capacityButton}
-                    onPress={() => {
-                      const newCapacity = Math.max(1, (parseInt(newCarriage.capacity) || 4) - 1);
-                      setNewCarriage({...newCarriage, capacity: newCapacity.toString()});
-                    }}
-                    disabled={addingCarriage}
-                  >
-                    <Ionicons name="remove" size={20} color="#666" />
-                  </TouchableOpacity>
-                  
-                  <TextInput
-                    style={[styles.input, styles.capacityInput]}
-                    value={newCarriage.capacity}
-                    onChangeText={(text) => setNewCarriage({...newCarriage, capacity: text})}
-                    keyboardType="numeric"
-                    editable={!addingCarriage}
-                  />
-                  
-                  <TouchableOpacity 
-                    style={styles.capacityButton}
-                    onPress={() => {
-                      const newCapacity = Math.min(10, (parseInt(newCarriage.capacity) || 4) + 1);
-                      setNewCarriage({...newCarriage, capacity: newCapacity.toString()});
-                    }}
-                    disabled={addingCarriage}
-                  >
-                    <Ionicons name="add" size={20} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                {formErrors.capacity && (
-                  <Text style={styles.errorText}>{formErrors.capacity}</Text>
-                )}
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.statusOptions}>
-                  {['available', 'in_use', 'maintenance'].map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      style={[
-                        styles.statusOption,
-                        newCarriage.status === status && styles.statusOptionSelected,
-                        { backgroundColor: statusConfig[status]?.bgColor || '#f5f5f5' }
-                      ]}
-                      onPress={() => setNewCarriage({...newCarriage, status})}
-                      disabled={addingCarriage}
-                    >
-                      <Ionicons 
-                        name={statusConfig[status]?.icon || 'help-circle'} 
-                        size={16} 
-                        color={statusConfig[status]?.color || '#666'} 
-                        style={styles.statusIcon} 
-                      />
-                      <Text style={[
-                        styles.statusOptionText,
-                        { color: statusConfig[status]?.color || '#666' },
-                        newCarriage.status === status && styles.statusOptionTextSelected
-                      ]}>
-                        {statusConfig[status]?.text || 'Unknown'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Notes (Optional)</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder="Any additional notes about this carriage"
-                  value={newCarriage.notes}
-                  onChangeText={(text) => setNewCarriage({...newCarriage, notes: text})}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                  editable={!addingCarriage}
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton, addingCarriage && styles.buttonDisabled]}
-                onPress={() => setShowAddModal(false)}
-                disabled={addingCarriage}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.saveButton, addingCarriage && styles.buttonDisabled]}
-                onPress={handleAddCarriage}
-                disabled={addingCarriage}
-              >
-                {addingCarriage ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save Carriage</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      
-      {/* Driver Assignment Modal */}
-      {renderDriverModal()}
     </View>
   );
 }
 
-// Status configuration
-const statusConfig = {
-  available: { 
-    icon: 'checkmark-circle', 
-    color: '#28a745',
-    bgColor: '#E8F5E9',
-    text: 'Available',
-  },
-  in_use: { 
-    icon: 'time', 
-    color: '#dc3545',
-    bgColor: '#FFEBEE',
-    text: 'In Use',
-  },
-  maintenance: { 
-    icon: 'build', 
-    color: '#ff8f00',
-    bgColor: '#FFF8E1',
-    text: 'Maintenance',
-  },
-  waiting_driver_acceptance: {
-    icon: 'hourglass-outline',
-    color: '#ff8f00',
-    bgColor: '#FFF3E0',
-    text: 'Pending Driver',
-  },
-  driver_assigned: {
-    icon: 'person-circle',
-    color: '#2196F3',
-    bgColor: '#E3F2FD',
-    text: 'Driver Assigned',
-  },
-  default: {
-    icon: 'help-circle',
-    color: '#6c757d',
-    bgColor: '#f5f5f5',
-    text: 'Unknown',
-  }
-};
-
 const styles = StyleSheet.create({
-  // Modal Styles
-  modalOverlay: {
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    maxHeight: '80%',
-    elevation: 5,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: MAROON,
-  },
-  modalBody: {
-    padding: 16,
-    maxHeight: '70%',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  
-  // Form Styles
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  inputError: {
-    borderColor: '#dc3545',
-  },
-  errorText: {
-    color: '#dc3545',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  capacityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  capacityButton: {
-    padding: 8,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  capacityInput: {
-    flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  statusOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  statusOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-    borderRadius: 8,
-    marginHorizontal: 4,
-  },
-  statusOptionSelected: {
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
-  },
-  statusIcon: {
-    marginRight: 6,
-  },
-  statusOptionText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  statusOptionTextSelected: {
-    fontWeight: '600',
-  },
-  eligibilityContainer: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    overflow: 'hidden',
-  },
-  eligibilityOption: {
-    flex: 1,
-    padding: 12,
-    alignItems: 'center',
     backgroundColor: '#f8f9fa',
   },
-  eligibilityOptionSelected: {
-    backgroundColor: MAROON,
-  },
-  eligibilityOptionText: {
-    color: '#555',
-    fontWeight: '500',
-  },
-  eligibilityOptionTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 10,
-    minWidth: 100,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  cancelButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  saveButton: {
-    backgroundColor: MAROON,
-  },
-  cancelButtonText: {
-    color: '#333',
-    fontWeight: '600',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  
-  // Header Styles
   headerContainer: {
     padding: 16,
     backgroundColor: '#fff',
@@ -1052,10 +746,6 @@ const styles = StyleSheet.create({
   subheading: {
     fontSize: 14,
     color: '#666',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   scrollView: {
     flex: 1,
@@ -1138,6 +828,11 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '500',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
+  },
   assignButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1145,13 +840,71 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 4,
-    marginLeft: 'auto',
   },
   assignButtonText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '500',
     marginLeft: 4,
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dc3545',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+  },
+  cancelButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  assignedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#28a745',
+  },
+  assignedText: {
+    color: '#28a745',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  statusIndicatorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  pendingBar: {
+    backgroundColor: '#FFF3E0',
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff8f00',
+  },
+  assignedBar: {
+    backgroundColor: '#E8F5E9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#28a745',
+  },
+  statusIndicatorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  pendingText: {
+    color: '#ff8f00',
+  },
+  assignedStatusText: {
+    color: '#28a745',
   },
   loadingContainer: {
     flex: 1,
@@ -1180,64 +933,20 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     zIndex: 1,
   },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  // ... existing styles ...
-  
-  // Driver Section
-  driverSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  driverLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  driverName: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-  },
-  assignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 4,
-  },
-  buttonIcon: {
-    marginRight: 4,
-  },
-  assignButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  
   // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
-    alignItems: 'center',
+    padding: 20,
   },
-  modalContent: {
+  driverModalContent: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    overflow: 'hidden',
+    maxHeight: '85%',
+    elevation: 5,
+    flex: 1,
+    marginVertical: 50,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1245,127 +954,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f0f0f0',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: MAROON,
   },
-  modalBody: {
-    padding: 0,
+  scrollableModalBody: {
+    flex: 1,
+    maxHeight: '100%',
   },
   driverItem: {
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 80,
   },
   driverAvatar: {
     marginRight: 12,
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  driverPhone: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#f0f0f0',
-    marginLeft: 68,
-  },
-  emptyState: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  // ... (rest of the styles remain the same)
-  driverSection: {
-    marginTop: 10,
-    paddingTop: 10,
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  driverLabel: {
-    fontSize: 14,
-    color: '#555',
-  },
-  assignButton: {
-    backgroundColor: MAROON,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  assignButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  // Driver Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
     overflow: 'hidden',
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  driverProfileImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  defaultAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: MAROON,
-  },
-  modalBody: {
-    padding: 0,
-  },
-  driverItem: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  driverAvatar: {
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   driverInfo: {
     flex: 1,
@@ -1384,6 +1012,7 @@ const styles = StyleSheet.create({
   driverPhone: {
     fontSize: 13,
     color: '#888',
+    marginTop: 2,
   },
   driverRole: {
     fontSize: 12,
@@ -1400,12 +1029,25 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: '#f0f0f0',
-    marginLeft: 68,
+    marginLeft: 78,
   },
   emptyState: {
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 4,
+    textAlign: 'center',
   },
   emptyStateText: {
     fontSize: 16,
@@ -1420,76 +1062,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: DARK_GRAY,
-    marginLeft: 8,
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#f0f0f0',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    paddingVertical: 2,
-  },
-  rowText: {
-    color: '#444',
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  // Add Modal Styles
   modalContent: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    width: '90%',
     maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
+    elevation: 5,
   },
   modalBody: {
     padding: 16,
+    maxHeight: '70%',
   },
-  inputGroup: {
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  formGroup: {
     marginBottom: 16,
   },
-  inputLabel: {
+  label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    color: '#555',
     marginBottom: 6,
+    fontWeight: '500',
   },
-  textInput: {
+  input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
@@ -1498,66 +1098,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   textArea: {
-    height: 80,
+    minHeight: 80,
     textAlignVertical: 'top',
   },
-  statusOptions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statusOption: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-  },
-  statusOptionSelected: {
-    backgroundColor: MAROON,
-    borderColor: MAROON,
-  },
-  statusOptionText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  statusOptionTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  cancelButton: {
-    flex: 1,
+  button: {
     paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
     alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontWeight: '600',
+    justifyContent: 'center',
+    marginLeft: 10,
+    minWidth: 100,
   },
   saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
     backgroundColor: MAROON,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
   },
   saveButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
 });
-

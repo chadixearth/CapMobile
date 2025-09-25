@@ -2,6 +2,7 @@
 import { Platform, NativeModules } from 'react-native';
 import { apiRequest } from '../authService';
 import mapCacheService from './mapCacheService';
+import ResponseHandler from '../responseHandler';
 
 // Helper function for API calls with better error handling
 async function apiCall(endpoint, options = {}) {
@@ -9,6 +10,10 @@ async function apiCall(endpoint, options = {}) {
     const result = await apiRequest(endpoint, options);
     
     if (result.success) {
+      // Ensure data is properly structured
+      if (!result.data || typeof result.data !== 'object') {
+        return ResponseHandler.createSafeResponse(result.data || []);
+      }
       return result.data;
     } else {
       throw new Error(result.data?.error || result.error || `HTTP ${result.status}: Request failed`);
@@ -17,6 +22,13 @@ async function apiCall(endpoint, options = {}) {
     if (error.name === 'AbortError') {
       throw new Error('Request timeout - please check your connection');
     }
+    
+    // Handle JSON parsing errors
+    if (error.message?.includes('JSON Parse error') || error.message?.includes('Unexpected end of input')) {
+      console.warn('[apiCall] JSON parsing error, returning safe fallback');
+      return ResponseHandler.createSafeResponse([]);
+    }
+    
     throw error;
   }
 }

@@ -727,6 +727,70 @@ export async function uploadProfilePhoto(userId, photoUri) {
 }
 
 /**
+ * Change user password
+ * @param {string} userId
+ * @param {string} currentPassword
+ * @param {string} newPassword
+ * @returns {Promise<{ success: boolean, message?: string, error?: string }>}
+ */
+export async function changePassword(userId, currentPassword, newPassword) {
+  try {
+    console.log('[authService] Changing password for user:', userId);
+    
+    // Validate inputs
+    if (!userId || !currentPassword || !newPassword) {
+      return {
+        success: false,
+        error: 'User ID, current password, and new password are required.'
+      };
+    }
+    
+    if (newPassword.length < 6) {
+      return {
+        success: false,
+        error: 'New password must be at least 6 characters long.'
+      };
+    }
+    
+    if (currentPassword === newPassword) {
+      return {
+        success: false,
+        error: 'New password must be different from current password.'
+      };
+    }
+    
+    const result = await apiRequest('/auth/change-password/', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: userId,
+        current_password: currentPassword,
+        new_password: newPassword
+      })
+    });
+    
+    console.log('[authService] Change password result:', result);
+    
+    if (result.success && result.data && result.data.success) {
+      return {
+        success: true,
+        message: result.data.message || 'Password changed successfully.'
+      };
+    }
+    
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to change password.'
+    };
+  } catch (error) {
+    console.error('changePassword error:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to change password.'
+    };
+  }
+}
+
+/**
  * Legacy function for backward compatibility
  * @deprecated Use registerUser instead
  */

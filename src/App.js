@@ -9,6 +9,8 @@ import { setSessionExpiredCallback, clearLocalSession } from './services/authSer
 import ErrorProvider from './components/ErrorProvider';
 import ErrorHandlingService from './services/errorHandlingService';
 import { NotificationProvider } from './contexts/NotificationContext';
+import GlobalErrorBoundary from './components/GlobalErrorBoundary';
+import mobileDiagnostics from './services/mobileDiagnostics';
 
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -22,9 +24,10 @@ export default function App() {
   const initializeApp = async () => {
     try {
       console.log('[App] Starting app initialization...');
-
-
-
+      
+      // Initialize mobile diagnostics
+      await mobileDiagnostics.initialize();
+      
       const result = await AppInitService.initialize();
       
       if (result.errors && result.errors.length > 0) {
@@ -62,9 +65,10 @@ export default function App() {
   }
 
   return (
-    <ErrorProvider>
-      <NotificationProvider>
-        <NavigationContainer 
+    <GlobalErrorBoundary>
+      <ErrorProvider>
+        <NotificationProvider>
+          <NavigationContainer 
           ref={navRef}
           onReady={() => {
             // Set navigation reference for error handling service
@@ -96,10 +100,11 @@ export default function App() {
             });
           }}
         >
-          <RootNavigator />
-        </NavigationContainer>
-      </NotificationProvider>
-    </ErrorProvider>
+            <RootNavigator />
+          </NavigationContainer>
+        </NotificationProvider>
+      </ErrorProvider>
+    </GlobalErrorBoundary>
   );
 }
 

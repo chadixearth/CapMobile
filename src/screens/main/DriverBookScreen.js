@@ -438,8 +438,8 @@ export default function DriverBookScreen({ navigation }) {
   const fetchAvailableRideBookings = async () => {
     try {
       const rideData = await getAvailableRideBookings();
-      if (rideData?.success && Array.isArray(rideData?.data)) {
-        const processedRides = rideData.data.map(ride => ({
+      if (rideData?.success && rideData?.data?.data && Array.isArray(rideData.data.data)) {
+        const processedRides = rideData.data.data.map(ride => ({
           id: ride.id,
           package_name: 'Ride Hailing',
           booking_date: ride.created_at,
@@ -457,7 +457,28 @@ export default function DriverBookScreen({ navigation }) {
         }));
         setAvailableRideBookings(processedRides);
       } else {
-        setAvailableRideBookings([]);
+        if (rideData?.success && rideData?.data && Array.isArray(rideData.data)) {
+          const processedRides = rideData.data.map(ride => ({
+            id: ride.id,
+            package_name: 'Ride Hailing',
+            booking_date: ride.created_at,
+            pickup_time: 'ASAP',
+            number_of_pax: 1,
+            pickup_address: ride.pickup_address,
+            dropoff_address: ride.dropoff_address,
+            contact_number: 'N/A',
+            total_amount: null,
+            status: ride.status,
+            request_type: 'ride_hailing',
+            booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
+            customer_id: ride.customer_id,
+            notes: ride.notes
+          }));
+          setAvailableRideBookings(processedRides);
+        } else {
+          console.log('No valid available ride data received:', rideData);
+          setAvailableRideBookings([]);
+        }
       }
     } catch (error) {
       console.error('Error fetching available ride bookings:', error);
@@ -514,9 +535,25 @@ export default function DriverBookScreen({ navigation }) {
       try {
         const { getAllRideBookings } = require('../../services/rideHailingService');
         const allRides = await getAllRideBookings();
-        if (allRides?.success && Array.isArray(allRides?.data)) {
-          const driverRides = allRides.data.filter(ride => 
-            ride.driver_id === driverId && 
+        
+        // Handle different response structures with proper error checking
+        let ridesData = [];
+        if (allRides?.success && allRides?.data?.data && Array.isArray(allRides.data.data)) {
+          ridesData = allRides.data.data;
+        } else if (allRides?.success && allRides?.data && Array.isArray(allRides.data)) {
+          ridesData = allRides.data;
+        } else if (Array.isArray(allRides?.data)) {
+          ridesData = allRides.data;
+        } else if (Array.isArray(allRides)) {
+          ridesData = allRides;
+        } else {
+          console.log('No valid ride data received:', allRides);
+          ridesData = [];
+        }
+        
+        if (Array.isArray(ridesData) && ridesData.length > 0) {
+          const driverRides = ridesData.filter(ride => 
+            ride && ride.driver_id === driverId && 
             ['driver_assigned', 'in_progress'].includes(ride.status)
           ).map(ride => ({
             id: ride.id,
@@ -1236,7 +1273,7 @@ const getCustomTitle = (r) => (
         )}
       </View>
 
-      {ride.status === 'waiting_for_driver' && activeTab === 'available' && (
+      {(ride.status === 'waiting_for_driver' || ride.status === 'pending') && activeTab === 'available' && (
         <>
           <TouchableOpacity style={[styles.acceptButton, styles.viewMapButton]} onPress={() => handleViewRideMap(ride)}>
             <Ionicons name="map" size={18} color="#fff" />
@@ -1417,7 +1454,7 @@ const getCustomTitle = (r) => (
   });
   const historyBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();
-    return status === 'completed';
+    return status === 'completed' || status === 'cancelled';
   });
 
   const currentBookings =
@@ -1476,7 +1513,11 @@ const getCustomTitle = (r) => (
           >
             {currentBookings.length > 0 || currentCustomTours.length > 0 ? (
               <>
-                {currentBookings.map(renderBookingCard)}
+                {currentBookings.map(booking => 
+                  booking.request_type === 'ride_hailing' 
+                    ? renderRideHailingCard(booking)
+                    : renderBookingCard(booking)
+                )}
                 {currentCustomTours.map(renderCustomTourCard)}
               </>
             ) : (

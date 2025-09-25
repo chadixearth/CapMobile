@@ -12,7 +12,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 const NotificationManager = ({ navigation }) => {
   const [user, setUser] = useState(null);
   const [shownNotifications, setShownNotifications] = useState(new Set());
-  const { loadNotifications } = useNotifications();
+  const { loadNotifications, notifications: contextNotifications } = useNotifications();
 
   useEffect(() => {
     initializeNotifications();
@@ -22,6 +22,20 @@ const NotificationManager = ({ navigation }) => {
       NotificationService.stopPolling();
     };
   }, []);
+  
+  // Update dismissed notifications when context notifications change (e.g., marked as read)
+  useEffect(() => {
+    if (contextNotifications && contextNotifications.length > 0) {
+      const readNotifications = contextNotifications
+        .filter(n => n.read)
+        .map(n => `${n.id}_${n.created_at}`);
+      
+      if (readNotifications.length > 0) {
+        setShownNotifications(prev => new Set([...prev, ...readNotifications]));
+        AsyncStorage.setItem('dismissedNotifications', JSON.stringify([...shownNotifications, ...readNotifications]));
+      }
+    }
+  }, [contextNotifications]);
 
   const loadDismissedNotifications = async () => {
     try {
@@ -75,9 +89,16 @@ const NotificationManager = ({ navigation }) => {
     // Reload notifications in context to update badge count
     loadNotifications();
     
-    notifications.forEach(notification => {
-      handleNotificationByType(notification);
+    // Only show one notification at a time to prevent modal spam
+    const unshownNotifications = notifications.filter(notification => {
+      const notificationKey = `${notification.id}_${notification.created_at}`;
+      return !shownNotifications.has(notificationKey) && !notification.read && !notification.tapped;
     });
+    
+    if (unshownNotifications.length > 0) {
+      // Show only the most recent notification
+      handleNotificationByType(unshownNotifications[0]);
+    }
   };
 
   const handleNotificationByType = (notification) => {
@@ -94,7 +115,7 @@ const NotificationManager = ({ navigation }) => {
       return;
     }
     
-    // Save dismissed notification persistently
+    // Mark as shown immediately to prevent duplicate alerts
     saveDismissedNotification(notificationKey);
     
     if (type === 'booking') {
@@ -103,7 +124,10 @@ const NotificationManager = ({ navigation }) => {
           '🚗 New Booking Available!',
           message,
           [
-            { text: 'View Bookings', onPress: () => navigation?.navigate('DriverBook') },
+            { 
+              text: 'View Bookings', 
+              onPress: () => navigation?.navigate('DriverBook')
+            },
             { text: 'OK' }
           ]
         );
@@ -112,7 +136,10 @@ const NotificationManager = ({ navigation }) => {
           '✅ Booking Update!',
           message,
           [
-            { text: 'View Bookings', onPress: () => navigation?.navigate('BookingHistory') },
+            { 
+              text: 'View Bookings', 
+              onPress: () => navigation?.navigate('BookingHistory')
+            },
             { text: 'OK' }
           ]
         );

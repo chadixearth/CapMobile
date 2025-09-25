@@ -1,6 +1,7 @@
 import { apiBaseUrl } from './networkConfig';
 import { getAccessToken } from './authService';
 import connectionManager from './connectionManager';
+import ResponseHandler from './responseHandler';
 
 class NetworkClient {
   constructor() {
@@ -61,29 +62,33 @@ class NetworkClient {
           timeoutId = null;
         }
 
-        // Handle response
-        const contentType = response.headers.get('content-type') || '';
+        // Handle response with enhanced parsing
         let data;
-        
-        if (contentType.includes('application/json')) {
-          data = await response.json();
-        } else {
-          const text = await response.text();
-          data = text.trim().startsWith('<') 
-            ? { error: 'Server returned HTML instead of JSON' }
-            : { message: text };
+        try {
+          data = await ResponseHandler.parseResponse(response);
+        } catch (parseError) {
+          console.error('[NetworkClient] Response parsing failed:', parseError);
+          data = ResponseHandler.handleError(parseError, []);
         }
 
         if (response.ok) {
           // Record successful request
           connectionManager.recordSuccess();
+          
+          // Ensure response has proper structure
+          if (!data || typeof data !== 'object') {
+            data = ResponseHandler.createSafeResponse(data);
+          }
+          
           return {
             success: true,
             data,
             status: response.status,
           };
         } else {
-          throw new Error(`HTTP ${response.status}: ${data.error || data.message || response.statusText}`);
+          // Handle error responses
+          const errorMessage = data?.error || data?.message || response.statusText || 'Unknown error';
+          throw new Error(`HTTP ${response.status}: ${errorMessage}`);
         }
 
       } catch (error) {
@@ -99,7 +104,9 @@ class NetworkClient {
         if (error.name === 'AbortError' || (error.message && error.message.includes('Aborted'))) {
           console.log(`Request timeout on attempt ${attempt}`);
           if (attempt < retries) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Exponential backoff for timeout retries
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 3000);
+            await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
           throw new Error('Request timeout');

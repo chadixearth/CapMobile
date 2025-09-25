@@ -38,6 +38,11 @@ async function apiCall(endpoint, options = {}) {
     
     return result;
   } catch (error) {
+    // Handle HTTP 405 errors specifically
+    if (error.message && error.message.includes('405')) {
+      console.warn(`Method not allowed for ${endpoint}:`, error.message);
+      return { success: false, error: 'Method not allowed', data: [] };
+    }
     console.error('API call failed:', error);
     throw error;
   }
@@ -161,14 +166,21 @@ export async function getMyActiveRides(customerId) {
   try {
     const result = await apiCall(`/ride-hailing/`);
     // Filter client-side to avoid query parameter issues
-    if (result.success && result.data) {
-      const activeRides = result.data.filter(ride => 
-        ride.customer_id === customerId && 
+    let ridesArray = [];
+    if (result.success && result.data?.data && Array.isArray(result.data.data)) {
+      ridesArray = result.data.data;
+    } else if (result.success && result.data && Array.isArray(result.data)) {
+      ridesArray = result.data;
+    }
+    
+    if (ridesArray.length >= 0) {
+      const activeRides = ridesArray.filter(ride => 
+        ride && ride.customer_id === customerId && 
         ['waiting_for_driver', 'driver_assigned', 'in_progress'].includes(ride.status)
       );
       return { success: true, data: activeRides };
     }
-    return result;
+    return { success: false, error: 'No valid ride data received' };
   } catch (error) {
     console.error('Error fetching active rides:', error);
     return { success: false, error: error.message };
@@ -178,14 +190,41 @@ export async function getMyActiveRides(customerId) {
 // Get driver location for tracking
 export async function getDriverLocation(driverId) {
   try {
-    const result = await apiCall('/location/drivers/');
-    if (result.success && result.data && result.data.length > 0) {
-      const driverLocation = result.data.find(loc => loc.user_id === driverId);
-      return driverLocation ? { success: true, data: driverLocation } : { success: false, error: 'Driver location not found' };
+    console.log(`[getDriverLocation] Fetching location for driver: ${driverId}`);
+    const result = await apiCall(`/location/drivers/?driver_id=${driverId}`, {
+      method: 'GET'
+    });
+    console.log(`[getDriverLocation] API response:`, result);
+    
+    // Handle nested data structure: result.data.data or result.data
+    let locationData = [];
+    if (result.success && result.data) {
+      if (Array.isArray(result.data.data)) {
+        locationData = result.data.data;
+      } else if (Array.isArray(result.data)) {
+        locationData = result.data;
+      }
     }
-    return { success: false, error: 'No location data' };
+    
+    if (locationData.length > 0) {
+      const driverLocation = locationData.find(loc => loc.user_id === driverId);
+      if (driverLocation) {
+        console.log(`[getDriverLocation] Found location:`, driverLocation);
+        return { 
+          success: true, 
+          data: {
+            ...driverLocation,
+            latitude: parseFloat(driverLocation.latitude),
+            longitude: parseFloat(driverLocation.longitude)
+          }
+        };
+      }
+    }
+    
+    console.log(`[getDriverLocation] Driver location not found in data:`, locationData);
+    return { success: false, error: 'Driver location not found' };
   } catch (error) {
-    console.error('Error fetching driver location:', error);
+    console.error('[getDriverLocation] Error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -193,6 +232,7 @@ export async function getDriverLocation(driverId) {
 // Update driver location
 export async function updateDriverLocation(userId, latitude, longitude, speed = 0, heading = 0) {
   try {
+    console.log(`[updateDriverLocation] Updating location for ${userId}:`, { latitude, longitude, speed, heading });
     const result = await apiCall('/location/update/', {
       method: 'POST',
       body: {
@@ -203,9 +243,10 @@ export async function updateDriverLocation(userId, latitude, longitude, speed = 
         heading
       }
     });
+    console.log(`[updateDriverLocation] Update result:`, result);
     return result;
   } catch (error) {
-    console.error('Error updating driver location:', error);
+    console.error('[updateDriverLocation] Error:', error);
     return { success: false, error: error.message };
   }
 }
