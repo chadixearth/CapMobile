@@ -1292,6 +1292,47 @@ const getCustomTitle = (r) => (
             <Ionicons name="car" size={18} color="#999" />
             <Text style={[styles.acceptButtonText, { color: '#999' }]}>Trip In Progress</Text>
           </View>
+<View style={styles.actionRow}>
+  {/* Call button if you have one */}
+<TouchableOpacity
+  style={[styles.acceptButton, styles.messageBtn]} 
+  onPress={async () => {
+    try {
+      // Get passenger profile first
+      const passenger = await getTouristProfile(ride.customer_id);
+      
+      navigation.navigate('Communication', {
+        screen: 'ChatRoom',
+        params: { 
+          bookingId: ride.id,
+          subject: `Ride: ${ride.pickup_address?.substring(0, 15) || 'Pickup'} → ${ride.dropoff_address?.substring(0, 15) || 'Destination'}`,
+          participantRole: 'passenger',
+          requestType: 'ride_hailing',
+          userRole: 'driver',
+          contactName: passenger?.name || 'Passenger'
+        }
+      });
+    } catch (error) {
+      console.error('Error getting passenger info:', error);
+      // Fallback navigation if passenger lookup fails
+      navigation.navigate('Communication', {
+        screen: 'ChatRoom',
+        params: {
+          bookingId: ride.id,
+          subject: `Ride: ${ride.pickup_address?.substring(0, 15) || 'Pickup'} → ${ride.dropoff_address?.substring(0, 15) || 'Destination'}`,
+          participantRole: 'passenger',
+          requestType: 'ride_hailing',
+          userRole: 'driver',
+          contactName: 'Passenger'
+        }
+      });
+    }
+  }}
+>
+  <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+  <Text style={styles.acceptButtonText}>Message Passenger</Text>
+</TouchableOpacity>
+</View>
           <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleCompleteBooking(ride)}>
             <Ionicons name="checkmark-done" size={18} color="#fff" />
             <Text style={styles.acceptButtonText}>Complete Ride</Text>

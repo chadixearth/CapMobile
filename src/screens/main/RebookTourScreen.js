@@ -68,7 +68,7 @@ export default function RebookTourScreen({ route, navigation }) {
       const newDate = selectedDate.toISOString().split('T')[0];
       const newTime = selectedTime.toTimeString().split(' ')[0];
 
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/bookings/rebook/${bookingId}/`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.80:8000'}/api/bookings/rebook/${bookingId}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

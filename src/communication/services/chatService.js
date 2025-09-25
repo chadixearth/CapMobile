@@ -456,6 +456,8 @@ export const isBookingActive = async (bookingId, bookingType) => {
       table = 'special_event_requests';
     } else if (bookingType === 'package_booking') {
       table = 'bookings';
+    } else if (bookingType === 'ride_hailing') {
+      table = 'ride_hailing_bookings';
     } else {
       return false;
     }

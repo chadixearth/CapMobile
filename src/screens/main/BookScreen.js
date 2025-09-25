@@ -386,7 +386,7 @@ export default function BookScreen({ navigation }) {
   // Handle cancelling a timed out booking
   const handleCancelTimeoutBooking = async (booking) => {
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/bookings/cancel-timeout/${booking.id}/`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.80:8000'}/api/bookings/cancel-timeout/${booking.id}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

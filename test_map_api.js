@@ -1,5 +1,5 @@
 // Test script to verify map API returns images
-const API_BASE_URL = 'http://192.168.1.4:8000/api'; // Update with your IP
+const API_BASE_URL = 'http://192.168.101.80:8000/api'; // Update with your IP
 
 async function testMapAPI() {
   try {
