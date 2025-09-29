@@ -48,9 +48,32 @@ async function apiCall(endpoint, options = {}) {
   }
 }
 
+// Check for active rides before creating new ones
+export async function checkActiveRide(userId, userType = 'customer') {
+  try {
+    const result = await apiCall(`/ride-hailing/check-active-ride/?user_id=${userId}&user_type=${userType}`);
+    return result;
+  } catch (error) {
+    console.error('Error checking active ride:', error);
+    return { success: false, has_active_ride: false, error: error.message };
+  }
+}
+
 // Create ride hailing booking
 export async function createRideBooking(bookingData) {
   try {
+    // Check for active rides first
+    const activeCheck = await checkActiveRide(bookingData.customer_id, 'customer');
+    
+    if (activeCheck.success && activeCheck.has_active_ride) {
+      return {
+        success: false,
+        error: 'You already have an active ride request. Please wait for it to complete or cancel it first.',
+        error_code: 'ACTIVE_RIDE_EXISTS',
+        active_rides: activeCheck.active_rides
+      };
+    }
+    
     const result = await apiCall('/ride-hailing/', {
       method: 'POST',
       body: bookingData
@@ -77,6 +100,18 @@ export async function getAvailableRideBookings() {
 // Driver accepts ride booking
 export async function acceptRideBooking(bookingId, driverData) {
   try {
+    // Check if driver has active rides first
+    const activeCheck = await checkActiveRide(driverData.driver_id, 'driver');
+    
+    if (activeCheck.success && activeCheck.has_active_ride) {
+      return {
+        success: false,
+        error: 'You already have an active ride. Please complete or cancel your current ride first.',
+        error_code: 'DRIVER_ACTIVE_RIDE_EXISTS',
+        active_rides: activeCheck.active_rides
+      };
+    }
+    
     const result = await apiCall(`/ride-hailing/driver-accept/${bookingId}/`, {
       method: 'POST',
       body: driverData
@@ -259,5 +294,27 @@ export async function checkRideStatus(bookingId) {
   } catch (error) {
     console.error('Error checking ride status:', error);
     return { success: false, error: error.message };
+  }
+}
+
+// Get active rides for a user
+export async function getActiveRides(userId, userType = 'customer') {
+  try {
+    const result = await checkActiveRide(userId, userType);
+    if (result.success && result.has_active_ride) {
+      return {
+        success: true,
+        data: result.active_rides,
+        count: result.count
+      };
+    }
+    return {
+      success: true,
+      data: [],
+      count: 0
+    };
+  } catch (error) {
+    console.error('Error getting active rides:', error);
+    return { success: false, error: error.message, data: [] };
   }
 }

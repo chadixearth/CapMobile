@@ -30,7 +30,7 @@ export async function apiRequest(endpoint, options = {}) {
     console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     // Get auth token for all requests except login/register
     const headers = {
@@ -111,7 +111,7 @@ export async function apiRequest(endpoint, options = {}) {
     });
     
     if (error.name === 'AbortError') {
-      return { success: false, error: 'Connection timeout. Check if backend server is running on http://192.168.101.80:8000' };
+      return { success: false, error: `Connection timeout. Check if backend server is running on ${API_BASE_URL}` };
     }
     
     // Check for specific network errors
@@ -681,7 +681,7 @@ export async function uploadProfilePhoto(userId, photoUri) {
     if (response.ok && data.success) {
       const photoUrl = data.photo_url || data.photoUrl;
       
-      // Update local session with new photo URL
+      // Update local session with new photo URL AND save to database
       try {
         const session = await getStoredSession();
         if (session.user) {
@@ -690,11 +690,25 @@ export async function uploadProfilePhoto(userId, photoUri) {
             profile_photo: photoUrl,
             profile_photo_url: photoUrl
           };
+          
+          // Update local session
           await storeSession({
             access_token: session.accessToken,
             refresh_token: session.refreshToken,
             user: updatedUser
           });
+          
+          // Also update the profile in the database with the correct field
+          const profileUpdateResult = await updateUserProfile(session.user.id, {
+            profile_photo_url: photoUrl
+          });
+          
+          if (profileUpdateResult.success) {
+            console.log('Profile photo saved to database successfully');
+          } else {
+            console.warn('Failed to save profile photo to database:', profileUpdateResult.error);
+          }
+          
           console.log('Local session updated with new photo URL');
         }
       } catch (sessionError) {

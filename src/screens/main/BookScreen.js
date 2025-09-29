@@ -25,6 +25,7 @@ import { createPackageReview, createDriverReview, checkExistingReviews } from '.
 import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
 import { getCancellationPolicy, cancelBooking, calculateCancellationFee } from '../../services/tourpackage/bookingCancellation';
 import { useScreenAutoRefresh, invalidateData } from '../../services/dataInvalidationService';
+import { apiBaseUrl } from '../../services/networkConfig';
 
 const MAROON = '#6B2E2B';
 
@@ -386,7 +387,7 @@ export default function BookScreen({ navigation }) {
   // Handle cancelling a timed out booking
   const handleCancelTimeoutBooking = async (booking) => {
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.80:8000'}/api/bookings/cancel-timeout/${booking.id}/`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || apiBaseUrl().replace('/api', '')}/api/bookings/cancel-timeout/${booking.id}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

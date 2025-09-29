@@ -812,8 +812,26 @@ export default function DriverBookScreen({ navigation }) {
           },
         ]);
       } else {
-        // Handle specific carriage-related errors with user-friendly modals
-        if (result.error_code === 'NO_CARRIAGE_ASSIGNED') {
+        // Handle specific error codes
+        if (result.error_code === 'DRIVER_ACTIVE_RIDE_EXISTS') {
+          Alert.alert(
+            '🚗 Active Ride Found',
+            'You already have an active ride. Please complete or cancel your current ride first.',
+            [
+              { text: 'OK' },
+              { text: 'View Ongoing', onPress: () => setActiveTab('ongoing') }
+            ]
+          );
+        } else if (result.error_code === 'DRIVER_ACTIVE_BOOKING_EXISTS') {
+          Alert.alert(
+            '📅 Active Booking Found',
+            'You already have an active tour booking. Please complete or cancel your current booking first.',
+            [
+              { text: 'OK' },
+              { text: 'View Ongoing', onPress: () => setActiveTab('ongoing') }
+            ]
+          );
+        } else if (result.error_code === 'NO_CARRIAGE_ASSIGNED') {
           Alert.alert(
             '🚗 Carriage Required',
             result.friendly_message || 'You need an assigned tartanilla carriage to accept bookings. Please contact admin to get a carriage assigned to you.',

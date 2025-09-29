@@ -511,6 +511,16 @@ export default function TouristHomeScreen({ navigation }) {
             { text: 'OK' }
           ]
         );
+      } else if (result.error_code === 'ACTIVE_RIDE_EXISTS') {
+        setSheetVisible(false);
+        Alert.alert(
+          'Active Ride Found',
+          'You already have an active ride request. Please wait for it to complete or cancel it first.',
+          [
+            { text: 'Track My Rides', onPress: () => navigation.navigate('Terminals') },
+            { text: 'OK' }
+          ]
+        );
       } else {
         throw new Error(result.error || 'Failed to create ride booking');
       }

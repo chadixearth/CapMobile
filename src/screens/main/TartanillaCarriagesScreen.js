@@ -2,8 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
-import { apiBaseUrl } from '../../services/networkConfig';
 import driverService from '../../services/carriages/fetchDriver';
+import { apiBaseUrl } from '../../services/networkConfig';
 
 import { supabase } from '../../services/supabase';
 import { getMyCarriages, assignDriverToCarriage, createCarriage } from '../../services/tartanillaService';
@@ -152,7 +152,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       let errorMessage = 'Failed to load carriages';
       
       if (err.message.includes('Network request failed')) {
-        errorMessage = 'Network error: Please check your internet connection and ensure the server is running at http://192.168.101.80:8000';
+        errorMessage = `Network error: Please check your internet connection and ensure the server is running at ${apiBaseUrl().replace('/api', '')}`;
       } else if (err.message.includes('HTTP error')) {
         errorMessage = `Server error: ${err.message}`;
       }

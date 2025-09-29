@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, TextInput, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function EditableField({ value, onChangeText, placeholder, keyboardType, secureTextEntry }) {
+const EditableField = memo(function EditableField({ value, onChangeText, placeholder, keyboardType, secureTextEntry }) {
   return (
     <View style={styles.inputRow}>
       <TextInput
@@ -17,7 +17,7 @@ export default function EditableField({ value, onChangeText, placeholder, keyboa
       <Ionicons name="pencil-outline" size={18} color="#888" style={styles.inputIcon} />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, position: 'relative' },
@@ -34,4 +34,6 @@ const styles = StyleSheet.create({
     paddingRight: 36,
   },
   inputIcon: { position: 'absolute', right: 12 },
-}); 
+});
+
+export default EditableField;

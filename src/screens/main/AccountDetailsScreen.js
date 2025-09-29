@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -258,7 +258,7 @@ export default function AccountDetailsScreen({ navigation }) {
         );
         if (result.success) {
           setPhotoUrl(result.photo_url);
-          await updateUserProfile(currentUser.id, { profile_photo: result.photo_url });
+          await updateUserProfile(currentUser.id, { profile_photo_url: result.photo_url });
           setSuccess('Profile photo updated!');
         } else {
           throw new Error(result.error || 'Failed to upload photo');
@@ -320,7 +320,7 @@ export default function AccountDetailsScreen({ navigation }) {
             );
             if (result.success) {
               setPhotoUrl(result.photoUrl);
-              await updateUserProfile(currentUser.id, { profile_photo: result.photoUrl });
+              await updateUserProfile(currentUser.id, { profile_photo_url: result.photoUrl });
               setSuccess('Profile photo updated!');
             } else {
               throw new Error(result.error || 'Failed to upload photo');
@@ -366,7 +366,7 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setLoading(true);
     setError('');
     setSuccess('');
@@ -384,7 +384,7 @@ export default function AccountDetailsScreen({ navigation }) {
           last_name: lastName,
           email,
           phone,
-          profile_photo: photoUrl,
+          profile_photo_url: photoUrl,
         };
         Object.keys(profileData).forEach((k) => {
           if (
@@ -429,7 +429,7 @@ export default function AccountDetailsScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [firstName, middleName, lastName, email, phone, photoUrl]);
 
   const handleSaveBio = async () => {
     try {
@@ -582,6 +582,43 @@ export default function AccountDetailsScreen({ navigation }) {
     setDeleteConfirmText('');
     setDeleteOpen(true);
   };
+
+  const handleChangePassword = useCallback(async () => {
+    try {
+      setChangingPassword(true);
+      setPasswordMessage('');
+      
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        setPasswordMessage('All fields are required.');
+        return;
+      }
+      
+      if (newPassword.length < 6) {
+        setPasswordMessage('New password must be at least 6 characters.');
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        setPasswordMessage('New passwords do not match.');
+        return;
+      }
+      
+      const result = await changePassword(currentPassword, newPassword);
+      
+      if (result.success) {
+        setPasswordMessage('Password changed successfully!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPasswordMessage(result.error || 'Failed to change password.');
+      }
+    } catch (error) {
+      setPasswordMessage(error.message || 'Failed to change password.');
+    } finally {
+      setChangingPassword(false);
+    }
+  }, [currentPassword, newPassword, confirmPassword]);
 
   const confirmDelete = async () => {
     try {

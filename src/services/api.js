@@ -18,7 +18,7 @@ export async function fetchExampleData() {
   try {
     // Create an AbortController for manual timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(`${API_BASE_URL}/example/`, {
       signal: controller.signal,
@@ -53,7 +53,7 @@ export async function requestRide({ pickup, destination, userId }) {
   try {
     // Create an AbortController for manual timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -84,7 +84,7 @@ export async function requestRide({ pickup, destination, userId }) {
 export async function getCarriagesByDriver(driverId) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`, {
       signal: controller.signal,
@@ -111,7 +111,7 @@ export async function getCarriagesByDriver(driverId) {
 export async function acceptCarriageAssignment(carriageId, driverId) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-accept/`, {
       method: 'POST',
@@ -141,7 +141,7 @@ export async function acceptCarriageAssignment(carriageId, driverId) {
 export async function declineCarriageAssignment(carriageId, driverId) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-decline/`, {
       method: 'POST',

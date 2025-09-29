@@ -51,10 +51,10 @@ class NotificationService {
       
       console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
       
-      // Use shorter timeout for notifications to prevent blocking
+      // Use longer timeout for notifications to prevent connection issues
       const result = await networkClient.get(`/notifications/?user_id=${userId}`, {
-        timeout: 8000, // Reduced from 15s to 8s
-        retries: 2     // Reduced from 3 to 2 retries
+        timeout: 25000, // Increased to 25s
+        retries: 1      // Reduced to 1 retry to prevent congestion
       });
       
       // Ensure result has proper structure
@@ -112,7 +112,7 @@ class NotificationService {
       }
     });
     
-    // Poll every 45 seconds for new notifications (increased to reduce server load)
+    // Poll every 60 seconds for new notifications (increased to reduce server load)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
@@ -186,7 +186,7 @@ class NotificationService {
           console.warn('[NotificationService] Polling error (non-timeout):', error.message);
         }
       }
-    }, 45000);
+    }, 60000);
 
     // Initial load with timeout handling
     this.getNotifications(userId).then(result => {

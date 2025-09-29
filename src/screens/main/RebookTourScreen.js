@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { apiBaseUrl } from '../../services/networkConfig';
 
 const MAROON = '#6B2E2B';
 
@@ -68,7 +69,7 @@ export default function RebookTourScreen({ route, navigation }) {
       const newDate = selectedDate.toISOString().split('T')[0];
       const newTime = selectedTime.toTimeString().split(' ')[0];
 
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.80:8000'}/api/bookings/rebook/${bookingId}/`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || apiBaseUrl().replace('/api', '')}/api/bookings/rebook/${bookingId}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
