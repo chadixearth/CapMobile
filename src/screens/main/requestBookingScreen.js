@@ -107,7 +107,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
     special_requests: '',
     contact_number: '',
     contact_email: '',
-    pickup_address: '',
+
   });
 
   const [packages, setPackages] = useState([]);
@@ -140,7 +140,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
       setFormData((prev) => ({
         ...prev,
         package_id: packageData.id,
-        pickup_address: packageData.pickup_location || '',
         total_amount: packageData.price || 0,
       }));
     }
@@ -157,7 +156,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
           setFormData((prev) => ({
             ...prev,
             package_id: found.id,
-            pickup_address: found.pickup_location || prev.pickup_address,
             total_amount: found.price || prev.total_amount,
           }));
         }
@@ -187,7 +185,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
           ...prev,
           number_of_pax: clampedPax,
           total_amount: newTotal,
-          pickup_address: pkg.pickup_location || prev.pickup_address,
         }));
       }
     }
@@ -201,7 +198,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
           title: 'Missing Information',
           type: 'warning',
         });
-        if (['number_of_pax', 'contact_number', 'contact_email', 'pickup_address', 'special_requests'].includes(field)) {
+        if (['number_of_pax', 'contact_number', 'contact_email', 'special_requests'].includes(field)) {
           focusField(field);
         }
         return false;
@@ -325,7 +322,6 @@ const RequestBookingScreen = ({ route, navigation }) => {
         total_amount: Number(formData.total_amount) || 0,
         special_requests: formData.special_requests || '',
         contact_number: String(formData.contact_number || ''),
-        pickup_address: formData.pickup_address || '',
       };
 
       // Create booking without payment
@@ -579,18 +575,15 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
             <View style={styles.dottedDivider} />
 
-            {/* Addresses & Notes */}
-            <View style={styles.inputGroup} onLayout={registerField('pickup_address')}>
-              <Text style={styles.label}>Pickup Address</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={formData.pickup_address}
-                onChangeText={(value) => handleInputChange('pickup_address', value)}
-                placeholder="Your pickup address"
-                multiline
-                numberOfLines={3}
-                onFocus={() => focusField('pickup_address')}
-              />
+            {/* Package Pickup Location (readonly) */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Package Pickup Location</Text>
+              <View style={styles.readonlyField}>
+                <Ionicons name="location-outline" size={16} color={MAROON} style={{ marginRight: 8 }} />
+                <Text style={styles.readonlyText}>
+                  {selectedPackage?.pickup_location || 'Pickup location will be provided'}
+                </Text>
+              </View>
             </View>
 
             <View style={styles.inputGroup} onLayout={registerField('special_requests')}>
@@ -787,6 +780,22 @@ const styles = StyleSheet.create({
   inputButtonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   inputButtonText: { fontSize: 14, color: TEXT, fontWeight: '700' },
   textArea: { height: 96, textAlignVertical: 'top' },
+  readonlyField: {
+    backgroundColor: MUTED_BG,
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readonlyText: {
+    fontSize: 14,
+    color: TEXT,
+    flex: 1,
+    fontWeight: '600',
+  },
 
   metaPill: {
     flexDirection: 'row',

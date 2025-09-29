@@ -919,6 +919,7 @@ export default function TouristHomeScreen({ navigation }) {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         packageData={selectedPackage}
+        navigation={navigation}
         onBook={() => {
           if (selectedPackage) {
             navigation.navigate(Routes.REQUEST_BOOKING, {

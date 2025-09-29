@@ -48,17 +48,21 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         return;
       }
       setUser(currentUser);
+      console.log('Fetching carriages for driver:', currentUser.id);
 
       const response = await getCarriagesByDriver(currentUser.id);
+      console.log('Carriage response:', response);
+      
       if (response.success) {
-        setCarriages(response.data || []);
+        const carriageData = response.data || [];
+        console.log('Carriage data received:', carriageData);
+        setCarriages(carriageData);
       } else {
         console.error('Failed to fetch carriages:', response.error);
         setCarriages([]);
       }
     } catch (error) {
       console.error('Error fetching carriages:', error);
-      Alert.alert('Error', 'Failed to load carriage assignments');
       setCarriages([]);
     } finally {
       setLoading(false);
@@ -147,7 +151,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   };
 
   const pendingCarriages = carriages.filter(c => c.status === 'waiting_driver_acceptance');
-  const assignedCarriages = carriages.filter(c => c.status === 'driver_assigned');
+  const assignedCarriages = carriages.filter(c => c.status === 'driver_assigned' || c.status === 'available');
 
   if (loading) {
     return (
@@ -305,6 +309,11 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
             <Text style={styles.emptyText}>
               You don't have any carriage assignments yet. Owners will invite you to drive their carriages.
             </Text>
+            {user && (
+              <Text style={styles.debugText}>
+                Debug: Driver ID {user.id}
+              </Text>
+            )}
           </View>
         )}
       </ScrollView>
@@ -448,5 +457,12 @@ const styles = StyleSheet.create({
     color: MUTED,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 8,
+    fontFamily: 'monospace',
   },
 });

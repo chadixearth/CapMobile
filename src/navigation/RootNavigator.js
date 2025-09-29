@@ -34,6 +34,8 @@ import Communication from '../communication/navigation/CommunicationNavigator';
 import { useAuth } from '../hooks/useAuth';
 import NotificationManager from '../components/NotificationManager';
 import TouristRefundScreen from '../screens/main/TouristRefundScreen';
+import BookingHistoryScreen from '../screens/main/BookingHistoryScreen';
+import ReviewSubmissionScreen from '../screens/main/ReviewSubmissionScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -118,6 +120,8 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.TOURIST_REFUND} // 'TouristRefundScreen' per your routes.js
               component={TouristRefundScreen}
             />
+          <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
+          <Stack.Screen name="ReviewSubmission" component={ReviewSubmissionScreen} />
 
         </>
       )}

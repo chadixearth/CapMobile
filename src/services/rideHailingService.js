@@ -188,11 +188,27 @@ export async function getAllRideBookings() {
 // Get routes by pickup point (for showing road highlights and destinations)
 export async function getRoutesByPickup(pickupId) {
   try {
+    console.log(`[getRoutesByPickup] Calling API for pickup ID: ${pickupId}`);
     const result = await apiCall(`/ride-hailing/routes-by-pickup/${pickupId}/`);
+    console.log(`[getRoutesByPickup] API response:`, result);
+    
+    // Handle nested response structure
+    if (result && result.data && result.data.data) {
+      return {
+        success: true,
+        data: result.data.data
+      };
+    } else if (result && result.data) {
+      return {
+        success: true,
+        data: result.data
+      };
+    }
+    
     return result;
   } catch (error) {
     console.error('Error fetching routes by pickup:', error);
-    throw error;
+    return { success: false, error: error.message };
   }
 }
 
@@ -318,3 +334,4 @@ export async function getActiveRides(userId, userType = 'customer') {
     return { success: false, error: error.message, data: [] };
   }
 }
+

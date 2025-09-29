@@ -57,7 +57,7 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
   }
 }
 
-export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '' }) {
+export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
     const token = await getAccessToken().catch(() => null);
     const res = await request(`/reviews/`, {
@@ -65,7 +65,7 @@ export async function createPackageReview({ package_id, booking_id, reviewer_id,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ package_id, booking_id, reviewer_id, rating, comment }),
+      body: JSON.stringify({ package_id, booking_id, reviewer_id, rating, comment, is_anonymous }),
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {
@@ -77,7 +77,7 @@ export async function createPackageReview({ package_id, booking_id, reviewer_id,
   }
 }
 
-export async function createDriverReview({ driver_id, booking_id, reviewer_id, rating, comment = '' }) {
+export async function createDriverReview({ driver_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
     const token = await getAccessToken().catch(() => null);
     const res = await request(`/reviews/driver/`, {
@@ -85,7 +85,7 @@ export async function createDriverReview({ driver_id, booking_id, reviewer_id, r
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ driver_id, booking_id, reviewer_id, rating, comment }),
+      body: JSON.stringify({ driver_id, booking_id, reviewer_id, rating, comment, is_anonymous }),
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {

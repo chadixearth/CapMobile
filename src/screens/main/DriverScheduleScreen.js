@@ -13,17 +13,29 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { driverScheduleService } from '../../services/driverScheduleService';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 const MAROON = '#6B2E2B';
 
 export default function DriverScheduleScreen({ navigation }) {
+  // Hide the default stack header (avoid double headers)
+  React.useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const { user } = useAuth();
   const [calendar, setCalendar] = useState([]);
+  const [schedule, setSchedule] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [availabilityMode, setAvailabilityMode] = useState('range'); // 'range' or 'custom'
+  const [availableFromTime, setAvailableFromTime] = useState('08:00');
+  const [availableToTime, setAvailableToTime] = useState('18:00');
+  const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
 
   const loadCalendar = async () => {
     if (!user?.id) return;
@@ -32,15 +44,25 @@ export default function DriverScheduleScreen({ navigation }) {
       const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
       const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
       
-      const result = await driverScheduleService.getDriverCalendar(user.id, startOfMonth, endOfMonth);
+      // Load both calendar bookings and schedule availability
+      const [calendarResult, scheduleResult] = await Promise.all([
+        driverScheduleService.getDriverCalendar(user.id, startOfMonth, endOfMonth),
+        driverScheduleService.getDriverSchedule(user.id, startOfMonth, endOfMonth)
+      ]);
       
-      if (result.success) {
-        setCalendar(result.data || []);
-      } else {
-        Alert.alert('Error', 'Failed to load calendar');
+      if (calendarResult.success) {
+        setCalendar(calendarResult.data || []);
+      }
+      
+      if (scheduleResult.success) {
+        setSchedule(scheduleResult.data || []);
+      }
+      
+      if (!calendarResult.success && !scheduleResult.success) {
+        Alert.alert('Error', 'Failed to load schedule data');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error loading calendar');
+      Alert.alert('Error', 'Network error loading schedule');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -108,13 +130,58 @@ export default function DriverScheduleScreen({ navigation }) {
     return calendar.filter(booking => booking.booking_date === dateStr);
   };
 
+  const getAvailabilityForDate = (day) => {
+    if (!day) return null;
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return schedule.find(s => s.date === dateStr);
+  };
+
+  const getDateStatus = (day) => {
+    if (!day) return 'empty';
+    
+    // Check if date is in the past
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const selectedDateObj = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const hasBooking = hasBookingOnDate(day);
+    const availability = getAvailabilityForDate(day);
+    
+    if (selectedDateObj < today) {
+      // Past dates: distinguish between those with bookings and without
+      return hasBooking ? 'pastWithBooking' : 'past';
+    }
+    
+    if (hasBooking) return 'booked';
+    if (availability) {
+      if (!availability.is_available) return 'unavailable';
+      if (availability.unavailable_times?.length > 0) return 'partial';
+      return 'available';
+    }
+    return 'unset'; // No availability set
+  };
+
   const handleDatePress = (day) => {
     if (!day) return;
+    
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const selectedDateObj = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
     const bookings = getBookingsForDate(day);
-    if (bookings.length > 0) {
-      setSelectedDate({ day, bookings });
-      setShowModal(true);
+    const availability = getAvailabilityForDate(day);
+    const isPastDate = selectedDateObj < today;
+    
+    // Allow viewing past dates if they have bookings (completed trips)
+    if (isPastDate && bookings.length === 0) {
+      Alert.alert('Past Date', 'No bookings to view for this past date.');
+      return;
     }
+    
+    setSelectedDate({ day, bookings, availability, dateStr, isPastDate });
+    setShowModal(true);
   };
 
   const changeMonth = (direction) => {
@@ -134,16 +201,10 @@ export default function DriverScheduleScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Schedule</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SetAvailability')}>
-          <Ionicons name="settings-outline" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
 
       <ScrollView
         style={styles.content}
@@ -159,7 +220,7 @@ export default function DriverScheduleScreen({ navigation }) {
               {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </Text>
             <Text style={styles.monthSubtitle}>
-              {calendar.length} booking{calendar.length !== 1 ? 's' : ''} this month
+              {calendar.length} booking{calendar.length !== 1 ? 's' : ''} • {schedule.length} day{schedule.length !== 1 ? 's' : ''} scheduled
             </Text>
           </View>
           <TouchableOpacity style={styles.navButton} onPress={() => changeMonth(1)}>
@@ -185,7 +246,7 @@ export default function DriverScheduleScreen({ navigation }) {
                 new Date().getDate() === day && 
                 new Date().getMonth() === currentDate.getMonth() && 
                 new Date().getFullYear() === currentDate.getFullYear();
-              const hasBooking = hasBookingOnDate(day);
+              const dateStatus = getDateStatus(day);
               const bookingCount = getBookingsForDate(day).length;
               
               return (
@@ -193,25 +254,40 @@ export default function DriverScheduleScreen({ navigation }) {
                   key={index}
                   style={[
                     styles.dayCell,
-                    hasBooking && styles.dayWithBooking,
+                    dateStatus === 'booked' && styles.dayWithBooking,
+                    dateStatus === 'available' && styles.dayAvailable,
+                    dateStatus === 'unavailable' && styles.dayUnavailable,
+                    dateStatus === 'partial' && styles.dayPartial,
+                    dateStatus === 'unset' && styles.dayUnset,
+                    dateStatus === 'past' && styles.dayPast,
+                    dateStatus === 'pastWithBooking' && styles.dayPastWithBooking,
                     isToday && styles.todayCell
                   ]}
                   onPress={() => handleDatePress(day)}
-                  disabled={!day || !hasBooking}
-                  activeOpacity={hasBooking ? 0.7 : 1}
+                  disabled={!day || dateStatus === 'past'}
+                  activeOpacity={dateStatus === 'past' ? 1 : 0.7}
                 >
                   {day && (
                     <>
                       <Text style={[
                         styles.dayText,
-                        hasBooking && styles.dayTextWithBooking,
+                        (dateStatus === 'booked' || dateStatus === 'unavailable') && styles.dayTextContrast,
+                        dateStatus === 'available' && styles.dayTextAvailable,
+                        dateStatus === 'partial' && styles.dayTextPartial,
+                        dateStatus === 'past' && styles.dayTextPast,
+                        dateStatus === 'pastWithBooking' && styles.dayTextPastWithBooking,
                         isToday && styles.todayText
                       ]}>
                         {day}
                       </Text>
-                      {hasBooking && (
+                      {dateStatus === 'booked' && (
                         <View style={styles.bookingIndicator}>
                           <Text style={styles.bookingCount}>{bookingCount}</Text>
+                        </View>
+                      )}
+                      {dateStatus === 'partial' && (
+                        <View style={styles.partialIndicator}>
+                          <Text style={styles.partialText}>~</Text>
                         </View>
                       )}
                     </>
@@ -219,6 +295,45 @@ export default function DriverScheduleScreen({ navigation }) {
                 </TouchableOpacity>
               );
             })}
+          </View>
+        </View>
+
+        {/* Legend */}
+        <View style={styles.legendContainer}>
+          <Text style={styles.legendTitle}>Legend:</Text>
+          <View style={styles.legendRow}>
+            <View style={styles.legendItems}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: MAROON }]} />
+                <Text style={styles.legendText}>Booked</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#4CAF50' }]} />
+                <Text style={styles.legendText}>Available</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#f44336' }]} />
+                <Text style={styles.legendText}>Unavailable</Text>
+              </View>
+            </View>
+            <View style={styles.legendItems}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#FF9800' }]} />
+                <Text style={styles.legendText}>Partial</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#ddd', borderStyle: 'dashed' }]} />
+                <Text style={styles.legendText}>Not Set</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#8d6e63', opacity: 0.8 }]} />
+                <Text style={styles.legendText}>Past Bookings</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendColor, { backgroundColor: '#e0e0e0', opacity: 0.5 }]} />
+                <Text style={styles.legendText}>Past (Empty)</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -250,8 +365,131 @@ export default function DriverScheduleScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             
+            {/* Availability Status */}
+            {selectedDate?.availability && (
+              <View style={styles.availabilityStatus}>
+                <View style={styles.statusHeader}>
+                  <Ionicons 
+                    name={selectedDate.availability.is_available ? "checkmark-circle" : "close-circle"} 
+                    size={20} 
+                    color={selectedDate.availability.is_available ? "#4CAF50" : "#f44336"} 
+                  />
+                  <View style={styles.statusTextContainer}>
+                    <Text style={styles.statusText}>
+                      {selectedDate.availability.is_available ? 'Available' : 'Unavailable'}
+                    </Text>
+                    {selectedDate.availability.is_available && selectedDate.availability.unavailable_times?.length > 0 && (() => {
+                      // Calculate available time range from unavailable times
+                      const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+                      const unavailable = selectedDate.availability.unavailable_times;
+                      const available = allTimes.filter(time => !unavailable.includes(time));
+                      
+                      if (available.length > 0) {
+                        const startTime = available[0];
+                        const endTime = available[available.length - 1];
+                        const endHour = parseInt(endTime.split(':')[0]) + 1;
+                        const endTimeFormatted = `${endHour.toString().padStart(2, '0')}:00`;
+                        
+                        return (
+                          <Text style={styles.timeRangeText}>
+                            {formatTime(startTime)} - {formatTime(endTimeFormatted)}
+                          </Text>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </View>
+                </View>
+                
+                {selectedDate.availability.unavailable_times?.length > 0 && (
+                  <View style={styles.unavailableTimes}>
+                    <Text style={styles.unavailableLabel}>Unavailable times:</Text>
+                    <Text style={styles.unavailableTimesList}>
+                      {selectedDate.availability.unavailable_times.join(', ')}
+                    </Text>
+                  </View>
+                )}
+                
+                {selectedDate.availability.notes && (
+                  <View style={styles.notesContainer}>
+                    <Text style={styles.notesLabel}>Notes:</Text>
+                    <Text style={styles.notesText}>{selectedDate.availability.notes}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+            
+            {/* Quick Availability Actions - Only for future dates */}
+            {selectedDate && !selectedDate.isPastDate && (
+              <View style={styles.quickActions}>
+                {!selectedDate.availability ? (
+                  // No availability set - show quick options
+                  <>
+                    <TouchableOpacity 
+                      style={[styles.quickActionBtn, styles.availableBtn]}
+                      onPress={() => {
+                        // Reset modal states
+                        setAvailabilityMode('range');
+                        setSelectedTimeSlots([]);
+                        setAvailableFromTime('08:00');
+                        setAvailableToTime('18:00');
+                        setShowTimeModal(true);
+                      }}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={16} color="#4CAF50" />
+                      <Text style={[styles.quickActionText, { color: '#4CAF50' }]}>Set Available Hours</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.quickActionBtn, styles.unavailableBtn]}
+                      onPress={async () => {
+                        try {
+                          await driverScheduleService.setAvailability(
+                            user.id, 
+                            selectedDate.dateStr, 
+                            false, 
+                            [], 
+                            'Marked unavailable from calendar'
+                          );
+                          setShowModal(false);
+                          onRefresh();
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to update availability');
+                        }
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={16} color="#d32f2f" />
+                      <Text style={[styles.quickActionText, { color: '#d32f2f' }]}>Mark Unavailable</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  // Availability already set - show edit option
+                  <TouchableOpacity 
+                    style={styles.quickActionBtn}
+                    onPress={() => {
+                      setShowModal(false);
+                      navigation.navigate('SetAvailability', { selectedDate: selectedDate.dateStr });
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color={MAROON} />
+                    <Text style={styles.quickActionText}>Edit Availability</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            
+            {/* Past Date Notice */}
+            {selectedDate?.isPastDate && (
+              <View style={styles.pastDateNotice}>
+                <Ionicons name="information-circle-outline" size={20} color="#666" />
+                <Text style={styles.pastDateNoticeText}>
+                  This is a past date. You can view completed bookings but cannot modify availability.
+                </Text>
+              </View>
+            )}
+            
             <ScrollView style={styles.modalBookings} showsVerticalScrollIndicator={false}>
-              {selectedDate?.bookings.map((booking, index) => (
+              {selectedDate?.bookings.length > 0 ? selectedDate.bookings.map((booking, index) => (
                 <View key={booking.id} style={styles.modalBookingCard}>
                   <View style={styles.modalBookingHeader}>
                     <View style={styles.timeContainer}>
@@ -292,8 +530,224 @@ export default function DriverScheduleScreen({ navigation }) {
                     </TouchableOpacity>
                   )}
                 </View>
-              ))}
+              )) : (
+                <View style={styles.noBookingsContainer}>
+                  <Ionicons name="calendar-outline" size={48} color="#ccc" />
+                  <Text style={styles.noBookingsText}>No bookings for this date</Text>
+                  <Text style={styles.noBookingsSubtext}>Tap "Set Availability" to manage your schedule</Text>
+                </View>
+              )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Time Selection Modal */}
+      <Modal
+        visible={showTimeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowTimeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.timeModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Set Available Hours</Text>
+              <TouchableOpacity onPress={() => setShowTimeModal(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.timeSelectionContainer}>
+              <Text style={styles.timeSelectionTitle}>
+                {selectedDate && `${new Date(selectedDate.dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`}
+              </Text>
+              
+              {/* Mode Selection */}
+              <View style={styles.modeSelection}>
+                <TouchableOpacity 
+                  style={[styles.modeBtn, availabilityMode === 'range' && styles.modeBtnActive]}
+                  onPress={() => setAvailabilityMode('range')}
+                >
+                  <Ionicons name="time-outline" size={16} color={availabilityMode === 'range' ? '#fff' : MAROON} />
+                  <Text style={[styles.modeBtnText, availabilityMode === 'range' && styles.modeBtnTextActive]}>Time Range</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.modeBtn, availabilityMode === 'custom' && styles.modeBtnActive]}
+                  onPress={() => setAvailabilityMode('custom')}
+                >
+                  <Ionicons name="grid-outline" size={16} color={availabilityMode === 'custom' ? '#fff' : MAROON} />
+                  <Text style={[styles.modeBtnText, availabilityMode === 'custom' && styles.modeBtnTextActive]}>Select Hours</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {availabilityMode === 'range' ? (
+                <>
+                  <View style={styles.timeRow}>
+                    <View style={styles.timeInputContainer}>
+                      <Text style={styles.timeLabel}>From:</Text>
+                      <TouchableOpacity style={styles.timeInput}>
+                        <Text style={styles.timeInputText}>{formatTime(availableFromTime)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.timeInputContainer}>
+                      <Text style={styles.timeLabel}>To:</Text>
+                      <TouchableOpacity style={styles.timeInput}>
+                        <Text style={styles.timeInputText}>{formatTime(availableToTime)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  
+                  {/* Quick Time Presets */}
+                  <View style={styles.presetsContainer}>
+                    <Text style={styles.presetsTitle}>Quick Presets:</Text>
+                    <View style={styles.presetsRow}>
+                      <TouchableOpacity 
+                        style={styles.presetBtn}
+                        onPress={() => {
+                          setAvailableFromTime('08:00');
+                          setAvailableToTime('17:00');
+                        }}
+                      >
+                        <Text style={styles.presetText}>8AM - 5PM</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.presetBtn}
+                        onPress={() => {
+                          setAvailableFromTime('09:00');
+                          setAvailableToTime('18:00');
+                        }}
+                      >
+                        <Text style={styles.presetText}>9AM - 6PM</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.presetBtn}
+                        onPress={() => {
+                          setAvailableFromTime('06:00');
+                          setAvailableToTime('20:00');
+                        }}
+                      >
+                        <Text style={styles.presetText}>6AM - 8PM</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.customModeTitle}>Select specific hours you're available:</Text>
+                  <View style={styles.timeSlotGrid}>
+                    {['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map((time) => (
+                      <TouchableOpacity
+                        key={time}
+                        style={[
+                          styles.timeSlotBtn,
+                          selectedTimeSlots.includes(time) && styles.timeSlotBtnSelected
+                        ]}
+                        onPress={() => {
+                          setSelectedTimeSlots(prev => 
+                            prev.includes(time) 
+                              ? prev.filter(t => t !== time)
+                              : [...prev, time].sort()
+                          );
+                        }}
+                      >
+                        <Text style={[
+                          styles.timeSlotBtnText,
+                          selectedTimeSlots.includes(time) && styles.timeSlotBtnTextSelected
+                        ]}>
+                          {formatTime(time)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  
+                  {selectedTimeSlots.length > 0 && (
+                    <View style={styles.selectedSummary}>
+                      <Text style={styles.selectedSummaryTitle}>Selected: {selectedTimeSlots.length} hour{selectedTimeSlots.length !== 1 ? 's' : ''}</Text>
+                      <Text style={styles.selectedSummaryText}>
+                        {selectedTimeSlots.map(time => formatTime(time)).join(', ')}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+              
+              <View style={styles.timeModalActions}>
+                <TouchableOpacity 
+                  style={styles.timeModalCancelBtn}
+                  onPress={() => setShowTimeModal(false)}
+                >
+                  <Text style={styles.timeModalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[
+                    styles.timeModalSaveBtn,
+                    (availabilityMode === 'custom' && selectedTimeSlots.length === 0) && styles.timeModalSaveBtnDisabled
+                  ]}
+                  disabled={availabilityMode === 'custom' && selectedTimeSlots.length === 0}
+                  onPress={async () => {
+                    try {
+                      const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+                      let unavailableTimes;
+                      let notes;
+                      
+                      if (availabilityMode === 'range') {
+                        // Range mode: times outside the range are unavailable
+                        const fromHour = parseInt(availableFromTime.split(':')[0]);
+                        const toHour = parseInt(availableToTime.split(':')[0]);
+                        
+                        unavailableTimes = allTimes.filter(time => {
+                          const hour = parseInt(time.split(':')[0]);
+                          return hour < fromHour || hour >= toHour;
+                        });
+                        
+                        notes = `Available ${formatTime(availableFromTime)} - ${formatTime(availableToTime)}`;
+                      } else {
+                        // Custom mode: times not selected are unavailable
+                        unavailableTimes = allTimes.filter(time => !selectedTimeSlots.includes(time));
+                        
+                        if (selectedTimeSlots.length === 1) {
+                          notes = `Available at ${formatTime(selectedTimeSlots[0])}`;
+                        } else {
+                          const sortedSlots = [...selectedTimeSlots].sort();
+                          notes = `Available: ${sortedSlots.map(t => formatTime(t)).join(', ')}`;
+                        }
+                      }
+                      
+                      await driverScheduleService.setAvailability(
+                        user.id, 
+                        selectedDate.dateStr, 
+                        true, 
+                        unavailableTimes, 
+                        notes
+                      );
+                      
+                      setShowTimeModal(false);
+                      setShowModal(false);
+                      onRefresh();
+                      
+                      // Reset states
+                      setSelectedTimeSlots([]);
+                      setAvailabilityMode('range');
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to set availability');
+                    }
+                  }}
+                >
+                  <Text style={styles.timeModalSaveText}>
+                    {availabilityMode === 'custom' && selectedTimeSlots.length === 0 
+                      ? 'Select Hours First' 
+                      : 'Set Available'
+                    }
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </View>
       </Modal>
@@ -317,20 +771,7 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16
   },
-  header: {
-    backgroundColor: MAROON,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 44,
-    paddingBottom: 16
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600'
-  },
+
   content: {
     flex: 1,
     padding: 16
@@ -418,6 +859,35 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 }
   },
+  dayAvailable: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12
+  },
+  dayUnavailable: {
+    backgroundColor: '#f44336',
+    borderRadius: 12
+  },
+  dayPartial: {
+    backgroundColor: '#FF9800',
+    borderRadius: 12
+  },
+  dayUnset: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed'
+  },
+  dayPast: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 12,
+    opacity: 0.5
+  },
+  dayPastWithBooking: {
+    backgroundColor: '#8d6e63',
+    borderRadius: 12,
+    opacity: 0.8
+  },
   todayCell: {
     borderWidth: 2,
     borderColor: '#4CAF50',
@@ -431,6 +901,26 @@ const styles = StyleSheet.create({
   dayTextWithBooking: {
     color: '#fff',
     fontWeight: '700'
+  },
+  dayTextContrast: {
+    color: '#fff',
+    fontWeight: '700'
+  },
+  dayTextAvailable: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  dayTextPartial: {
+    color: '#fff',
+    fontWeight: '600'
+  },
+  dayTextPast: {
+    color: '#999',
+    fontWeight: '400'
+  },
+  dayTextPastWithBooking: {
+    color: '#fff',
+    fontWeight: '600'
   },
   todayText: {
     color: '#4CAF50',
@@ -634,5 +1124,366 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     marginLeft: 8
+  },
+  quickActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    gap: 12
+  },
+  quickActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef'
+  },
+  unavailableBtn: {
+    backgroundColor: '#ffeaea',
+    borderColor: '#ffcdd2'
+  },
+  availableBtn: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#c8e6c9'
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: MAROON,
+    marginLeft: 6
+  },
+  noBookingsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40
+  },
+  noBookingsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12
+  },
+  noBookingsSubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 4
+  },
+  partialIndicator: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  partialText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FF9800'
+  },
+  availabilityStatus: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#f8f9fa'
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  statusTextContainer: {
+    marginLeft: 8
+  },
+  statusText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333'
+  },
+  timeRangeText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
+    marginTop: 2
+  },
+  unavailableTimes: {
+    marginTop: 8
+  },
+  unavailableLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 4
+  },
+  unavailableTimesList: {
+    fontSize: 14,
+    color: '#f44336',
+    fontWeight: '500'
+  },
+  notesContainer: {
+    marginTop: 8
+  },
+  notesLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 4
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#333',
+    fontStyle: 'italic'
+  },
+  legendContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  legendTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  legendItems: {
+    flex: 1
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  legendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 8
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500'
+  },
+  timeModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%'
+  },
+  timeSelectionContainer: {
+    padding: 24
+  },
+  timeSelectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 24
+  },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24
+  },
+  timeInputContainer: {
+    flex: 1,
+    marginHorizontal: 8
+  },
+  timeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8
+  },
+  timeInput: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef'
+  },
+  timeInputText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: MAROON,
+    textAlign: 'center'
+  },
+  presetsContainer: {
+    marginBottom: 24
+  },
+  presetsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 12
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  presetBtn: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4
+  },
+  presetText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center'
+  },
+  timeModalActions: {
+    flexDirection: 'row',
+    gap: 12
+  },
+  timeModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+  timeModalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666'
+  },
+  timeModalSaveBtn: {
+    flex: 1,
+    backgroundColor: MAROON,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+  timeModalSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff'
+  },
+  timeModalSaveBtnDisabled: {
+    backgroundColor: '#ccc'
+  },
+  modeSelection: {
+    flexDirection: 'row',
+    marginBottom: 24,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 4
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'transparent'
+  },
+  modeBtnActive: {
+    backgroundColor: MAROON
+  },
+  modeBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: MAROON,
+    marginLeft: 6
+  },
+  modeBtnTextActive: {
+    color: '#fff'
+  },
+  customModeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 16,
+    textAlign: 'center'
+  },
+  timeSlotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16
+  },
+  timeSlotBtn: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    minWidth: 80
+  },
+  timeSlotBtnSelected: {
+    backgroundColor: MAROON,
+    borderColor: MAROON
+  },
+  timeSlotBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center'
+  },
+  timeSlotBtnTextSelected: {
+    color: '#fff'
+  },
+  selectedSummary: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50'
+  },
+  selectedSummaryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2e7d32',
+    marginBottom: 4
+  },
+  selectedSummaryText: {
+    fontSize: 12,
+    color: '#388e3c',
+    lineHeight: 18
+  },
+  pastDateNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: '#fff3cd',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  pastDateNoticeText: {
+    fontSize: 14,
+    color: '#856404',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 20
   }
 });

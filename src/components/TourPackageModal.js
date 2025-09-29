@@ -26,7 +26,7 @@ const IMG_HEIGHT = 280;
 
 const formatPeso = (val) => (typeof val === 'number' ? `₱${val.toLocaleString()}` : '—');
 
-const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
+const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation }) => {
   const [reviews, setReviews] = useState([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [activePhoto, setActivePhoto] = useState(0);
@@ -279,6 +279,34 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
                 title="Destination"
                 subtitle={packageData?.destination || 'Various locations'}
               />
+              <View style={styles.mapButtonContainer}>
+                <TouchableOpacity 
+                  style={styles.viewRouteButton} 
+                  onPress={() => {
+                    onClose?.();
+                    if (navigation) {
+                      navigation.navigate('MapView', {
+                        mode: 'viewRoute',
+                        locations: {
+                          pickup: {
+                            name: packageData?.pickup_location || 'Pickup Location',
+                            latitude: packageData?.pickup_lat || 10.295,
+                            longitude: packageData?.pickup_lng || 123.89
+                          },
+                          destination: {
+                            name: packageData?.destination || 'Destination',
+                            latitude: packageData?.destination_lat || 10.295,
+                            longitude: packageData?.destination_lng || 123.89
+                          }
+                        }
+                      });
+                    }
+                  }}
+                >
+                  <Ionicons name="map" size={18} color="#fff" />
+                  <Text style={styles.viewRouteButtonText}>View Pickup & Destination</Text>
+                </TouchableOpacity>
+              </View>
               {packageData?.stops_lat && packageData?.stops_lng && packageData.stops_lat.length > 0 && (
                 <InfoRow
                   title="Stops"
@@ -375,6 +403,20 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook }) => {
 const InfoRow = ({ title, subtitle }) => (
   <View style={styles.infoRow}>
     <Text style={styles.infoTitle}>{title}</Text>
+    <Text style={styles.infoSubtitle}>{subtitle}</Text>
+  </View>
+);
+
+/** Info row with map button for locations */
+const InfoRowWithMap = ({ title, subtitle, onMapPress }) => (
+  <View style={styles.infoRow}>
+    <View style={styles.infoRowHeader}>
+      <Text style={styles.infoTitle}>{title}</Text>
+      <TouchableOpacity style={styles.mapButton} onPress={onMapPress}>
+        <Ionicons name="map-outline" size={16} color="#6B2E2B" />
+        <Text style={styles.mapButtonText}>View on Map</Text>
+      </TouchableOpacity>
+    </View>
     <Text style={styles.infoSubtitle}>{subtitle}</Text>
   </View>
 );
@@ -585,6 +627,40 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     marginBottom: 12,
+  },
+  infoRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F5E9E2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+  },
+  mapButtonContainer: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  viewRouteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  viewRouteButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   infoTitle: {
     fontSize: 14,

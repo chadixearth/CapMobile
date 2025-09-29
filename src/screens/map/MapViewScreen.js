@@ -15,7 +15,7 @@ const DEFAULT_REGION = {
 };
 
 const MapViewScreen = ({ navigation, route }) => {
-  const { mode, onLocationSelect } = route?.params || {};
+  const { mode, onLocationSelect, location, locations } = route?.params || {};
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -213,7 +213,74 @@ const MapViewScreen = ({ navigation, route }) => {
       }
       
       setAllMarkers(processedMarkers);
-      setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
+      
+      if (mode === 'viewRoute' && locations) {
+        // Show both pickup and destination markers
+        const routeMarkers = [
+          {
+            latitude: parseFloat(locations.pickup.latitude),
+            longitude: parseFloat(locations.pickup.longitude),
+            title: locations.pickup.name || 'Pickup Location',
+            description: 'Tour package pickup point',
+            pointType: 'pickup',
+            iconColor: '#2E7D32',
+            id: 'pickup-location'
+          },
+          {
+            latitude: parseFloat(locations.destination.latitude),
+            longitude: parseFloat(locations.destination.longitude),
+            title: locations.destination.name || 'Destination',
+            description: 'Tour package destination',
+            pointType: 'destination',
+            iconColor: '#C62828',
+            id: 'destination-location'
+          }
+        ];
+        setMarkers(routeMarkers);
+        
+        // Try to find and show road highlights for this route
+        const pickupPoint = processedMarkers.find(m => 
+          m.pointType === 'pickup' && 
+          Math.abs(m.latitude - parseFloat(locations.pickup.latitude)) < 0.001 &&
+          Math.abs(m.longitude - parseFloat(locations.pickup.longitude)) < 0.001
+        );
+        
+        if (pickupPoint && pickupPoint.id) {
+          // Fetch routes for this pickup point to show road highlights
+          getRoutesByPickup(pickupPoint.id).then(routeResult => {
+            if (routeResult.success && routeResult.data) {
+              const { road_highlights = [], color } = routeResult.data;
+              if (road_highlights.length > 0) {
+                const processedRoads = road_highlights.map(road => ({
+                  id: road.id,
+                  name: road.name || 'Route',
+                  road_coordinates: road.coordinates || road.road_coordinates,
+                  stroke_color: color || road.color || '#007AFF',
+                  stroke_width: road.weight || 4,
+                  stroke_opacity: road.opacity || 0.7
+                }));
+                setRoads(processedRoads);
+              }
+            }
+          }).catch(error => {
+            console.log('Could not load road highlights for tour route:', error);
+          });
+        }
+      } else if (mode === 'viewLocation' && location) {
+        // Show only the specific location marker
+        const locationMarker = {
+          latitude: parseFloat(location.latitude),
+          longitude: parseFloat(location.longitude),
+          title: location.name || 'Pickup Location',
+          description: 'Tour package pickup point',
+          pointType: 'pickup',
+          iconColor: '#6B2E2B',
+          id: 'pickup-location'
+        };
+        setMarkers([locationMarker]);
+      } else {
+        setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
+      }
     }
     
     // Process roads with route color associations
@@ -265,7 +332,35 @@ const MapViewScreen = ({ navigation, route }) => {
     if (data.zones) setZones(data.zones);
     
     // Update region
-    if (data.config) {
+    if (mode === 'viewRoute' && locations) {
+      // Calculate bounds for both pickup and destination
+      const pickup = locations.pickup;
+      const destination = locations.destination;
+      const minLat = Math.min(pickup.latitude, destination.latitude);
+      const maxLat = Math.max(pickup.latitude, destination.latitude);
+      const minLng = Math.min(pickup.longitude, destination.longitude);
+      const maxLng = Math.max(pickup.longitude, destination.longitude);
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLng = (minLng + maxLng) / 2;
+      const deltaLat = Math.max((maxLat - minLat) * 1.5, 0.02);
+      const deltaLng = Math.max((maxLng - minLng) * 1.5, 0.02);
+      
+      const newRegion = {
+        latitude: centerLat,
+        longitude: centerLng,
+        latitudeDelta: deltaLat,
+        longitudeDelta: deltaLng,
+      };
+      setRegion(newRegion);
+    } else if (mode === 'viewLocation' && location) {
+      const newRegion = {
+        latitude: parseFloat(location.latitude || 10.3157),
+        longitude: parseFloat(location.longitude || 123.8854),
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      setRegion(newRegion);
+    } else if (data.config) {
       const newRegion = {
         latitude: parseFloat(data.config.center_latitude || 10.3157),
         longitude: parseFloat(data.config.center_longitude || 123.8854),
@@ -340,13 +435,90 @@ const MapViewScreen = ({ navigation, route }) => {
           }
         ]
       );
-    } else if (marker.pointType === 'pickup' && marker.id) {
-      // For public map view, show basic info without route connections
-      Alert.alert(
-        marker.title,
-        'This is a pickup point. Sign in to see available routes and book rides.',
-        [{ text: 'OK' }]
-      );
+    } else if (marker.pointType === 'pickup') {
+      console.log('Pickup marker clicked:', { id: marker.id, title: marker.title, pointType: marker.pointType });
+      // Show pickup point with associated drop-off points
+      try {
+        setLoading(true);
+        console.log('Fetching routes for pickup ID:', marker.id);
+        const routeResult = await getRoutesByPickup(marker.id);
+        console.log('Route result:', routeResult);
+        
+        if (routeResult.success && routeResult.data) {
+          const { available_destinations = [], road_highlights = [], color } = routeResult.data;
+          
+          // Show pickup marker
+          const pickupMarker = {
+            ...marker,
+            iconColor: color || marker.iconColor
+          };
+          
+          // Create dropoff markers
+          const dropoffMarkers = available_destinations.map(dest => ({
+            latitude: parseFloat(dest.latitude),
+            longitude: parseFloat(dest.longitude),
+            title: dest.name,
+            description: 'Drop-off point',
+            pointType: 'dropoff',
+            iconColor: color || '#FF5722',
+            id: dest.id
+          }));
+          
+          // Show all markers (pickup + dropoffs)
+          setMarkers([pickupMarker, ...dropoffMarkers]);
+          
+          // Show road highlights
+          if (road_highlights.length > 0) {
+            const processedRoads = road_highlights.map(road => ({
+              id: road.id,
+              name: road.name || 'Route',
+              road_coordinates: road.coordinates || road.road_coordinates,
+              stroke_color: color || road.color || '#007AFF',
+              stroke_width: road.weight || 4,
+              stroke_opacity: road.opacity || 0.7
+            }));
+            setRoads(processedRoads);
+          }
+          
+          Alert.alert(
+            marker.title,
+            `Found ${available_destinations.length} available destinations. Routes are now highlighted on the map.`,
+            [
+              { text: 'Navigate', onPress: () => {
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
+                require('react-native').Linking.openURL(url);
+              }},
+              { text: 'Clear Routes', onPress: () => {
+                setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
+                setRoads([]);
+              }},
+              { text: 'OK' }
+            ]
+          );
+        } else {
+          console.log('No route data found:', routeResult);
+          Alert.alert(
+            marker.title,
+            'No routes available from this pickup point.',
+            [
+              { text: 'Navigate', onPress: () => {
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
+                require('react-native').Linking.openURL(url);
+              }},
+              { text: 'OK' }
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Error fetching routes:', error);
+        Alert.alert(
+          'Error',
+          `Failed to load routes: ${error.message}`,
+          [{ text: 'OK' }]
+        );
+      } finally {
+        setLoading(false);
+      }
     } else if (marker.image_urls && marker.image_urls.length > 0) {
       // Show images if available
       setSelectedPoint(marker);
@@ -448,14 +620,19 @@ const MapViewScreen = ({ navigation, route }) => {
           />
         </View>
         
-        {/* Terminal Selection Mode */}
+        {/* Mode Headers */}
         {mode && (
           <View style={styles.selectionHeader}>
             <Text style={styles.selectionTitle}>
-              {mode === 'selectPickup' ? 'Select Pickup Terminal' : 'Select Drop Location'}
+              {mode === 'selectPickup' ? 'Select Pickup Terminal' : 
+               mode === 'selectDrop' ? 'Select Drop Location' :
+               mode === 'viewRoute' ? 'Tour Route' :
+               mode === 'viewLocation' ? 'Pickup Location' : 'Map View'}
             </Text>
             <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={styles.cancelButton}>Cancel</Text>
+              <Text style={styles.cancelButton}>
+                {mode === 'viewLocation' || mode === 'viewRoute' ? 'Close' : 'Cancel'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -463,6 +640,17 @@ const MapViewScreen = ({ navigation, route }) => {
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
 
+          
+          {/* Clear Routes Button */}
+          <TouchableOpacity 
+            style={[styles.floatingButton, styles.clearRoutesButton]}
+            onPress={() => {
+              setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
+              setRoads([]);
+            }}
+          >
+            <Text style={styles.floatingButtonText}>🗑️</Text>
+          </TouchableOpacity>
           
           {/* Refresh Button */}
           <TouchableOpacity 

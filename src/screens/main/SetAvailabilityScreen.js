@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { driverScheduleService } from '../../services/driverScheduleService';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 
 const MAROON = '#6B2E2B';
 
@@ -19,43 +20,183 @@ const TIME_SLOTS = [
   '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
 ];
 
-export default function SetAvailabilityScreen({ navigation }) {
-  const { user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isAvailable, setIsAvailable] = useState(true);
-  const [unavailableTimes, setUnavailableTimes] = useState([]);
-  const [saving, setSaving] = useState(false);
+export default function SetAvailabilityScreen({ navigation, route }) {
+  // Hide the default stack header (avoid double headers)
+  React.useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
-  const getNext7Days = () => {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() + i);
-      days.push({
-        date: date.toISOString().split('T')[0],
-        label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : 
-               date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      });
-    }
-    return days;
-  };
+  const { user } = useAuth();
+  const passedDate = route?.params?.selectedDate;
+  const [selectedDate, setSelectedDate] = useState(passedDate || new Date().toISOString().split('T')[0]);
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [availabilityMode, setAvailabilityMode] = useState('range');
+  const [availableFromTime, setAvailableFromTime] = useState('08:00');
+  const [availableToTime, setAvailableToTime] = useState('18:00');
+  const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Load existing availability when date changes
+  React.useEffect(() => {
+    const loadExistingAvailability = async () => {
+      if (!user?.id || !selectedDate) return;
+      
+      // Check if selected date is in the past
+      const selectedDateObj = new Date(selectedDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (selectedDateObj < today) {
+        Alert.alert(
+          'Invalid Date', 
+          'Cannot set availability for past dates. Redirecting to today.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        const result = await driverScheduleService.getDriverSchedule(user.id, selectedDate, selectedDate);
+        if (result.success && result.data?.length > 0) {
+          const schedule = result.data[0];
+          setIsAvailable(schedule.is_available);
+          
+          if (schedule.is_available && schedule.unavailable_times?.length > 0) {
+            // Determine if it's range or custom mode based on pattern
+            const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+            const availableTimes = allTimes.filter(time => !schedule.unavailable_times.includes(time));
+            
+            if (availableTimes.length > 0) {
+              // Check if it's a continuous range
+              const isRange = availableTimes.every((time, index) => {
+                if (index === 0) return true;
+                const prevHour = parseInt(availableTimes[index - 1].split(':')[0]);
+                const currHour = parseInt(time.split(':')[0]);
+                return currHour === prevHour + 1;
+              });
+              
+              if (isRange) {
+                setAvailabilityMode('range');
+                setAvailableFromTime(availableTimes[0]);
+                const lastHour = parseInt(availableTimes[availableTimes.length - 1].split(':')[0]) + 1;
+                setAvailableToTime(`${lastHour.toString().padStart(2, '0')}:00`);
+              } else {
+                setAvailabilityMode('custom');
+                setSelectedTimeSlots(availableTimes);
+              }
+            }
+          }
+        } else {
+          // Reset to defaults for new date
+          setIsAvailable(true);
+          setAvailabilityMode('range');
+          setSelectedTimeSlots([]);
+        }
+      } catch (error) {
+        console.log('Error loading existing availability:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadExistingAvailability();
+  }, [selectedDate, user?.id]);
 
   const toggleTimeSlot = (time) => {
-    setUnavailableTimes(prev => 
+    setSelectedTimeSlots(prev => 
       prev.includes(time) 
         ? prev.filter(t => t !== time)
-        : [...prev, time]
+        : [...prev, time].sort()
     );
   };
 
   const saveAvailability = async () => {
     setSaving(true);
     try {
+      // Additional validation for today's date with current time
+      const selectedDateObj = new Date(selectedDate);
+      const today = new Date();
+      const isToday = selectedDateObj.toDateString() === today.toDateString();
+      
+      if (isToday && isAvailable) {
+        const currentHour = today.getHours();
+        
+        if (availabilityMode === 'range') {
+          const fromHour = parseInt(availableFromTime.split(':')[0]);
+          if (fromHour <= currentHour) {
+            Alert.alert(
+              'Invalid Time', 
+              `Cannot set availability for past hours. Current time is ${today.getHours()}:${today.getMinutes().toString().padStart(2, '0')}`
+            );
+            setSaving(false);
+            return;
+          }
+        } else {
+          const validSlots = selectedTimeSlots.filter(time => {
+            const slotHour = parseInt(time.split(':')[0]);
+            return slotHour > currentHour;
+          });
+          
+          if (validSlots.length === 0) {
+            Alert.alert(
+              'Invalid Time', 
+              'All selected hours are in the past. Please select future hours.'
+            );
+            setSaving(false);
+            return;
+          }
+          
+          if (validSlots.length !== selectedTimeSlots.length) {
+            Alert.alert(
+              'Some Hours Skipped', 
+              `${selectedTimeSlots.length - validSlots.length} past hour(s) were automatically removed.`
+            );
+            setSelectedTimeSlots(validSlots);
+          }
+        }
+      }
+      
+      let unavailableTimes = [];
+      let notes = '';
+      
+      if (!isAvailable) {
+        // If not available, mark all times as unavailable
+        unavailableTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+        notes = 'Not available';
+      } else {
+        // Available - calculate based on mode
+        const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+        
+        if (availabilityMode === 'range') {
+          const fromHour = parseInt(availableFromTime.split(':')[0]);
+          const toHour = parseInt(availableToTime.split(':')[0]);
+          
+          unavailableTimes = allTimes.filter(time => {
+            const hour = parseInt(time.split(':')[0]);
+            return hour < fromHour || hour >= toHour;
+          });
+          
+          notes = `Available ${formatTime(availableFromTime)} - ${formatTime(availableToTime)}`;
+        } else {
+          unavailableTimes = allTimes.filter(time => !selectedTimeSlots.includes(time));
+          
+          if (selectedTimeSlots.length === 1) {
+            notes = `Available at ${formatTime(selectedTimeSlots[0])}`;
+          } else {
+            const sortedSlots = [...selectedTimeSlots].sort();
+            notes = `Available: ${sortedSlots.map(t => formatTime(t)).join(', ')}`;
+          }
+        }
+      }
+      
       const result = await driverScheduleService.setAvailability(
         user.id,
         selectedDate,
         isAvailable,
-        unavailableTimes
+        unavailableTimes,
+        notes
       );
 
       if (result.success) {
@@ -82,37 +223,29 @@ export default function SetAvailabilityScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Set Availability</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <TARTRACKHeader
+        onMessagePress={() => navigation.navigate('Chat')}
+        onNotificationPress={() => navigation.navigate('Notification')}
+      />
 
       <ScrollView style={styles.content}>
-        {/* Date Selection */}
-        <Text style={styles.sectionTitle}>Select Date</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll}>
-          {getNext7Days().map((day) => (
-            <TouchableOpacity
-              key={day.date}
-              style={[
-                styles.dateCard,
-                selectedDate === day.date && styles.selectedDateCard
-              ]}
-              onPress={() => setSelectedDate(day.date)}
-            >
-              <Text style={[
-                styles.dateLabel,
-                selectedDate === day.date && styles.selectedDateLabel
-              ]}>
-                {day.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Date Info */}
+        <View style={styles.selectedDateInfo}>
+          <Text style={styles.sectionTitle}>
+            {passedDate ? 'Setting availability for:' : 'Today\'s Availability'}
+          </Text>
+          <View style={styles.dateInfoCard}>
+            <Ionicons name="calendar" size={20} color={MAROON} />
+            <Text style={styles.dateInfoText}>
+              {new Date(selectedDate).toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </Text>
+          </View>
+        </View>
 
         {/* Availability Toggle */}
         <View style={styles.availabilitySection}>
@@ -130,44 +263,136 @@ export default function SetAvailabilityScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Time Slots */}
+        {/* Dynamic Availability Options */}
         {isAvailable && (
           <View style={styles.timeSlotsSection}>
-            <Text style={styles.sectionTitle}>Unavailable Time Slots</Text>
-            <Text style={styles.sectionSubtitle}>
-              Select times when you're NOT available
-            </Text>
-            
-            <View style={styles.timeGrid}>
-              {TIME_SLOTS.map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[
-                    styles.timeSlot,
-                    unavailableTimes.includes(time) && styles.unavailableTimeSlot
-                  ]}
-                  onPress={() => toggleTimeSlot(time)}
-                >
-                  <Text style={[
-                    styles.timeSlotText,
-                    unavailableTimes.includes(time) && styles.unavailableTimeSlotText
-                  ]}>
-                    {formatTime(time)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            {/* Mode Selection */}
+            <View style={styles.modeSelection}>
+              <TouchableOpacity 
+                style={[styles.modeBtn, availabilityMode === 'range' && styles.modeBtnActive]}
+                onPress={() => setAvailabilityMode('range')}
+              >
+                <Ionicons name="time-outline" size={16} color={availabilityMode === 'range' ? '#fff' : MAROON} />
+                <Text style={[styles.modeBtnText, availabilityMode === 'range' && styles.modeBtnTextActive]}>Time Range</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modeBtn, availabilityMode === 'custom' && styles.modeBtnActive]}
+                onPress={() => setAvailabilityMode('custom')}
+              >
+                <Ionicons name="grid-outline" size={16} color={availabilityMode === 'custom' ? '#fff' : MAROON} />
+                <Text style={[styles.modeBtnText, availabilityMode === 'custom' && styles.modeBtnTextActive]}>Select Hours</Text>
+              </TouchableOpacity>
             </View>
+            
+            {availabilityMode === 'range' ? (
+              <>
+                <Text style={styles.sectionTitle}>Available Hours</Text>
+                <View style={styles.timeRow}>
+                  <View style={styles.timeInputContainer}>
+                    <Text style={styles.timeLabel}>From:</Text>
+                    <TouchableOpacity style={styles.timeInput}>
+                      <Text style={styles.timeInputText}>{formatTime(availableFromTime)}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.timeInputContainer}>
+                    <Text style={styles.timeLabel}>To:</Text>
+                    <TouchableOpacity style={styles.timeInput}>
+                      <Text style={styles.timeInputText}>{formatTime(availableToTime)}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                {/* Quick Presets */}
+                <View style={styles.presetsContainer}>
+                  <Text style={styles.presetsTitle}>Quick Presets:</Text>
+                  <View style={styles.presetsRow}>
+                    <TouchableOpacity 
+                      style={styles.presetBtn}
+                      onPress={() => {
+                        setAvailableFromTime('08:00');
+                        setAvailableToTime('17:00');
+                      }}
+                    >
+                      <Text style={styles.presetText}>8AM - 5PM</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.presetBtn}
+                      onPress={() => {
+                        setAvailableFromTime('09:00');
+                        setAvailableToTime('18:00');
+                      }}
+                    >
+                      <Text style={styles.presetText}>9AM - 6PM</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.presetBtn}
+                      onPress={() => {
+                        setAvailableFromTime('06:00');
+                        setAvailableToTime('20:00');
+                      }}
+                    >
+                      <Text style={styles.presetText}>6AM - 8PM</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionTitle}>Select Available Hours</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Tap the hours when you're available
+                </Text>
+                
+                <View style={styles.timeGrid}>
+                  {['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map((time) => (
+                    <TouchableOpacity
+                      key={time}
+                      style={[
+                        styles.timeSlot,
+                        selectedTimeSlots.includes(time) && styles.selectedTimeSlot
+                      ]}
+                      onPress={() => toggleTimeSlot(time)}
+                    >
+                      <Text style={[
+                        styles.timeSlotText,
+                        selectedTimeSlots.includes(time) && styles.selectedTimeSlotText
+                      ]}>
+                        {formatTime(time)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                {selectedTimeSlots.length > 0 && (
+                  <View style={styles.selectedSummary}>
+                    <Text style={styles.selectedSummaryTitle}>Selected: {selectedTimeSlots.length} hour{selectedTimeSlots.length !== 1 ? 's' : ''}</Text>
+                    <Text style={styles.selectedSummaryText}>
+                      {selectedTimeSlots.map(time => formatTime(time)).join(', ')}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
           </View>
         )}
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+          style={[
+            styles.saveBtn, 
+            (saving || (isAvailable && availabilityMode === 'custom' && selectedTimeSlots.length === 0)) && styles.saveBtnDisabled
+          ]}
           onPress={saveAvailability}
-          disabled={saving}
+          disabled={saving || (isAvailable && availabilityMode === 'custom' && selectedTimeSlots.length === 0)}
         >
           <Text style={styles.saveBtnText}>
-            {saving ? 'Saving...' : 'Save Availability'}
+            {saving ? 'Saving...' : 
+             (isAvailable && availabilityMode === 'custom' && selectedTimeSlots.length === 0) ? 'Select Hours First' :
+             'Save Availability'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -180,20 +405,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f8f8'
   },
-  header: {
-    backgroundColor: MAROON,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 44,
-    paddingBottom: 16
-  },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600'
-  },
+
   content: {
     flex: 1,
     padding: 16
@@ -296,5 +508,134 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600'
+  },
+  selectedDateInfo: {
+    marginBottom: 20
+  },
+  dateInfoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: MAROON
+  },
+  dateInfoText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 12
+  },
+  modeSelection: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 4
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: 'transparent'
+  },
+  modeBtnActive: {
+    backgroundColor: MAROON
+  },
+  modeBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: MAROON,
+    marginLeft: 6
+  },
+  modeBtnTextActive: {
+    color: '#fff'
+  },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20
+  },
+  timeInputContainer: {
+    flex: 1,
+    marginHorizontal: 8
+  },
+  timeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8
+  },
+  timeInput: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef'
+  },
+  timeInputText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: MAROON,
+    textAlign: 'center'
+  },
+  presetsContainer: {
+    marginBottom: 20
+  },
+  presetsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 12
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  presetBtn: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4
+  },
+  presetText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center'
+  },
+  selectedTimeSlot: {
+    backgroundColor: MAROON,
+    borderColor: MAROON
+  },
+  selectedTimeSlotText: {
+    color: '#fff'
+  },
+  selectedSummary: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50'
+  },
+  selectedSummaryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2e7d32',
+    marginBottom: 4
+  },
+  selectedSummaryText: {
+    fontSize: 12,
+    color: '#388e3c',
+    lineHeight: 18
   }
 });

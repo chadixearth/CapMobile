@@ -139,84 +139,29 @@ export default function GoodsServicesScreen() {
     setRefreshing(false);
   }, [fetchPosts, fetchRecentReviews]);
 
-  // Enhanced media grid with better layout and error handling
   const renderMediaGrid = (mediaArr) => {
-    console.log('renderMediaGrid called with:', mediaArr);
+    if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
     
-    if (!Array.isArray(mediaArr) || mediaArr.length === 0) {
-      console.log('No media array or empty array');
-      return null;
-    }
-    
-    // Filter valid images and ensure URLs are accessible
     const images = mediaArr
-      .filter((m) => {
-        const isValid = m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '';
-        if (!isValid) {
-          console.log('Invalid media item:', m);
-        }
-        return isValid;
-      })
-      .map((m) => ({
-        ...m,
-        url: m.url.replace(/\?$/, '') // Remove trailing ?
-      }))
-      .slice(0, 6); // Show up to 6 images
+      .filter((m) => m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '')
+      .map((m) => ({ ...m, url: m.url.replace(/\?$/, '') }))
+      .slice(0, 5);
     
-    console.log('Filtered images:', images.length, 'valid images');
-    
-    if (images.length === 0) {
-      console.log('No valid images found');
-      return null;
-    }
-    
-    const getImageStyle = (index, total) => {
-      if (total === 1) return [styles.mediaTile, styles.singleImage];
-      if (total === 2) return [styles.mediaTile, styles.doubleImage];
-      if (total === 3) {
-        return index === 0 ? [styles.mediaTile, styles.tripleMain] : [styles.mediaTile, styles.tripleSide];
-      }
-      return [styles.mediaTile, styles.quadImage];
-    };
-    
-    console.log('About to render media grid with', images.length, 'images');
+    if (images.length === 0) return null;
     
     return (
       <View style={styles.mediaContainer}>
-        <Text style={styles.mediaLabel}>Photos ({images.length})</Text>
         <View style={styles.mediaGrid}>
-          {images.map((m, idx) => {
-            console.log(`Rendering image ${idx + 1}:`, m.url);
-            return (
-              <TouchableOpacity key={idx} activeOpacity={0.8}>
-                <Image 
-                  source={{ uri: m.url }} 
-                  style={getImageStyle(idx, images.length)}
-                  resizeMode="cover"
-                  onError={(error) => {
-                    console.log('❌ Image load error for URL:', m.url);
-                    console.log('Error details:', error.nativeEvent);
-                  }}
-                  onLoad={() => {
-                    console.log('✅ Image loaded successfully:', m.url);
-                  }}
-                  onLoadStart={() => {
-                    console.log('🔄 Image loading started:', m.url);
-                  }}
-                />
-                {images.length > 4 && idx === 3 && (
-                  <View style={styles.moreOverlay}>
-                    <Text style={styles.moreText}>+{images.length - 4}</Text>
-                  </View>
-                )}
-                {m.caption && (
-                  <View style={styles.captionOverlay}>
-                    <Text style={styles.captionText} numberOfLines={1}>{m.caption}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {images.slice(0, 4).map((m, idx) => (
+            <TouchableOpacity key={idx} style={styles.imageWrapper}>
+              <Image source={{ uri: m.url }} style={styles.gridImage} resizeMode="cover" />
+              {idx === 3 && images.length > 4 && (
+                <View style={styles.moreOverlay}>
+                  <Text style={styles.moreText}>+{images.length - 4}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     );
@@ -353,12 +298,7 @@ export default function GoodsServicesScreen() {
 
         {/* Content */}
         {item.title && <Text style={styles.title}>{item.title}</Text>}
-        {item.description && (
-          <View style={styles.bioSection}>
-            <Text style={styles.bioLabel}>About {displayName}:</Text>
-            <Text style={styles.description}>{item.description}</Text>
-          </View>
-        )}
+        {item.description && <Text style={styles.description}>{item.description}</Text>}
 
         {/* Driver Rating */}
         {avgRating > 0 && (
@@ -611,15 +551,7 @@ const styles = StyleSheet.create({
     marginBottom: 8, 
     lineHeight: 24 
   },
-  bioSection: {
-    marginBottom: 12,
-  },
-  bioLabel: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: 14,
-    marginBottom: 6,
-  },
+
   description: { 
     color: COLORS.text, 
     lineHeight: 22, 
@@ -646,47 +578,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Enhanced media grid
+  // Facebook-style media grid
   mediaContainer: {
     marginVertical: 12,
-  },
-  mediaLabel: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: 14,
-    marginBottom: 8,
   },
   mediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 2,
   },
-  mediaTile: {
-    borderRadius: 12,
-    backgroundColor: '#ff0000', // Red background to debug
-    overflow: 'hidden',
-    minWidth: 50,
-    minHeight: 50,
-  },
-  singleImage: {
-    width: '100%',
-    height: 200,
-  },
-  doubleImage: {
-    width: '49%',
+  imageWrapper: {
+    position: 'relative',
+    width: (width - 34) / 2 - 1,
     height: 120,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
-  tripleMain: {
-    width: '60%',
-    height: 140,
-  },
-  tripleSide: {
-    width: '38%',
-    height: 67,
-  },
-  quadImage: {
-    width: '49%',
-    height: 100,
+  gridImage: {
+    width: '100%',
+    height: '100%',
   },
   moreOverlay: {
     position: 'absolute',

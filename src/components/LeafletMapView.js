@@ -274,13 +274,27 @@ const LeafletMapView = ({
             }
           });
 
-          // Auto-zoom to fit road highlights if available
-          if (allRoadCoords.length > 0) {
+          // Auto-zoom to fit markers and roads
+          var allCoords = [];
+          
+          // Add marker coordinates
+          markers.forEach(function(marker) {
+            if (marker.lat && marker.lng) {
+              allCoords.push([marker.lat, marker.lng]);
+            }
+          });
+          
+          // Add road coordinates
+          allCoords = allCoords.concat(allRoadCoords);
+          
+          if (allCoords.length > 1) {
             var group = new L.featureGroup();
-            allRoadCoords.forEach(function(coord) {
+            allCoords.forEach(function(coord) {
               L.marker(coord).addTo(group);
             });
             map.fitBounds(group.getBounds(), { padding: [20, 20] });
+          } else if (allCoords.length === 1) {
+            map.setView(allCoords[0], 15);
           }
 
           // Send message when map is ready
@@ -345,6 +359,15 @@ const LeafletMapView = ({
         onError={(error) => {
           console.error('WebView error:', error);
         }}
+        onLoadStart={() => console.log('WebView loading started')}
+        onLoadEnd={() => console.log('WebView loading ended')}
+        onHttpError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.warn('WebView HTTP error:', nativeEvent);
+        }}
+        mixedContentMode="compatibility"
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
       />
     </View>
   );

@@ -35,6 +35,7 @@ import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import AccountDeletionHandler from '../../components/AccountDeletionHandler';
+import { getUserSettings, updateAnonymousReviewSetting } from '../../services/userSettings';
 
 const COLORS = {
   maroon: '#6B2E2B',
@@ -77,6 +78,9 @@ export default function AccountDetailsScreen({ navigation }) {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState('');
   const [showPasswords, setShowPasswords] = useState(false);
+
+  // Privacy settings state
+  const [anonymousReviews, setAnonymousReviews] = useState(false);
 
   // Danger Zone modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -140,6 +144,18 @@ export default function AccountDetailsScreen({ navigation }) {
                   setExistingBioId(profileResult.data.id);
               }
             } catch {}
+          }
+
+          // Load privacy settings for tourists
+          if (auth.role === 'tourist') {
+            try {
+              const settingsResult = await getUserSettings();
+              if (settingsResult.success) {
+                setAnonymousReviews(settingsResult.data.anonymousReviews || false);
+              }
+            } catch (error) {
+              console.error('Error loading privacy settings:', error);
+            }
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
@@ -1017,6 +1033,57 @@ export default function AccountDetailsScreen({ navigation }) {
           </Section>
         )}
 
+        {/* Privacy Settings - For Tourists */}
+        {auth.role === 'tourist' && (
+          <Section icon="shield-outline" title="Privacy Settings">
+            <View style={styles.privacyCard}>
+              <View style={styles.privacyHeader}>
+                <View style={styles.privacyIconCircle}>
+                  <Ionicons name="eye-off" size={18} color={COLORS.maroon} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.privacyHeading}>Anonymous Reviews</Text>
+                  <Text style={styles.privacySub}>
+                    Choose whether to remain anonymous when giving reviews and ratings.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.privacyToggle,
+                    anonymousReviews && styles.privacyToggleActive
+                  ]}
+                  onPress={() => {
+                    const newValue = !anonymousReviews;
+                    setAnonymousReviews(newValue);
+                    updateAnonymousReviewSetting(newValue);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[
+                    styles.privacyToggleThumb,
+                    anonymousReviews && styles.privacyToggleThumbActive
+                  ]} />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.privacyInfo}>
+                <View style={styles.privacyInfoItem}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={COLORS.green} />
+                  <Text style={styles.privacyInfoText}>
+                    When enabled, your name won't be shown in reviews
+                  </Text>
+                </View>
+                <View style={styles.privacyInfoItem}>
+                  <Ionicons name="information-circle-outline" size={16} color={COLORS.muted} />
+                  <Text style={styles.privacyInfoText}>
+                    You can still change this for individual reviews
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Section>
+        )}
+
         {/* Danger Zone — Redesigned */}
         <Section icon="warning-outline" title="ACCOUNT DEACTIVATION">
           <View style={styles.dangerWrap}>
@@ -1717,5 +1784,82 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  // ===== Privacy Settings =====
+  privacyCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  privacyHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 12,
+  },
+  privacyIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FDF4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#F3DADA',
+  },
+  privacyHeading: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  privacySub: {
+    marginTop: 2,
+    fontSize: 12,
+    color: COLORS.muted,
+    lineHeight: 16,
+  },
+  privacyToggle: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  privacyToggleActive: {
+    backgroundColor: COLORS.maroon,
+  },
+  privacyToggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  privacyToggleThumbActive: {
+    transform: [{ translateX: 20 }],
+  },
+  privacyInfo: {
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  privacyInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  privacyInfoText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.muted,
   },
 });
