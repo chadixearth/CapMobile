@@ -39,9 +39,14 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
       const result = await getDriverPayoutHistory(driverId);
       if (result.success) {
         const rows = Array.isArray(result.data) ? result.data : [];
+        // Filter to only show released payouts
+        const releasedPayouts = rows.filter(payout => {
+          const status = (payout?.status || '').toLowerCase();
+          return status === 'completed' || status === 'released';
+        });
         // newest first
-        rows.sort((a, b) => (new Date(b?.payout_date || 0)) - (new Date(a?.payout_date || 0)));
-        setPayouts(rows);
+        releasedPayouts.sort((a, b) => (new Date(b?.payout_date || 0)) - (new Date(a?.payout_date || 0)));
+        setPayouts(releasedPayouts);
       } else {
         setPayouts([]);
         setErrorText(result.error || 'Failed to load payouts.');
