@@ -250,6 +250,7 @@ export default function DriverHomeScreen({ navigation }) {
   const [notifications, setNotifications] = useState(defaultNotifications);
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0); // admin pending
   const [pendingAssignments, setPendingAssignments] = useState(0);
+  const [customTourEarnings, setCustomTourEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -364,6 +365,7 @@ export default function DriverHomeScreen({ navigation }) {
           fetchRecentNotifications(userId),
           fetchPending(userId),
           fetchPendingAssignments(userId),
+          fetchCustomTourEarnings(userId),
         ]);
       }
     } catch (error) {
@@ -395,6 +397,7 @@ export default function DriverHomeScreen({ navigation }) {
   const fetchPercentageChange = async (driverId) => {
     try {
       const data = await getEarningsPercentageChange(driverId, 'month');
+      console.log('MoM Growth Data:', data?.data);
       setPercentageChange(data?.success ? data.data : { percentage_change: 0, is_increase: true });
     } catch {
       setPercentageChange({ percentage_change: 0, is_increase: true });
@@ -419,6 +422,27 @@ export default function DriverHomeScreen({ navigation }) {
       }
     } catch {
       setPendingAssignments(0);
+    }
+  };
+
+  const fetchCustomTourEarnings = async (driverId) => {
+    try {
+      // Custom tours are typically stored in a separate table or marked with a specific type
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('total_amount')
+        .eq('driver_id', driverId)
+        .eq('status', 'completed')
+        .eq('booking_type', 'custom') // Assuming custom tours have this field
+        .gte('created_at', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString());
+      
+      if (!error && data) {
+        const total = data.reduce((sum, booking) => sum + (booking.total_amount || 0), 0);
+        setCustomTourEarnings(total);
+      }
+    } catch (error) {
+      console.error('Error fetching custom tour earnings:', error);
+      setCustomTourEarnings(0);
     }
   };
 
@@ -581,20 +605,18 @@ export default function DriverHomeScreen({ navigation }) {
           {earningsData && (
             <View style={styles.splitRow}>
               <View style={styles.splitCol}>
-                <Text style={styles.splitLabel}>Your share</Text>
-                <Text style={styles.splitValue}>{(earningsData.driver_percentage || 80)}%</Text>
-              </View>
-              <View style={styles.vDivider} />
-              <View style={styles.splitCol}>
-                <Text style={styles.splitLabel}>Completed</Text>
+                <Text style={styles.splitLabel}>Trips</Text>
                 <Text style={styles.splitValue}>{earningsData.count || 0}</Text>
               </View>
               <View style={styles.vDivider} />
               <View style={styles.splitCol}>
-                <Text style={styles.splitLabel}>Avg / booking</Text>
-                <Text style={styles.splitValue}>
-                  {formatCurrency(earningsData.avg_earning_per_booking || 0)}
-                </Text>
+                <Text style={styles.splitLabel}>Driver Share</Text>
+                <Text style={styles.splitValue}>{formatCurrency(earningsData.total_driver_earnings || 0)}</Text>
+              </View>
+              <View style={styles.vDivider} />
+              <View style={styles.splitCol}>
+                <Text style={styles.splitLabel}>Custom Bookings</Text>
+                <Text style={styles.splitValue}>{formatCurrency(customTourEarnings || earningsData?.custom_booking_earnings || 0)}</Text>
               </View>
             </View>
           )}
@@ -668,11 +690,127 @@ export default function DriverHomeScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Weekly Activity (Chart) */}
+        {/* Financial Analytics - Real-time Business Intelligence */}
         <View style={styles.analyticsCard}>
-          <Text style={styles.analyticsTitle}>Weekly Activity</Text>
-          <View style={styles.chartBox}>
-            <ActivityMiniChart data={weeklyDemo} height={130} />
+          <Text style={styles.analyticsTitle}>How You're Doing</Text>
+          
+          {/* Profit Margin Analysis */}
+          <View style={styles.analyticsSection}>
+            <Text style={styles.analyticsSectionTitle}>How Much You Keep</Text>
+            <View style={styles.marginContainer}>
+              <View style={styles.marginRow}>
+                <Text style={styles.marginLabel}>Tour Package Trips</Text>
+                <View style={styles.marginBar}>
+                  <View style={[styles.marginFill, { width: `${(() => {
+                    const totalTrips = earningsData?.count || 0;
+                    const customTrips = customTourEarnings > 0 ? Math.ceil(customTourEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
+                    const packageTrips = totalTrips - customTrips;
+                    return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
+                  })()}%` }]} />
+                  <Text style={styles.marginText}>{(() => {
+                    const totalTrips = earningsData?.count || 0;
+                    const customTrips = customTourEarnings > 0 ? Math.ceil(customTourEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
+                    const packageTrips = totalTrips - customTrips;
+                    return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
+                  })()}%</Text>
+                </View>
+              </View>
+              <View style={styles.marginRow}>
+                <Text style={styles.marginLabel}>Your Own Tours</Text>
+                <View style={styles.marginBar}>
+                  <View style={[styles.marginFillCustom, { width: customTourEarnings > 0 ? '100%' : '0%' }]} />
+                  <Text style={styles.marginText}>{customTourEarnings > 0 ? '100%' : '0%'}</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Key Financial Ratios */}
+          <View style={styles.analyticsSection}>
+            <Text style={styles.analyticsSectionTitle}>Your Numbers</Text>
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>{formatCurrency(earningsData?.avg_earning_per_booking || 0).replace('₱', '')}</Text>
+                <Text style={styles.metricLabel}>Per Trip</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>{Math.round((totalEarnings / new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() / 8) || 0)}</Text>
+                <Text style={styles.metricLabel}>Per Hour</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>{((earningsData?.count || 0) / new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()).toFixed(1)}</Text>
+                <Text style={styles.metricLabel}>Trips Daily</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricValue, { color: changeData.is_increase ? '#2E7D32' : '#C62828' }]}>
+                  {(changeData.percentage_change || 0).toFixed(1)}%
+                </Text>
+                <Text style={styles.metricLabel}>This Month</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Earnings Health Score */}
+          <View style={styles.analyticsSection}>
+            <Text style={styles.analyticsSectionTitle}>Earnings Score</Text>
+            <View style={styles.efficiencyContainer}>
+              <View style={styles.efficiencyCircle}>
+                <Text style={styles.efficiencyScore}>
+                  {(() => {
+                    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+                    const tripsPerDay = (earningsData?.count || 0) / daysInMonth;
+                    const monthlyEarnings = totalEarnings;
+                    const isGrowing = changeData.is_increase;
+                    const hasCustomTours = customTourEarnings > 0;
+                    
+                    let score = 0;
+                    
+                    // How active are you? (0-30 points)
+                    if (tripsPerDay >= 3) score += 30;
+                    else if (tripsPerDay >= 2) score += 20;
+                    else if (tripsPerDay >= 1) score += 10;
+                    
+                    // How much do you earn? (0-40 points)
+                    if (monthlyEarnings >= 30000) score += 40;
+                    else if (monthlyEarnings >= 20000) score += 30;
+                    else if (monthlyEarnings >= 10000) score += 20;
+                    else if (monthlyEarnings >= 5000) score += 10;
+                    
+                    // Are you growing? (0-20 points)
+                    if (isGrowing && changeData.percentage_change >= 10) score += 20;
+                    else if (isGrowing && changeData.percentage_change >= 5) score += 15;
+                    else if (isGrowing) score += 10;
+                    
+                    // Do you have different income sources? (0-10 points)
+                    if (hasCustomTours) score += 10;
+                    
+                    return Math.min(100, score).toString();
+                  })()
+                }
+                </Text>
+                <Text style={styles.efficiencyLabel}>Score</Text>
+              </View>
+              <View style={styles.efficiencyDetails}>
+                <Text style={styles.efficiencyText}>Shows how well you earn money. Based on: Daily trips, Monthly income, Growth, Own tours</Text>
+                <Text style={styles.efficiencyTip}>
+                  {(() => {
+                    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+                    const score = Math.min(100, 
+                      ((earningsData?.count || 0) / daysInMonth >= 3 ? 30 : (earningsData?.count || 0) / daysInMonth >= 2 ? 20 : (earningsData?.count || 0) / daysInMonth >= 1 ? 10 : 0) +
+                      (totalEarnings >= 30000 ? 40 : totalEarnings >= 20000 ? 30 : totalEarnings >= 10000 ? 20 : totalEarnings >= 5000 ? 10 : 0) +
+                      (changeData.is_increase ? (changeData.percentage_change >= 10 ? 20 : changeData.percentage_change >= 5 ? 15 : 10) : 0) +
+                      (customTourEarnings > 0 ? 10 : 0)
+                    );
+                    
+                    if (score >= 80) return '🎉 Excellent! You have great earnings. Keep it up!';
+                    if (score >= 60) return '💼 Your earnings are fine. Keep accepting bookings.';
+                    if (score >= 40) return '🚗 Take more tours and bookings to earn more.';
+                    return '💪 Take more tours and bookings to increase earnings and score.';
+                  })()
+                }
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -917,16 +1055,119 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0E7E3',
   },
-  analyticsTitle: { color: TEXT, fontSize: 14, fontWeight: '800', marginBottom: 10 },
-  chartBox: {
-    width: '100%',
-    minHeight: 180,
-    backgroundColor: '#ededed',
+  analyticsTitle: { color: TEXT, fontSize: 14, fontWeight: '800', marginBottom: 16 },
+  
+  analyticsSection: { marginBottom: 16 },
+  analyticsSectionTitle: { fontSize: 12, fontWeight: '700', color: MUTED, marginBottom: 8 },
+  
+  /* Profit Margin */
+  marginContainer: {
+    gap: 8,
+  },
+  marginRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  marginLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: TEXT,
+    width: 80,
+  },
+  marginBar: {
+    flex: 1,
+    height: 20,
+    backgroundColor: SURFACE,
     borderRadius: 10,
-    overflow: 'hidden',
+    position: 'relative',
     justifyContent: 'center',
-    paddingBottom: 8,
-    paddingHorizontal: 10,
+  },
+  marginFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    backgroundColor: MAROON,
+    borderRadius: 10,
+  },
+  marginFillCustom: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    backgroundColor: '#2E7D32',
+    borderRadius: 10,
+  },
+  marginText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
+    zIndex: 1,
+  },
+  
+  /* Metrics Grid */
+  metricsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  metricItem: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: SURFACE,
+    borderRadius: 8,
+    padding: 8,
+    marginHorizontal: 2,
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT,
+  },
+  metricLabel: {
+    fontSize: 10,
+    color: MUTED,
+    marginTop: 2,
+  },
+  
+  /* Efficiency Score */
+  efficiencyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  efficiencyCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: SURFACE,
+    borderWidth: 3,
+    borderColor: MAROON,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  efficiencyScore: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: MAROON,
+  },
+  efficiencyLabel: {
+    fontSize: 9,
+    color: MUTED,
+  },
+  efficiencyDetails: {
+    flex: 1,
+  },
+  efficiencyText: {
+    fontSize: 11,
+    color: TEXT,
+    marginBottom: 4,
+  },
+  efficiencyTip: {
+    fontSize: 10,
+    color: MUTED,
+    fontStyle: 'italic',
   },
 
   legendRow: {

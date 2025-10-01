@@ -6,8 +6,8 @@ import ResponseHandler from './responseHandler';
 class NetworkClient {
   constructor() {
     this.baseURL = apiBaseUrl();
-    this.defaultTimeout = 30000;
-    this.maxRetries = 2;
+    this.defaultTimeout = 35000; // Increased for socket issues
+    this.maxRetries = 3; // More retries for socket errors
   }
 
   async request(endpoint, options = {}) {
@@ -24,6 +24,9 @@ class NetworkClient {
     const connectionHeaders = connectionManager.getConnectionHeaders();
     const requestHeaders = {
       'Content-Type': 'application/json',
+      'Connection': 'keep-alive',
+      'Cache-Control': 'no-cache',
+      'Accept': 'application/json',
       ...connectionHeaders,
       ...headers,
     };
@@ -115,7 +118,15 @@ class NetworkClient {
         // Check for connection errors using the manager
         const isConnectionError = connectionManager.isConnectionError(error);
         
-        if (isConnectionError) {
+        // Check for Windows socket errors specifically
+        const isSocketError = error.message && (
+          error.message.includes('WinError 10035') ||
+          error.message.includes('EWOULDBLOCK') ||
+          error.message.includes('EAGAIN') ||
+          error.message.includes('socket operation could not be completed')
+        );
+        
+        if (isConnectionError || isSocketError) {
           connectionManager.recordConnectionError();
         }
 
@@ -125,11 +136,16 @@ class NetworkClient {
           (error.message && error.message.includes('502')) ||
           (error.message && error.message.includes('503')) ||
           (error.message && error.message.includes('504')) ||
-          isConnectionError;
+          isConnectionError ||
+          isSocketError;
 
         if (isRetryableError && attempt < retries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          console.log(`Network error on attempt ${attempt}, retrying in ${delay}ms:`, error.message);
+          const delay = isSocketError ? 
+            Math.min(2000 * Math.pow(2, attempt - 1), 8000) : // Longer delay for socket errors
+            Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          
+          const errorType = isSocketError ? 'socket' : 'network';
+          console.log(`${errorType} error on attempt ${attempt}, retrying in ${delay}ms:`, error.message);
           
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;

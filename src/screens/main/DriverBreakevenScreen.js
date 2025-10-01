@@ -20,11 +20,15 @@ import { colors, spacing, card } from '../../styles/global';
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 
-import {
-  getDriverEarningsStats,
-} from '../../services/earningsService';
+import { getDriverEarningsStats } from '../../services/earningsService';
 
-import { getBreakeven, getBreakevenHistory } from '../../services/Earnings/BreakevenService';
+import {
+  getBreakeven,
+  getBreakevenHistory,
+  upsertBreakevenHistoryFromSummary,
+  setBreakevenExpenseCache,
+  getTodayExpenses,
+} from '../../services/Earnings/BreakevenService';
 
 const PERIOD_BY_FREQ = {
   Daily: 'today',
@@ -33,10 +37,9 @@ const PERIOD_BY_FREQ = {
 };
 
 // ---------- helpers & constants ----------
-// We want buckets to follow PH calendar day so a 2025-09-21Z earning maps correctly to Sept 21 PH.
 const PH_TZ = 'Asia/Manila';
-const BUCKET_TZ = 'ph';   // ← bucket by PH day/week/month (fixes “today”)
-const DISPLAY_TZ = 'ph';  // ← formatting/debug only
+const BUCKET_TZ = 'ph';   // bucket by PH day/week/month (fixes “today”)
+const DISPLAY_TZ = 'ph';  // formatting/debug only
 const PERIOD_LABEL_TZ = PH_TZ;
 
 function formatPeso(n) {
@@ -83,9 +86,7 @@ const EXPENSES_INPUT_KEY = (driverId, periodKey) =>
 const EXPENSES_META_KEY = (driverId, periodKey) =>
   `earnings:expensesMeta:v1:${driverId || 'unknown'}:${periodKey || 'today'}`;
 
-// ────────────────────────────────────────────────────────────────
 // TODAY (PH) FALLBACK: direct Supabase query when period=Daily
-// PH has no DST; offset is always +8h
 const PH_OFFSET_HOURS = 8;
 
 /** Returns [gteISO, ltISO] bounding *today* (Asia/Manila) expressed in UTC ISO. */
@@ -140,7 +141,6 @@ async function fetchIncomeTodayByDriver(driverId, {
     window: { gteISO, ltISO },
   };
 }
-// ────────────────────────────────────────────────────────────────
 
 // Resolve driverId from route → auth → supabase
 function useDriverId(route) {
@@ -260,41 +260,49 @@ export default function EarningsScreen({ navigation, route }) {
     } catch {}
   }, [driverId, periodKey, resetExpensesPersisted]);
 
-  // ---------- persistence: load on driver/period change (with TTL) ----------
+  // ---------- persistence: load from database and local storage ----------
   useEffect(() => {
     if (!driverId) return;
     const loadPersisted = async () => {
       try {
-        // TTL check first
         await checkAndExpireIfNeeded();
 
-        const [rawItems, rawInput] = await Promise.all([
-          AsyncStorage.getItem(EXPENSES_KEY(driverId, periodKey)),
-          AsyncStorage.getItem(EXPENSES_INPUT_KEY(driverId, periodKey)),
-        ]);
+        // Load from today's breakeven history first
+        const todayExpenses = await getTodayExpenses(driverId);
+        if (todayExpenses?.success && todayExpenses.expenses > 0) {
+          // Convert total expenses back to expense items for display
+          setExpenseItems([todayExpenses.expenses]);
+          console.log('Loaded expenses from breakeven history:', todayExpenses.expenses);
+        } else {
+          console.log('No expenses in breakeven history, loading from local storage');
+          // Fallback to local storage
+          const [rawItems, rawInput] = await Promise.all([
+            AsyncStorage.getItem(EXPENSES_KEY(driverId, periodKey)),
+            AsyncStorage.getItem(EXPENSES_INPUT_KEY(driverId, periodKey)),
+          ]);
 
-        if (rawItems) {
-          // Backward-compatible parsing: array (old) or object {items}
-          let parsed;
-          try { parsed = JSON.parse(rawItems); } catch { parsed = []; }
-          if (Array.isArray(parsed)) {
-            setExpenseItems(parsed.map((n) => Number(n) || 0));
-          } else if (parsed && Array.isArray(parsed.items)) {
-            setExpenseItems(parsed.items.map((n) => Number(n) || 0));
+          if (rawItems) {
+            let parsed;
+            try { parsed = JSON.parse(rawItems); } catch { parsed = []; }
+            if (Array.isArray(parsed)) {
+              setExpenseItems(parsed.map((n) => Number(n) || 0));
+            } else if (parsed && Array.isArray(parsed.items)) {
+              setExpenseItems(parsed.items.map((n) => Number(n) || 0));
+            } else {
+              setExpenseItems([]);
+            }
           } else {
             setExpenseItems([]);
           }
-        } else {
-          setExpenseItems([]); // default
         }
 
+        const rawInput = await AsyncStorage.getItem(EXPENSES_INPUT_KEY(driverId, periodKey));
         if (rawInput != null) {
           setExpenseInput(String(rawInput));
         } else {
           setExpenseInput('0.00');
         }
 
-        // If no meta yet, create one now to start the 24h clock
         const rawMeta = await AsyncStorage.getItem(EXPENSES_META_KEY(driverId, periodKey));
         if (!rawMeta) {
           await AsyncStorage.setItem(
@@ -310,12 +318,12 @@ export default function EarningsScreen({ navigation, route }) {
     loadPersisted();
   }, [driverId, periodKey, checkAndExpireIfNeeded]);
 
-  // Periodic TTL watcher (runs while screen is active)
+  // Periodic TTL watcher
   useEffect(() => {
     if (!driverId) return;
     const id = setInterval(() => {
       checkAndExpireIfNeeded();
-    }, 60 * 1000); // check every minute
+    }, 60 * 1000);
     return () => clearInterval(id);
   }, [driverId, periodKey, checkAndExpireIfNeeded]);
 
@@ -325,7 +333,6 @@ export default function EarningsScreen({ navigation, route }) {
     (async () => {
       try {
         await AsyncStorage.setItem(EXPENSES_KEY(driverId, periodKey), JSON.stringify(expenseItems));
-        // touch meta (so the 24h window reflects activity)
         await markExpensesTouched();
       } catch {}
     })();
@@ -346,11 +353,19 @@ export default function EarningsScreen({ navigation, route }) {
     [expenseItems]
   );
 
-  const addExpense = () => {
+  const addExpense = async () => {
     const val = parseFloat(String(expenseInput).replace(/,/g, '')) || 0;
     if (val <= 0) return;
-    setExpenseItems((items) => [...items, val]);
+    
+    const newExpenseItems = [...expenseItems, val];
+    const newTotalExpenses = newExpenseItems.reduce((sum, n) => sum + (Number(n) || 0), 0);
+    
+    setExpenseItems(newExpenseItems);
     setExpenseInput('0.00');
+    
+    // Save expenses to database
+    const result = await setBreakevenExpenseCache(driverId, newTotalExpenses);
+    console.log('Saved expenses to DB:', newTotalExpenses, result);
   };
 
   const clearExpenses = () => {
@@ -364,9 +379,9 @@ export default function EarningsScreen({ navigation, route }) {
         driverId: drvId,
         period,
         expenses: expensesNumber,
-        bucketTz: BUCKET_TZ,   // ← ensure bucketing matches PH date
-        displayTz: DISPLAY_TZ, // ← formatting/debug only
-        statusIn: ['finalized', 'posted', 'completed', 'pending'], // include today’s in-progress
+        bucketTz: BUCKET_TZ,
+        displayTz: DISPLAY_TZ,
+        statusIn: ['finalized', 'posted', 'completed', 'pending'].join(','), // include today’s in-progress
         debug: __DEV__ ? 1 : 0,
       });
 
@@ -376,7 +391,7 @@ export default function EarningsScreen({ navigation, route }) {
         setBookingsNeeded(Number(d.bookings_needed || 0));
         setAcceptedBookings(Number(d.total_bookings || 0));
         setRevenuePeriod(Number(d.revenue_period || 0));
-        setProfitable(Boolean(d.profitable));
+        setProfitable(Boolean((d.revenue_period || 0) - (expensesNumber || 0) > 0));
         setDeficitAmount(Number(d.deficit_amount || 0));
         setPeriodStart(d.date_start || null);
         setPeriodEnd(d.date_end || null);
@@ -384,7 +399,11 @@ export default function EarningsScreen({ navigation, route }) {
         const br = d.breakdown || {};
         setShareStandard(Number(br.driver_share_from_standard || 0));
         setShareCustom(Number(br.driver_share_from_custom || 0));
+
+        // return summary so callers can upsert
+        return d;
       }
+      return null;
     },
     []
   );
@@ -398,21 +417,33 @@ export default function EarningsScreen({ navigation, route }) {
       try {
         const period = PERIOD_BY_FREQ[currentFrequency];
 
+        // Load stored expenses from today's breakeven history
+        const todayExpenses = await getTodayExpenses(drvId);
+        const storedExpenses = todayExpenses?.success ? todayExpenses.expenses : totalExpenses;
+
         const base = await getDriverEarningsStats(drvId, period);
         const baseData = base?.success ? base.data : null;
         setStats(baseData || null);
 
-
         // DRF summary (uses PH bucketing + statusIn)
-        await fetchBreakevenBlock(drvId, period, totalExpenses);
+        const d = await fetchBreakevenBlock(drvId, period, storedExpenses);
+
+        // Keep today's DAILY history row fresh (not shown in modal – we exclude current)
+        if (currentFrequency === 'Daily' && d) {
+          await upsertBreakevenHistoryFromSummary({
+            driverId: drvId,
+            summary: d,
+            expenses: storedExpenses,
+            periodType: 'daily',
+          });
+        }
 
         // Direct fallback ONLY for Daily (shows immediately even if DRF is delayed)
         if (currentFrequency === 'Daily') {
           try {
             const r = await fetchIncomeTodayByDriver(drvId);
             setIncomeToday(r.revenue || 0);
-          } catch (e) {
-            if (__DEV__) console.log('incomeToday fallback error:', e?.message || e);
+          } catch {
             setIncomeToday(0);
           }
         } else {
@@ -431,13 +462,21 @@ export default function EarningsScreen({ navigation, route }) {
     fetchAll(driverId, frequency);
   }, [driverId, frequency, fetchAll]);
 
-  // Recompute when expenses change
+  // Recompute & upsert when expenses change
   useEffect(() => {
     if (!driverId) return;
     const handler = setTimeout(() => {
-      fetchBreakevenBlock(driverId, periodKey, totalExpenses);
+      fetchBreakevenBlock(driverId, periodKey, totalExpenses).then(async (d) => {
+        if (frequency === 'Daily' && d) {
+          await upsertBreakevenHistoryFromSummary({
+            driverId,
+            summary: d,
+            expenses: totalExpenses,
+            periodType: 'daily',
+          });
+        }
+      });
       if (frequency === 'Daily') {
-        // keep the fallback fresh when expenses change on daily view
         fetchIncomeTodayByDriver(driverId).then(
           (r) => setIncomeToday(r?.revenue || 0),
           () => {}
@@ -446,6 +485,15 @@ export default function EarningsScreen({ navigation, route }) {
     }, 200);
     return () => clearTimeout(handler);
   }, [driverId, periodKey, totalExpenses, fetchBreakevenBlock, frequency]);
+
+  // Light polling while on Daily to capture new earnings and keep history fresh
+  useEffect(() => {
+    if (!driverId || frequency !== 'Daily') return;
+    const id = setInterval(() => {
+      fetchAll(driverId, 'Daily');
+    }, 60 * 1000); // every 60s
+    return () => clearInterval(id);
+  }, [driverId, frequency, fetchAll]);
 
   const onRefresh = useCallback(async () => {
     if (!driverId) return;
@@ -456,23 +504,23 @@ export default function EarningsScreen({ navigation, route }) {
 
   const onResetInputs = () => {
     clearExpenses();
-    // also reset the persisted values (and meta timer)
     resetExpensesPersisted();
   };
 
-  // Profit for the tile = revenue_period - totalExpenses
-  const currentProfit = useMemo(() => (revenuePeriod || 0) - (totalExpenses || 0), [revenuePeriod, totalExpenses]);
+  // Profit for the tile
+  const currentProfit = useMemo(
+    () => (revenuePeriod || 0) - (totalExpenses || 0),
+    [revenuePeriod, totalExpenses]
+  );
 
-  // NEW: rides needed to *start* having profit (handles exact breakeven = 0 profit)
+  // NEW: rides needed to *start* having profit
   const ridesToProfit = useMemo(() => {
-    if ((revenuePeriod || 0) > (totalExpenses || 0)) return 0; // already profitable
+    if ((revenuePeriod || 0) > (totalExpenses || 0)) return 0;
     const denom = (farePerRide && farePerRide > 0) ? farePerRide : 1;
-    // add a tiny epsilon (₱0.01) so we compute at least 1 ride when exactly breakeven
     const shortfallPlusEpsilon = Math.max((totalExpenses || 0) - (revenuePeriod || 0) + 0.01, 0);
     return Math.max(1, Math.ceil(shortfallPlusEpsilon / denom));
   }, [revenuePeriod, totalExpenses, farePerRide]);
 
-  // Derived: progress & safety margin
   const ridesProgress = useMemo(() => {
     if (!bookingsNeeded || bookingsNeeded <= 0) return 0;
     return clamp01((acceptedBookings || 0) / bookingsNeeded);
@@ -483,7 +531,7 @@ export default function EarningsScreen({ navigation, route }) {
     return (currentProfit / totalExpenses) * 100;
   }, [currentProfit, totalExpenses]);
 
-  // ===== History (Reports) =====
+  // ===== History (Previous Day only) =====
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
     setHistoryMode('list');
@@ -492,8 +540,13 @@ export default function EarningsScreen({ navigation, route }) {
     setHistoryLoading(true);
 
     try {
-      const periodType = frequency.toLowerCase(); // 'daily' | 'weekly' | 'monthly'
-      const res = await getBreakevenHistory({ driverId, periodType, limit: 30, excludeCurrent: true });
+      // Only show *yesterday's* daily snapshot
+      const res = await getBreakevenHistory({
+        driverId,
+        periodType: 'daily',
+        limit: 1,
+        excludeCurrent: true,
+      });
 
       const items = (res?.success && res?.data?.items) ? res.data.items : [];
       setHistoryItems(items || []);
@@ -503,7 +556,7 @@ export default function EarningsScreen({ navigation, route }) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [driverId, frequency]);
+  }, [driverId]);
 
   const closeHistory = () => {
     setHistoryOpen(false);
@@ -692,7 +745,7 @@ export default function EarningsScreen({ navigation, route }) {
               >
                 {formatPeso(
                   frequency === 'Daily'
-                    ? (revenuePeriod || incomeToday || 0) // show DRF first, else direct fallback
+                    ? (revenuePeriod || incomeToday || 0)
                     : (revenuePeriod || 0)
                 )}
               </Text>
@@ -749,7 +802,7 @@ export default function EarningsScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* ---- NEW: Add-expenses info badge when no expenses ---- */}
+          {/* ---- Add-expenses info badge when no expenses ---- */}
           {(expenseItems.length === 0 || totalExpenses <= 0) && (
             <View style={styles.badgeRow}>
               <View style={[styles.badge, styles.badgeInfo]}>
@@ -761,7 +814,7 @@ export default function EarningsScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* Status badges row (below metric tiles) – only when there ARE expenses */}
+          {/* Status badges row – only when there ARE expenses */}
           {totalExpenses > 0 && (currentProfit >= 0 || currentProfit > 0) && (
             <View style={styles.badgeRow}>
               {currentProfit >= 0 && (
@@ -782,20 +835,19 @@ export default function EarningsScreen({ navigation, route }) {
             </View>
           )}
 
-          {/* NEW: suggestion when exactly breakeven (no profit yet) */}
+          {/* suggestion when exactly breakeven */}
           {totalExpenses > 0 && currentProfit === 0 && (
             <View style={[styles.tipBanner, { backgroundColor: '#FFF7E6', borderColor: '#FCE3BF' }]}>
               <Ionicons name="bulb-outline" size={16} color="#8B6B1F" style={{ marginRight: 8 }} />
               <Text style={[styles.tipText, { color: '#8B6B1F' }]}>
                 You’ve hit breakeven. Complete{' '}
                 <Text style={{ fontWeight: '800' }}>{ridesToProfit}</Text>{' '}
-                or more bookings
-                to start earning profit.
+                or more bookings to start earning profit.
               </Text>
             </View>
           )}
 
-          {/* Guidance banner when currently still no profit (only when there ARE expenses) */}
+          {/* Guidance banner when currently still no profit */}
           {totalExpenses > 0 && currentProfit < 0 && (
             <View style={styles.tipBanner}>
               <Ionicons name="information-circle-outline" size={16} color="#0B61A4" style={{ marginRight: 8 }} />
@@ -826,7 +878,7 @@ export default function EarningsScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* ====== Breakeven Summary card (WITH summary date under title) ====== */}
+        {/* ====== Breakeven Summary card ====== */}
         <View style={[card, styles.elevatedCard]}>
           <View style={styles.summaryHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1105,7 +1157,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexWrap: 'wrap',
   },
-
   dropdownWrap: { position: 'relative' },
   frequencyBtn: {
     flexDirection: 'row',
@@ -1252,7 +1303,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  // NEW: info badge styling
   badgeInfo: { backgroundColor: '#E9F4FF', borderColor: '#BBDDFB' },
   badgeInfoText: { color: '#0B3D91', fontSize: 12, fontWeight: '800', marginLeft: 6, flexShrink: 1, flexWrap: 'wrap' },
   badgeBreakeven: { backgroundColor: '#EAF7EE', borderColor: '#CDEBD1' },
@@ -1271,7 +1321,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginRight: 8,
   },
-  btnOutlineText: { color: colors.primary, fontWeight: '800', fontSize: 12, marginLeft: 6 },
+  btnOutlineText: { color: colors.primary, fontWeight: '800', fontSize: 12 },
   btnPrimary: {
     flexDirection: 'row',
     alignItems: 'center',

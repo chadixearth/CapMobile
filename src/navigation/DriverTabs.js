@@ -32,7 +32,7 @@ export default function DriverTabs({ setRole }) {
           if (route.name === 'Home') {
             return <Ionicons name="home-outline" size={size} color={color} />;
           } else if (route.name === Routes.BREAKEVEN) {
-            return <Ionicons name="wallet-outline" size={size} color={color} />;
+            return <Ionicons name="calculator-outline" size={size} color={color} />;
           } else if (route.name === 'Bookings') {
             return <Ionicons name="list-outline" size={size} color={color} />;
           } else if (route.name === 'Schedule') {

@@ -5,7 +5,7 @@ import { Platform, NativeModules } from 'react-native';
 
 
 
-export const API_HOST_OVERRIDE = '192.168.8.172';
+export const API_HOST_OVERRIDE = '192.168.131.63';
 
 
 

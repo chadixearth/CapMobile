@@ -1,10 +1,8 @@
-// services/Earnings/EarningsService.js
 import { getAccessToken } from '../authService';
 import { apiBaseUrl } from '../networkConfig';
-import { supabase } from '../supabase'; // used by fallbacks
+import { supabase } from '../supabase';
 
-// Toggle to see logs in Metro
-const DEBUG_EARNINGS = false;
+const DEBUG_EARNINGS = true;
 const log = (...a) => DEBUG_EARNINGS && console.log('[EARNINGS]', ...a);
 
 const EARNINGS_API_BASE_URL = `${apiBaseUrl()}/earnings/`;
@@ -23,8 +21,8 @@ function addDays(d, n) {
 }
 function startOfWeekMonday(base = new Date()) {
   const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
-  const dow = d.getDay(); // 0 Sun .. 6 Sat
-  const offset = (dow + 6) % 7; // 0 if Mon, 6 if Sun
+  const dow = d.getDay();
+  const offset = (dow + 6) % 7;
   d.setDate(d.getDate() - offset);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -47,7 +45,6 @@ function startOfNextMonth(base = new Date()) {
 
 /* ------------------------- Supabase row helpers --------------------------- */
 function parseAmountLike(row) {
-  // Prefer explicit fields; else split
   const amount = Number(row?.amount ?? row?.total_amount ?? 0) || 0;
   const drv = row?.driver_earnings != null ? Number(row.driver_earnings) : amount * 0.8;
   const adm = row?.admin_earnings != null ? Number(row.admin_earnings) : amount * 0.2;
@@ -58,9 +55,7 @@ function statusIsReversed(row) {
   return s === 'reversed';
 }
 
-/* Robust local-date parser:
-   - If 'YYYY-MM-DD', treat as LOCAL midnight (avoids UTC shift surprises).
-   - Else rely on Date(...) */
+/* Robust local-date parser */
 function parseDateSafely(v) {
   if (!v) return null;
   const s = String(v);
@@ -76,10 +71,6 @@ function parseDateSafely(v) {
 }
 
 /* ------------------------- Supabase fetch variants ------------------------ */
-/** mode:
- *  - 'iso' : compare earning_date with ISO timestamps (timestamptz)
- *  - 'ymd' : compare as plain 'YYYY-MM-DD' strings (date/text)
- */
 async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso') {
   let q = supabase
     .from('earnings')
@@ -150,21 +141,18 @@ function aggregateEarnings(rows) {
 
 /* ------------------------------ Fallbacks --------------------------------- */
 async function computeFromSupabaseRobust(driverId, filters = {}) {
-  // 1) Try with ISO timestamps
   const isoRows = await fetchEarningsRowsFromSupabase(driverId, filters, 'iso');
   if (isoRows.length > 0) {
     log('Using Supabase ISO rows');
     return { success: true, data: aggregateEarnings(isoRows) };
   }
 
-  // 2) Try with YMD strings
   const ymdRows = await fetchEarningsRowsFromSupabase(driverId, filters, 'ymd');
   if (ymdRows.length > 0) {
     log('Using Supabase YMD rows');
     return { success: true, data: aggregateEarnings(ymdRows) };
   }
 
-  // 3) Fallback to backend aggregated rollup
   try {
     const url = `${EARNINGS_API_BASE_URL}driver_earnings/`;
     const token = await getAccessToken().catch(() => null);
@@ -195,7 +183,6 @@ async function computeFromSupabaseRobust(driverId, filters = {}) {
     log('driver_earnings fallback failed:', e?.message || e);
   }
 
-  // 4) Nothing found
   log('All fallbacks yielded 0 rows');
   return {
     success: true,
@@ -216,7 +203,6 @@ async function computeFromSupabaseRobust(driverId, filters = {}) {
 /* --------------------------------- API ----------------------------------- */
 export async function getDriverEarnings(driverId, filters = {}) {
   try {
-    // Try API first
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -229,7 +215,7 @@ export async function getDriverEarnings(driverId, filters = {}) {
       if (v !== undefined && v !== null && v !== '') qs.append(k, v);
     });
 
-    const url = `${EARNINGS_API_BASE_URL}tour_package_earnings/?${qs.toString()}`;
+    const url = `${EARNINGS_API_BASE_URL}mobile_earnings/?${qs.toString()}`;
     const token = await getAccessToken().catch(() => null);
 
     log('Calling API:', url);
@@ -249,8 +235,10 @@ export async function getDriverEarnings(driverId, filters = {}) {
 
       log('API stats:', { count: stats?.count, total_driver_earnings: stats?.total_driver_earnings, hadData });
 
-      if (data?.success && hadData) return data;
-      // API returned minimal/empty → use robust fallback
+      if (data?.success) {
+        // Always respect API response when successful, even if empty
+        return data;
+      }
       return await computeFromSupabaseRobust(driverId, filters);
     }
 
@@ -263,73 +251,91 @@ export async function getDriverEarnings(driverId, filters = {}) {
 }
 
 /**
- * Aggregate stats for the selected period (today/week/month/all)
- * This version computes "today" using a local time window and counts ANY non-reversed rows.
+ * Aggregate stats for the selected period (today/week/month/all) or custom date range
+ * Default ranges are: today [00:00, +1d), week Mon..Sun, month 1st..last.
  */
-export async function getDriverEarningsStats(driverId, period = 'month') {
+export async function getDriverEarningsStats(driverId, period = 'month', customDateRange = null) {
   const filters = {};
   const now = new Date();
 
   let period_from = null;
   let period_to = null;
 
-  switch (period) {
-    case 'today': {
-      const today = toLocalYMD(now);
-      filters.date_from = today; // inclusive
-      // no date_to → open upper bound
-      period_from = today;
-      period_to = today;
-      break;
+  // Custom date range first
+  if (customDateRange && customDateRange.from && customDateRange.to) {
+    filters.date_from = customDateRange.from;
+    const endDate = new Date(customDateRange.to);
+    endDate.setDate(endDate.getDate() + 1); // exclusive
+    filters.date_to = toLocalYMD(endDate);
+    period_from = customDateRange.from;
+    period_to = customDateRange.to;
+  } else {
+    switch (period) {
+      case 'today': {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endExcl = addDays(start, 1);
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
+        period_from = toLocalYMD(start);
+        period_to = toLocalYMD(start);
+        break;
+      }
+      case 'week': {
+        const start = startOfWeekMonday(now);
+        const endExcl = endOfWeekExclusive(now);
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
+        period_from = toLocalYMD(start);
+        period_to = toLocalYMD(addDays(endExcl, -1));
+        break;
+      }
+      case 'month': {
+        const start = startOfMonth(now);
+        const endExcl = startOfNextMonth(now);
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
+        period_from = toLocalYMD(start);
+        period_to = toLocalYMD(addDays(endExcl, -1));
+        break;
+      }
+      // 'all' → no filters
     }
-    case 'week': {
-      const start = startOfWeekMonday(now);
-      const endExcl = endOfWeekExclusive(now);
-      filters.date_from = toLocalYMD(start);
-      filters.date_to = toLocalYMD(endExcl);
-      period_from = toLocalYMD(start);
-      period_to = toLocalYMD(addDays(endExcl, -1));
-      break;
-    }
-    case 'month': {
-      const start = startOfMonth(now);
-      const endExcl = startOfNextMonth(now);
-      filters.date_from = toLocalYMD(start);
-      filters.date_to = toLocalYMD(endExcl);
-      period_from = toLocalYMD(start);
-      period_to = toLocalYMD(addDays(endExcl, -1));
-      break;
-    }
-    // 'all' → no filters
   }
 
   const earningsData = await getDriverEarnings(driverId, filters);
-  log('Stats raw:', earningsData);
+  log('Stats raw:', earningsData, 'Filters:', filters);
 
   if (earningsData.success && earningsData.data) {
     const stats = earningsData.data.statistics || {};
     const earnings = Array.isArray(earningsData.data.earnings) ? earningsData.data.earnings : [];
 
-    // Build local "today" window [00:00, next 00:00)
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    // Always calculate today's earnings for dashboard display
+    let earnings_today = 0;
+    let completed_bookings_today = 0;
+    
+    const today = new Date();
+    const todayYMD = toLocalYMD(today);
 
-    // Count ANY non-reversed earning that falls inside today's local window
     const todayRows = earnings.filter((e) => {
       const s = String(e?.status || '').toLowerCase();
       if (s === 'reversed') return false;
-      const dt = parseDateSafely(e?.earning_date);
-      return dt && dt >= start && dt < end;
+      
+      // Extract date part from earning_date and compare with today's date
+      const earningDate = e?.earning_date;
+      if (!earningDate) return false;
+      
+      // Get just the date part (YYYY-MM-DD) from the earning_date
+      const earningYMD = earningDate.split('T')[0]; // Handle ISO format
+      return earningYMD === todayYMD;
     });
 
-    // Sum driver share with sensible fallbacks
-    const earnings_today = todayRows.reduce((sum, e) => {
+    earnings_today = todayRows.reduce((sum, e) => {
       const base = Number(e?.total_amount ?? e?.amount ?? 0);
       const drv = e?.driver_earnings != null ? Number(e.driver_earnings) : base * 0.8;
       return sum + (Number.isFinite(drv) ? drv : 0);
     }, 0);
+    
+    completed_bookings_today = todayRows.length;
 
     const result = {
       ...stats,
@@ -337,7 +343,7 @@ export async function getDriverEarningsStats(driverId, period = 'month') {
       period_from,
       period_to,
       earnings_today,
-      completed_bookings_today: todayRows.length,
+      completed_bookings_today,
       avg_earning_per_booking:
         Number(stats.count || 0) > 0 ? Number(stats.total_driver_earnings || 0) / Number(stats.count) : 0,
       recent_earnings: earnings.slice(0, 5),
@@ -351,7 +357,7 @@ export async function getDriverEarningsStats(driverId, period = 'month') {
 }
 
 /**
- * Month/Week % change (uses same robust path)
+ * Month/Week % change
  */
 export async function getEarningsPercentageChange(driverId, currentPeriod = 'month') {
   try {
@@ -412,6 +418,75 @@ export async function getEarningsPercentageChange(driverId, currentPeriod = 'mon
   }
 }
 
+/* ------------------------------- Formatters ------------------------------- */
+export function formatCurrency(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '₱0.00';
+  return `₱${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+export function formatPercentage(percentage) {
+  const n = Number(percentage);
+  if (!Number.isFinite(n)) return '0.0%';
+  return `${n.toFixed(1)}%`;
+}
+
+/**
+ * Get weekly activity data for driver dashboard chart
+ */
+export async function getDriverWeeklyActivity(driverId) {
+  console.log('[WEEKLY-API] Starting getDriverWeeklyActivity for driver:', driverId);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const url = `${EARNINGS_API_BASE_URL}weekly_activity/?driver_id=${encodeURIComponent(driverId)}`;
+    console.log('[WEEKLY-API] API Base URL:', EARNINGS_API_BASE_URL);
+    console.log('[WEEKLY-API] Full URL:', url);
+    
+    const token = await getAccessToken().catch(() => null);
+    console.log('[WEEKLY-API] Token available:', token ? 'Yes' : 'No');
+
+    log('Calling weekly activity API:', url);
+    log('Using token:', token ? 'Present' : 'None');
+    
+    const resp = await fetch(url, {
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}) 
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    console.log('[WEEKLY-API] Response status:', resp.status);
+    log('Weekly activity response status:', resp.status);
+    
+    if (resp.ok) {
+      const data = await resp.json();
+      console.log('[WEEKLY-API] Response data:', data);
+      log('Weekly activity response data:', data);
+      return data;
+    } else {
+      const errorText = await resp.text();
+      console.log('[WEEKLY-API] Error response:', errorText);
+      log('Weekly activity API error response:', errorText);
+      return {
+        success: false,
+        error: `HTTP ${resp.status}: ${errorText}`,
+        data: []
+      };
+    }
+  } catch (err) {
+    console.log('[WEEKLY-API] Exception:', err);
+    log('Weekly activity API error:', err?.message || err);
+    return {
+      success: false,
+      error: err?.message || 'Network error',
+      data: []
+    };
+  }
+}
+
 /**
  * Pending payout amount (admin payouts list, filtered for this driver)
  */
@@ -458,16 +533,58 @@ export async function getPendingPayoutAmount(driverId) {
   }
 }
 
-/* ------------------------------- Formatters ------------------------------- */
-export function formatCurrency(amount) {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return '₱0.00';
-  return `₱${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-export function formatPercentage(percentage) {
-  const n = Number(percentage);
-  if (!Number.isFinite(n)) return '0.0%';
-  return `${n.toFixed(1)}%`;
+/**
+ * Get driver payout history - released payouts for the driver
+ */
+export async function getDriverPayoutHistory(driverId) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const url = `${EARNINGS_API_BASE_URL}payout_history/?driver_id=${encodeURIComponent(driverId)}`;
+    const token = await getAccessToken().catch(() => null);
+
+    log('Calling payout history API:', url);
+    const resp = await fetch(url, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      log('Payout history response:', data);
+      return data;
+    }
+
+    // Fallback to Supabase if API fails
+    log('API failed, falling back to Supabase');
+    const { data, error } = await supabase
+      .from('payouts')
+      .select('id, driver_id, driver_name, total_amount, payout_date, payout_method, status, remarks')
+      .eq('driver_id', driverId)
+      .order('payout_date', { ascending: false });
+
+    if (error) {
+      log('Supabase payout error:', error.message);
+      return { success: false, error: error.message, data: [] };
+    }
+
+    return {
+      success: true,
+      data: (data || []).map(payout => ({
+        id: payout.id,
+        amount: Number(payout.total_amount || 0),
+        status: payout.status || 'pending',
+        payout_date: payout.payout_date,
+        reference_number: payout.id, // Use ID as reference since no reference_number field
+        method: payout.payout_method || 'bank_transfer',
+      }))
+    };
+  } catch (err) {
+    log('Payout history error:', err?.message || err);
+    return { success: false, error: err?.message || 'Network error', data: [] };
+  }
 }
 
 export const _dateHelpers = {

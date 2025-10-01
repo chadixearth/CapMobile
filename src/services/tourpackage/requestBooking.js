@@ -104,9 +104,11 @@ export async function createBooking(bookingData) {
     // New bookings start as pending until driver accepts
     status: 'pending',
   };
-  const attempt = async (bodyPayload) => {
+  const attempt = async (bodyPayload, retryCount = 0) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const timeout = Math.min(30000 + (retryCount * 5000), 45000); // Progressive timeout
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
     try {
       const token = await getAccessToken();
       const response = await fetch(`${API_BASE_URL}`, {
@@ -114,6 +116,8 @@ export async function createBooking(bookingData) {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Connection': 'keep-alive',
+          'Cache-Control': 'no-cache',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(bodyPayload),
@@ -139,11 +143,11 @@ export async function createBooking(bookingData) {
     }
   };
 
-  // Retry up to 3 times on transient errors
+  // Retry up to 5 times with exponential backoff for socket errors
   let currentPayload = { ...payload };
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < 5; i += 1) {
     try {
-      const result = await attempt(currentPayload);
+      const result = await attempt(currentPayload, i);
       
       // Backend already handles driver notifications
       if (result && result.success && result.data) {
@@ -155,6 +159,7 @@ export async function createBooking(bookingData) {
     } catch (err) {
       const isAbort = err?.name === 'AbortError' || /abort/i.test(err?.message || '');
       const isNet = /Network request failed|Failed to fetch|getaddrinfo|ENOTFOUND/i.test(err?.message || '');
+      const isSocketError = /WinError 10035|EWOULDBLOCK|EAGAIN|socket operation could not be completed/i.test(err?.message || '');
       const isStatusCheck = /23514|status_check|bookings_status_check/i.test(err?.message || '');
       const isUserNotFound = /Tourist.*does not exist|Customer.*does not exist/i.test(err?.message || '');
       
@@ -194,8 +199,11 @@ export async function createBooking(bookingData) {
         }
       }
       
-      if (i < 2 && (isAbort || isNet)) {
-        await new Promise(res => setTimeout(res, 800));
+      if (i < 4 && (isAbort || isNet || isSocketError)) {
+        // Exponential backoff: 1s, 2s, 4s, 8s
+        const delay = Math.min(1000 * Math.pow(2, i), 8000);
+        console.log(`Retrying booking in ${delay}ms due to ${isSocketError ? 'socket' : 'network'} error...`);
+        await new Promise(res => setTimeout(res, delay));
         continue;
       }
       console.error('Error creating booking:', err);

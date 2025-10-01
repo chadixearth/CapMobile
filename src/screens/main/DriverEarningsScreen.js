@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,9 @@ import {
   formatPercentage,
   getDriverEarnings,
 } from '../../services/Earnings/EarningsService';
+import CalendarModal from '../../components/CalendarModal';
+import YearPicker from '../../components/YearPicker';
+import PayoutHistoryModal from '../../components/PayoutHistoryModal';
 
 const { width } = Dimensions.get('window');
 
@@ -83,47 +86,47 @@ export default function DriverEarningsScreen({ navigation }) {
   const [percentageChange, setPercentageChange] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('month'); // 'today', 'week', 'month', 'all'
+  const [selectedPeriod, setSelectedPeriod] = useState('all'); // 'today', 'week', 'month', 'all'
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [customDateRange, setCustomDateRange] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [showPayoutHistory, setShowPayoutHistory] = useState(false);
 
   useEffect(() => {
     fetchUserAndEarnings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod]);
+  }, [selectedPeriod, customDateRange]);
 
-  const fetchUserAndEarnings = async () => {
+  const fetchUserAndEarnings = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Get current user
-      let currentUser = await getCurrentUser();
+      // Get current user (cached)
+      let currentUser = user || await getCurrentUser();
       let userId = null;
 
       if (currentUser) {
-        setUser(currentUser);
+        if (!user) setUser(currentUser);
         userId = currentUser.id;
       } else {
-        // Fallback to Supabase
         const {
-          data: { user },
+          data: { user: supabaseUser },
           error: userError,
         } = await supabase.auth.getUser();
 
-        if (userError || !user) {
+        if (userError || !supabaseUser) {
           Alert.alert('Error', 'Please log in to view earnings');
           navigation.goBack();
           return;
         }
 
-        setUser(user);
-        userId = user.id;
+        setUser(supabaseUser);
+        userId = supabaseUser.id;
       }
 
       if (userId) {
-        await Promise.all([
-          fetchEarningsData(userId),
-          fetchDetailedEarnings(userId),
-          fetchPercentageChange(userId),
-        ]);
+        await Promise.all([fetchEarningsData(userId), fetchDetailedEarnings(userId)]);
+        fetchPercentageChange(userId); // can run after
       }
     } catch (error) {
       console.error('Error fetching earnings:', error);
@@ -131,49 +134,34 @@ export default function DriverEarningsScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, selectedPeriod, customDateRange]);
 
-  const fetchEarningsData = async (driverId) => {
+  const fetchEarningsData = useCallback(async (driverId) => {
     try {
-      const data = await getDriverEarningsStats(driverId, selectedPeriod);
+      const data = await getDriverEarningsStats(driverId, selectedPeriod, customDateRange);
       if (data.success) {
         setEarningsData(data.data);
       }
+      return data;
     } catch (error) {
       console.error('Error fetching earnings data:', error);
+      return null;
     }
-  };
+  }, [selectedPeriod, customDateRange]);
 
-  const fetchDetailedEarnings = async (driverId) => {
-    try {
-      const filters = getDateFilters(selectedPeriod);
-      const data = await getDriverEarnings(driverId, filters);
-      if (data.success) {
-        setDetailedEarnings(data.data.earnings || []);
-      }
-    } catch (error) {
-      console.error('Error fetching detailed earnings:', error);
-    }
-  };
-
-  const fetchPercentageChange = async (driverId) => {
-    try {
-      const data = await getEarningsPercentageChange(
-        driverId,
-        selectedPeriod === 'week' ? 'week' : 'month'
-      );
-      if (data.success) {
-        setPercentageChange(data.data);
-      }
-    } catch (error) {
-      console.error('Error fetching percentage change:', error);
-    }
-  };
-
-  /** Build filters for list view. */
-  const getDateFilters = (period) => {
-    const now = new Date();
+  const getDateFilters = useCallback((period) => {
     const filters = {};
+
+    // FIX: Only use custom range if both from & to exist
+    if (customDateRange?.from && customDateRange?.to) {
+      filters.date_from = customDateRange.from;
+      const endDate = new Date(customDateRange.to);
+      endDate.setDate(endDate.getDate() + 1); // exclusive upper bound
+      filters.date_to = toLocalYMD(endDate);
+      return filters;
+    }
+
+    const now = new Date();
 
     switch (period) {
       case 'today': {
@@ -184,65 +172,158 @@ export default function DriverEarningsScreen({ navigation }) {
         break;
       }
       case 'week': {
-        // Explicit Monday → next Monday (exclusive)
         const start = startOfWeekMonday(now);      // Mon 00:00
-        const endExcl = endOfWeekExclusive(now);   // next Mon 00:00 (exclusive)
+        const endExcl = endOfWeekExclusive(now);   // next Mon 00:00
         filters.date_from = toLocalYMD(start);
         filters.date_to = toLocalYMD(endExcl);
         break;
       }
       case 'month': {
-        // Calendar month: 1st → 1st of next month (exclusive)
-        const start = startOfMonth(now);
-        const endExcl = startOfNextMonth(now);
+        const start = startOfMonth(now);           // 1st 00:00
+        const endExcl = startOfNextMonth(now);     // next 1st 00:00
         filters.date_from = toLocalYMD(start);
         filters.date_to = toLocalYMD(endExcl);
         break;
       }
-      // 'all' => no date filter
+      case 'all': {
+        const start = new Date(now.getFullYear(), 0, 1); // Jan 1st current year
+        const endExcl = new Date(now.getFullYear() + 1, 0, 1); // Jan 1st next year
+        filters.date_from = toLocalYMD(start);
+        filters.date_to = toLocalYMD(endExcl);
+        break;
+      }
     }
 
     return filters;
-  };
+  }, [customDateRange]);
 
-  const onRefresh = async () => {
+  const fetchDetailedEarnings = useCallback(async (driverId) => {
+    try {
+      const filters = getDateFilters(selectedPeriod);
+      const data = await getDriverEarnings(driverId, filters);
+      if (data.success) {
+        setDetailedEarnings(data.data.earnings || []);
+      }
+      return data;
+    } catch (error) {
+      console.error('Error fetching detailed earnings:', error);
+      return null;
+    }
+  }, [selectedPeriod, getDateFilters]);
+
+  const fetchPercentageChange = useCallback(async (driverId) => {
+    try {
+      const data = await getEarningsPercentageChange(
+        driverId,
+        selectedPeriod === 'week' ? 'week' : 'month'
+      );
+      if (data.success) {
+        setPercentageChange(data.data);
+      }
+      return data;
+    } catch (error) {
+      console.error('Error fetching percentage change:', error);
+      return null;
+    }
+  }, [selectedPeriod]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchUserAndEarnings();
     setRefreshing(false);
-  };
+  }, [fetchUserAndEarnings]);
 
-  /** Sum visible list for consistency (used for Today/Week cards). */
-  const visibleTotal = detailedEarnings.reduce(
-    (sum, e) => sum + (Number(e?.driver_earnings) || 0),
-    0
-  );
-  const visibleCount = detailedEarnings.length;
-  const visibleAvg = visibleCount > 0 ? visibleTotal / visibleCount : 0;
+  const { visibleTotal, visibleCount, visibleAvg } = useMemo(() => {
+    const total = detailedEarnings.reduce(
+      (sum, e) => sum + (Number(e?.driver_earnings) || 0),
+      0
+    );
+    const count = detailedEarnings.length;
+    const avg = count > 0 ? total / count : 0;
+    return { visibleTotal: total, visibleCount: count, visibleAvg: avg };
+  }, [detailedEarnings]);
+
+  const handlePeriodChange = useCallback((period) => {
+    setSelectedPeriod(period);
+    setCustomDateRange(null);
+    setSelectedDate(null);
+  }, []);
+
+  const handleResetCustomDate = useCallback(() => {
+    setCustomDateRange(null);
+    setSelectedDate(null);
+  }, []);
+
+  const handleCalendarOpen = useCallback(() => {
+    if (selectedPeriod === 'all') {
+      setShowYearPicker(true);
+    } else {
+      setShowCalendar(true);
+    }
+  }, [selectedPeriod]);
+
+  const handleDateSelect = useCallback((fromDate, toDate) => {
+    setCustomDateRange({ from: fromDate, to: toDate });
+    setSelectedDate(fromDate);
+    setShowCalendar(false);
+  }, []);
 
   const renderPeriodSelector = () => (
-    <View style={styles.periodSelector}>
-      {['today', 'week', 'month', 'all'].map((period) => (
-        <TouchableOpacity
-          key={period}
-          style={[styles.periodButton, selectedPeriod === period && styles.activePeriodButton]}
-          onPress={() => setSelectedPeriod(period)}
-        >
-          <Text
-            style={[
-              styles.periodButtonText,
-              selectedPeriod === period && styles.activePeriodButtonText,
-            ]}
+    <View style={styles.periodSelectorContainer}>
+      <View style={styles.periodSelector}>
+        {['today', 'week', 'month', 'all'].map((period) => (
+          <TouchableOpacity
+            key={period}
+            style={[styles.periodButton, selectedPeriod === period && styles.activePeriodButton]}
+            onPress={() => handlePeriodChange(period)}
           >
-            {period.charAt(0).toUpperCase() + period.slice(1)}
-          </Text>
+            <Text
+              style={[
+                styles.periodButtonText,
+                selectedPeriod === period && styles.activePeriodButtonText,
+              ]}
+            >
+              {period.charAt(0).toUpperCase() + period.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      <View style={styles.calendarControls}>
+        <TouchableOpacity 
+          style={[styles.calendarButton, customDateRange && styles.calendarButtonActive]} 
+          onPress={handleCalendarOpen}
+        >
+          <Ionicons 
+            name={customDateRange ? "calendar" : "calendar-outline"} 
+            size={20} 
+            color={customDateRange ? "#fff" : "#6B2E2B"} 
+          />
         </TouchableOpacity>
-      ))}
+        
+        {customDateRange && (
+          <TouchableOpacity 
+            style={styles.resetButton} 
+            onPress={handleResetCustomDate}
+          >
+            <Ionicons name="refresh-outline" size={16} color="#666" />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 
   /** Always show a date line for today/week/month.
    *  Uses earningsData.period_from/to when available, else local fallback. */
   const renderRangeLine = () => {
+    // Use custom date range if available
+    if (customDateRange?.from && customDateRange?.to) {
+      if (selectedPeriod === 'today') {
+        return <Text style={styles.rangeText}>{formatSingleDate(customDateRange.from)}</Text>;
+      }
+      return <Text style={styles.rangeText}>{formatRangeDisplay(customDateRange.from, customDateRange.to)}</Text>;
+    }
+
     const pf = earningsData?.period_from;
     const pt = earningsData?.period_to;
 
@@ -273,23 +354,25 @@ export default function DriverEarningsScreen({ navigation }) {
       );
     }
 
-    return null; // 'all'
+    if (selectedPeriod === 'all') {
+      const currentYear = customDateRange ? new Date(customDateRange.from).getFullYear() : new Date().getFullYear();
+      return (
+        <View>
+          <Text style={styles.rangeText}>{currentYear}</Text>
+          <Text style={styles.rangeText}>Jan - Dec</Text>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   /** ------ Overview Card ------ */
   const renderEarningsOverview = () => {
-    const useVisible = selectedPeriod === 'week' || selectedPeriod === 'today';
-    const totalEarnings = useVisible
-      ? visibleTotal
-      : (earningsData?.total_driver_earnings || 0);
-
-    const totalBookings = useVisible
-      ? visibleCount
-      : (earningsData?.count || 0);
-
-    const avgEarning = useVisible
-      ? visibleAvg
-      : (earningsData?.avg_earning_per_booking || 0);
+    // Prefer backend stats; fall back to visible list math
+    const totalEarnings = earningsData?.total_driver_earnings ?? visibleTotal ?? 0;
+    const totalBookings = earningsData?.count ?? visibleCount ?? 0;
+    const avgEarning = earningsData?.avg_earning_per_booking ?? visibleAvg ?? 0;
 
     const changeData = percentageChange || { percentage_change: 0, is_increase: true };
     const yourShare = earningsData?.driver_percentage ?? 80;
@@ -301,14 +384,13 @@ export default function DriverEarningsScreen({ navigation }) {
         ? 'Weekly Income'
         : selectedPeriod === 'month'
         ? 'Monthly Income'
-        : 'All-time Income';
+        : 'Yearly Income';
 
-    const subText =
-      selectedPeriod === 'today'
-        ? (visibleTotal || 0) > 0
-          ? `Today: ${formatCurrency(visibleTotal)}`
-          : 'No earnings yet today'
-        : `${totalBookings} completed · ${formatCurrency(avgEarning)} avg/booking`;
+    const subText = totalBookings > 0
+      ? `${totalBookings} completed · ${formatCurrency(avgEarning)} avg/booking`
+      : selectedPeriod === 'today'
+      ? 'No earnings yet today'
+      : `No earnings for selected ${selectedPeriod}`;
 
     return (
       <View style={styles.overviewCard}>
@@ -358,18 +440,18 @@ export default function DriverEarningsScreen({ navigation }) {
         {/* Split stats */}
         <View style={styles.splitRow}>
           <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Your share</Text>
-            <Text style={styles.splitValue}>{yourShare}%</Text>
-          </View>
-          <View style={styles.vDivider} />
-          <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Completed</Text>
+            <Text style={styles.splitLabel}>Trips</Text>
             <Text style={styles.splitValue}>{totalBookings}</Text>
           </View>
           <View style={styles.vDivider} />
           <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Avg / booking</Text>
-            <Text style={styles.splitValue}>{formatCurrency(avgEarning)}</Text>
+            <Text style={styles.splitLabel}>Driver Share</Text>
+            <Text style={styles.splitValue}>{formatCurrency(totalEarnings)}</Text>
+          </View>
+          <View style={styles.vDivider} />
+          <View style={styles.splitCol}>
+            <Text style={styles.splitLabel}>Custom Bookings</Text>
+            <Text style={styles.splitValue}>{formatCurrency(earningsData?.custom_booking_earnings || 0)}</Text>
           </View>
         </View>
       </View>
@@ -443,8 +525,10 @@ export default function DriverEarningsScreen({ navigation }) {
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Earnings</Text>
-        <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh" size={24} color="#6B2E2B" />
+
+        {/* FIX: Use the guarded opener so “All” can’t open the calendar */}
+        <TouchableOpacity onPress={handleCalendarOpen}>
+          {/* <Ionicons name="calendar" size={24} color="#6B2E2B" /> */}
         </TouchableOpacity>
       </View>
 
@@ -457,103 +541,80 @@ export default function DriverEarningsScreen({ navigation }) {
         {renderEarningsOverview()}
         {renderEarningsList()}
       </ScrollView>
+      
+      <CalendarModal
+        visible={showCalendar}
+        onClose={() => setShowCalendar(false)}
+        onDateSelect={handleDateSelect}
+        mode={selectedPeriod === 'today' ? 'day' : selectedPeriod === 'week' ? 'week' : 'month'}
+        selectedDate={selectedDate}
+        customDateRange={customDateRange}
+      />
+      
+      <YearPicker
+        visible={showYearPicker}
+        onClose={() => setShowYearPicker(false)}
+        onYearSelect={handleDateSelect}
+        selectedYear={customDateRange ? new Date(customDateRange.from).getFullYear() : null}
+      />
+      
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={styles.floatingButton}
+        onPress={() => setShowPayoutHistory(true)}
+      >
+        <Ionicons name="wallet-outline" size={24} color="#fff" />
+      </TouchableOpacity>
+      
+      <PayoutHistoryModal
+        visible={showPayoutHistory}
+        onClose={() => setShowPayoutHistory(false)}
+        driverId={user?.id}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  loadingContainer: { justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: '#666' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  content: { flex: 1, paddingHorizontal: 16 },
 
   /* Period selector */
+  periodSelectorContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 12, gap: 8 },
   periodSelector: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 4,
-    marginVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
+    flex: 1, flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3,
   },
-  periodButton: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
+  calendarButton: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3,
   },
-  activePeriodButton: {
-    backgroundColor: '#6B2E2B',
-  },
-  periodButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  activePeriodButtonText: {
-    color: '#fff',
-  },
+  calendarButtonActive: { backgroundColor: '#6B2E2B' },
+  calendarControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  resetButton: { backgroundColor: '#f5f5f5', borderRadius: 8, padding: 6 },
+  periodButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
+  activePeriodButton: { backgroundColor: '#6B2E2B' },
+  periodButtonText: { fontSize: 14, fontWeight: '600', color: '#666' },
+  activePeriodButtonText: { color: '#fff' },
 
   /* Overview (income card) */
   overviewCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F0E7E3',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: '#F0E7E3',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 3 },
   },
-  incomeTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  incomeTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   incomeTitle: { color: '#222', fontWeight: '800', fontSize: 14 },
   rangeText: { color: '#666', fontSize: 12, marginTop: 2 },
-  trendChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    gap: 6,
-  },
+  trendChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, gap: 6 },
   trendText: { fontWeight: '800', fontSize: 12 },
   incomeMainRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   incomeAmount: { fontSize: 28, fontWeight: '900', color: '#222', letterSpacing: 0.2 },
@@ -561,13 +622,8 @@ const styles = StyleSheet.create({
 
   /* Split stats row */
   splitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7F7F7',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    marginTop: 12,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#F7F7F7',
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, marginTop: 12,
   },
   vDivider: { width: 1, height: 24, backgroundColor: '#EAEAEA' },
   splitCol: { flex: 1, alignItems: 'center' },
@@ -576,85 +632,40 @@ const styles = StyleSheet.create({
 
   /* Earnings list */
   earningsListContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3,
   },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-  },
-  earningItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  earningIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f0f9ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  earningDetails: {
-    flex: 1,
-  },
-  earningPackage: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  earningDate: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  earningBookingRef: {
-    fontSize: 11,
-    color: '#999',
-  },
-  earningAmounts: {
-    alignItems: 'flex-end',
-  },
-  driverEarning: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2ecc71',
-    marginBottom: 2,
-  },
-  listTotalText: {
-    fontSize: 12,
-    color: '#666',
-  },
+  listTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 12 },
+  earningItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  earningIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#f0f9ff', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  earningDetails: { flex: 1 },
+  earningPackage: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 2 },
+  earningDate: { fontSize: 12, color: '#666', marginBottom: 2 },
+  earningBookingRef: { fontSize: 11, color: '#999' },
+  earningAmounts: { alignItems: 'flex-end' },
+  driverEarning: { fontSize: 16, fontWeight: 'bold', color: '#2ecc71', marginBottom: 2 },
+  listTotalText: { fontSize: 12, color: '#666' },
 
   /* Empty state */
-  emptyState: {
+  emptyState: { alignItems: 'center', paddingVertical: 40 },
+  emptyStateText: { fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 12, marginBottom: 4 },
+  emptyStateSubtext: { fontSize: 14, color: '#666', textAlign: 'center' },
+  
+  /* Floating button */
+  floatingButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#6B2E2B',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

@@ -31,7 +31,7 @@ export default function OwnerTabs({ setRole }) {
           if (route.name === Routes.HOME) {
             return <Ionicons name="home-outline" size={size} color={color} />;
           } else if (route.name === Routes.BREAKEVEN) {
-            return <Ionicons name="wallet-outline" size={size} color={color} />;
+            return <Ionicons name="calculator-outline" size={size} color={color} />;
           } else if (route.name === Routes.EVENTS) {
             return <Ionicons name="star-outline" size={size} color={color} />;
           } else if (route.name === Routes.PROFILE) {
