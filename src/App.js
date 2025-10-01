@@ -12,6 +12,19 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 import mobileDiagnostics from './services/mobileDiagnostics';
 
+// Suppress location-related console errors
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  const message = args.join(' ');
+  if (message.includes('Location request failed') || 
+      message.includes('unsatisfied device settings') ||
+      message.includes('location') && message.includes('failed')) {
+    // Silently ignore location errors
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);

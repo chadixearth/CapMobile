@@ -33,10 +33,11 @@ export default function LocationTracker({ userId, onLocationUpdate }) {
         setIsTracking(true);
         Alert.alert('Location Tracking', 'Real-time location tracking started');
       } else {
-        Alert.alert('Error', 'Failed to start location tracking');
+        // Don't show error alert, just log it
+        console.log('Location tracking not available');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to start location tracking: ' + error.message);
+      console.log('Location tracking failed:', error.message);
     }
   };
 
@@ -54,7 +55,7 @@ export default function LocationTracker({ userId, onLocationUpdate }) {
       setCurrentLocation(location);
       Alert.alert('Current Location', `Lat: ${location.latitude.toFixed(6)}, Lng: ${location.longitude.toFixed(6)}`);
     } catch (error) {
-      Alert.alert('Error', 'Failed to get current location: ' + error.message);
+      console.log('Failed to get current location:', error.message);
     }
   };
 

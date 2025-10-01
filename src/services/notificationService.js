@@ -410,6 +410,7 @@ class NotificationService {
       
       return token.data;
     } catch (error) {
+      // Silently handle push notification errors
       return null;
     }
   }
@@ -459,12 +460,19 @@ class NotificationService {
         return false;
       }
 
+      // Check if location services are enabled
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        console.log('[NotificationService] Location services disabled');
+        return false;
+      }
+
       // Start watching location
       this.locationWatcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000, // Update every 5 seconds
-          distanceInterval: 10, // Update every 10 meters
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 50, // Update every 50 meters
         },
         async (location) => {
           const { latitude, longitude, speed, heading } = location.coords;
@@ -478,14 +486,14 @@ class NotificationService {
               onLocationUpdate({ latitude, longitude, speed, heading });
             }
           } catch (error) {
-            console.error('Error updating location:', error);
+            console.log('Error updating location:', error);
           }
         }
       );
       
       return true;
     } catch (error) {
-      console.error('Error starting location tracking:', error);
+      console.log('Location tracking failed silently:', error.message);
       return false;
     }
   }
@@ -503,11 +511,18 @@ class NotificationService {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        throw new Error('Location permission not granted');
+        console.log('Location permission not granted');
+        return null;
+      }
+
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        console.log('Location services disabled');
+        return null;
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
       });
       
       return {
@@ -515,8 +530,8 @@ class NotificationService {
         longitude: location.coords.longitude,
       };
     } catch (error) {
-      console.error('Error getting current location:', error);
-      throw error;
+      console.log('Error getting current location:', error.message);
+      return null;
     }
   }
 

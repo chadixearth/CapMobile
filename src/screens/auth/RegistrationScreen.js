@@ -264,8 +264,8 @@ const RegistrationScreen = ({ navigation, route }) => {
             setPendingVisible(true);
           } else {
             const approvalMessage = password && password.trim() !== ''
-              ? `Your ${role} registration has been submitted for admin approval. You will receive an email confirmation once approved. You can login with the password you provided.`
-              : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and emailed to you upon approval.`;
+              ? `Your ${role} registration has been submitted for admin approval. You will receive an SMS notification once approved. You can login with the password you provided.`
+              : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and sent to your phone via SMS upon approval.`;
             
             Alert.alert(
               'Application Submitted',
@@ -277,7 +277,7 @@ const RegistrationScreen = ({ navigation, route }) => {
         } else {
           Alert.alert(
             'Registration Successful',
-            result.message || 'Please check your email to verify your account.',
+            result.message || 'Please check your phone for SMS verification.',
             [{ text: 'OK', onPress: okAction }],
             { cancelable: false }
           );
@@ -756,7 +756,7 @@ const RegistrationScreen = ({ navigation, route }) => {
               <Text style={styles.tcHeading}>4. Role-Specific Requirements</Text>
               <Text style={styles.tcParagraph}>
                 Drivers and Owners may be required to submit additional documents for verification (e.g., license, business permits). Providing inaccurate information may lead to account suspension.{'\n\n'}
-                Driver and Owner registrations require admin approval. Upon approval, you will receive login credentials via email. You may optionally provide your own password during registration, or have a secure password generated for you.
+                Driver and Owner registrations require admin approval. Upon approval, you will receive login credentials via SMS to your registered phone number. You may optionally provide your own password during registration, or have a secure password generated for you.
               </Text>
               <Text style={styles.tcHeading}>5. Changes</Text>
               <Text style={styles.tcParagraph}>We may update these terms from time to time. Continued use after updates constitutes acceptance.</Text>

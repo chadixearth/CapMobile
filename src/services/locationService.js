@@ -36,11 +36,18 @@ class LocationService {
     if (!hasPermission) return false;
 
     try {
+      // Check if location services are enabled
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        console.log('Location services are disabled');
+        return false;
+      }
+
       this.locationWatcher = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000, // Update every 5 seconds
-          distanceInterval: 10, // Update every 10 meters
+          accuracy: Location.Accuracy.Balanced, // Use balanced instead of high for better compatibility
+          timeInterval: 10000, // Update every 10 seconds
+          distanceInterval: 50, // Update every 50 meters
         },
         async (location) => {
           const { latitude, longitude, speed, heading } = location.coords;
@@ -72,7 +79,7 @@ class LocationService {
       console.log('Location tracking started for user:', userId);
       return true;
     } catch (error) {
-      console.error('Error starting location tracking:', error);
+      console.log('Location tracking failed silently:', error.message);
       return false;
     }
   }

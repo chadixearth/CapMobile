@@ -195,10 +195,11 @@ export async function clearLocalSession() {
 /**
  * Register a new user with email, password, and role
  * Supports roles: tourist, driver, owner (admin is web-only)
+ * Driver/Owner approvals send SMS notifications with credentials
  * @param {string} email
  * @param {string|null} password - Required for tourists, optional for driver/owner (will be generated if null)
  * @param {string} role - Must be one of: tourist, driver, owner
- * @param {object} additionalData - Optional additional user data
+ * @param {object} additionalData - Optional additional user data (must include phone for driver/owner)
  * @returns {Promise<{ success: boolean, user?: object, error?: string }>}
  */
 export async function registerUser(email, password, role, additionalData = {}) {
@@ -216,6 +217,14 @@ export async function registerUser(email, password, role, additionalData = {}) {
     return {
       success: false,
       error: 'Password is required for tourist registration.',
+    };
+  }
+
+  // Phone number validation for driver/owner (required for SMS notifications)
+  if ((role === 'driver' || role === 'owner') && !additionalData.phone) {
+    return {
+      success: false,
+      error: 'Phone number is required for driver and owner registration to receive SMS notifications.',
     };
   }
 

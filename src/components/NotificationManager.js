@@ -72,7 +72,7 @@ const NotificationManager = ({ navigation }) => {
       try {
         await NotificationService.registerForPushNotifications();
       } catch (error) {
-        console.log('[NotificationManager] Push notifications not available');
+        // Silently handle push notification errors
       }
       
       // Start polling for notifications
