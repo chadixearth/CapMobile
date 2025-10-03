@@ -46,8 +46,8 @@ class LocationService {
       this.locationWatcher = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Balanced, // Use balanced instead of high for better compatibility
-          timeInterval: 10000, // Update every 10 seconds
-          distanceInterval: 50, // Update every 50 meters
+          timeInterval: 15000, // Update every 15 seconds
+          distanceInterval: 25, // Update every 25 meters
         },
         async (location) => {
           const { latitude, longitude, speed, heading } = location.coords;
@@ -90,7 +90,7 @@ class LocationService {
       this.locationWatcher.remove();
       this.locationWatcher = null;
       this.isTracking = false;
-      console.log('Location tracking stopped');
+      console.log('Location tracking stopped - driver will not receive ride notifications');
     }
   }
 
@@ -142,6 +142,38 @@ class LocationService {
       return [];
     }
   }
+  
+  // Check if location tracking is active
+  static isLocationTrackingActive() {
+    return this.isTracking && this.locationWatcher !== null;
+  }
+  
+  // Get location sharing status for driver
+  static async getLocationSharingStatus(driverId) {
+    try {
+      const { apiRequest } = await import('./authService');
+      const result = await apiRequest(`/location/drivers/?driver_id=${driverId}`);
+      
+      if (result.success && result.data && result.data.length > 0) {
+        const location = result.data[0];
+        const lastUpdate = new Date(location.updated_at);
+        const now = new Date();
+        const minutesAgo = (now - lastUpdate) / (1000 * 60);
+        
+        // Consider location sharing active if updated within last 10 minutes
+        return {
+          isActive: minutesAgo <= 10,
+          lastUpdate: lastUpdate,
+          minutesAgo: Math.round(minutesAgo)
+        };
+      }
+      
+      return { isActive: false, lastUpdate: null, minutesAgo: null };
+    } catch (error) {
+      console.error('Error checking location sharing status:', error);
+      return { isActive: false, lastUpdate: null, minutesAgo: null };
+    }
+  }
 
   // Calculate distance between two points
   static calculateDistance(lat1, lon1, lat2, lon2) {
@@ -160,8 +192,8 @@ class LocationService {
     return degrees * (Math.PI/180);
   }
 
-  // Find nearest drivers
-  static async findNearestDrivers(latitude, longitude, radiusKm = 5) {
+  // Find nearest drivers with availability check
+  static async findNearestDrivers(latitude, longitude, radiusKm = 10) {
     try {
       const allDrivers = await this.getDriverLocations();
       
@@ -171,8 +203,8 @@ class LocationService {
           distance: this.calculateDistance(
             latitude, 
             longitude, 
-            driver.latitude, 
-            driver.longitude
+            parseFloat(driver.latitude), 
+            parseFloat(driver.longitude)
           )
         }))
         .filter(driver => driver.distance <= radiusKm)
@@ -182,6 +214,26 @@ class LocationService {
     } catch (error) {
       console.error('Error finding nearest drivers:', error);
       return [];
+    }
+  }
+  
+  // Start location tracking for drivers automatically
+  static async startDriverLocationTracking(userId) {
+    try {
+      const success = await this.startTracking(userId, (location) => {
+        console.log(`[LocationService] Driver ${userId} location updated:`, location);
+      });
+      
+      if (success) {
+        console.log(`[LocationService] Started location tracking for driver ${userId}`);
+      } else {
+        console.warn(`[LocationService] Failed to start location tracking for driver ${userId}`);
+      }
+      
+      return success;
+    } catch (error) {
+      console.error('Error starting driver location tracking:', error);
+      return false;
     }
   }
 }

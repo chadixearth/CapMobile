@@ -5,6 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
 import { useScreenAutoRefresh } from '../../services/dataInvalidationService';
+import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
 const MAROON_LIGHT = '#F5E9E2';
@@ -49,12 +50,33 @@ export default function NotificationScreen({ navigation }) {
   const handleNotificationPress = (notification) => {
     markAsRead(notification.id);
     
-    // Navigate based on notification type
-    if (notification.type === 'booking' && (user?.role === 'driver' || user?.role === 'driver-owner')) {
-      navigation.navigate('DriverBook');
-    } else if (notification.type === 'booking_accepted' && user?.role === 'tourist') {
-      navigation.navigate('BookScreen');
+    const title = notification.title?.toLowerCase() || '';
+    const message = notification.message?.toLowerCase() || '';
+    const userRole = user?.role;
+    
+    // Smart navigation based on notification content and user role
+    if (title.includes('booking') || title.includes('request') || message.includes('booking')) {
+      if (userRole === 'tourist') {
+        navigation.navigate('Book');
+      } else if (userRole === 'driver' || userRole === 'driver-owner') {
+        navigation.navigate('Bookings');
+      } else if (userRole === 'owner') {
+        navigation.navigate('Bookings');
+      }
+    } else if (title.includes('payment') || title.includes('earning') || message.includes('payment')) {
+      if (userRole === 'driver' || userRole === 'driver-owner') {
+        navigation.navigate('Breakeven');
+      } else if (userRole === 'tourist') {
+        navigation.navigate('Book');
+      }
+    } else if (title.includes('ride') || message.includes('ride')) {
+      if (userRole === 'tourist') {
+        navigation.navigate('Book');
+      } else if (userRole === 'driver' || userRole === 'driver-owner') {
+        navigation.navigate('Bookings');
+      }
     }
+    // No navigation for general announcements or unrecognized notifications
   };
 
   return (
@@ -106,21 +128,24 @@ export default function NotificationScreen({ navigation }) {
 
 function NotificationItem({ title, message, created_at, read, type, onPress }) {
   const getIcon = () => {
-    switch (type) {
-      case 'booking': return 'car';
-      case 'booking_accepted': return 'check-circle';
-      case 'payment': return 'credit-card';
-      default: return 'bell';
-    }
+    const titleLower = title?.toLowerCase() || '';
+    if (titleLower.includes('booking') || titleLower.includes('request')) return 'calendar';
+    if (titleLower.includes('payment') || titleLower.includes('earning')) return 'credit-card';
+    if (titleLower.includes('driver')) return 'account';
+    if (titleLower.includes('carriage')) return 'car';
+    if (titleLower.includes('completed') || titleLower.includes('accepted')) return 'check-circle';
+    if (titleLower.includes('cancelled') || titleLower.includes('cancel')) return 'close-circle';
+    if (titleLower.includes('started')) return 'play-circle';
+    return 'bell';
   };
 
   const getIconColor = () => {
-    switch (type) {
-      case 'booking': return '#2196F3';
-      case 'booking_accepted': return '#4CAF50';
-      case 'payment': return '#FF9800';
-      default: return MAROON;
-    }
+    const titleLower = title?.toLowerCase() || '';
+    if (titleLower.includes('payment') || titleLower.includes('earning')) return '#4CAF50';
+    if (titleLower.includes('cancelled') || titleLower.includes('cancel')) return '#f44336';
+    if (titleLower.includes('completed') || titleLower.includes('accepted')) return '#2196F3';
+    if (titleLower.includes('booking') || titleLower.includes('request')) return '#FF9800';
+    return MAROON;
   };
 
   const formatTime = (dateString) => {

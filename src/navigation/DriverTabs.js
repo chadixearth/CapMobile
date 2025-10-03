@@ -7,6 +7,7 @@ import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import DriverBookScreen from '../screens/main/DriverBookScreen';
 import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
+import TerminalsScreen from '../screens/map/TerminalsScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
 import { useAuth } from '../hooks/useAuth';
@@ -31,6 +32,8 @@ export default function DriverTabs({ setRole }) {
         tabBarIcon: ({ color, size }) => {
           if (route.name === 'Home') {
             return <Ionicons name="home-outline" size={size} color={color} />;
+          } else if (route.name === Routes.TERMINALS) {
+            return <Ionicons name="location-outline" size={size} color={color} />;
           } else if (route.name === Routes.BREAKEVEN) {
             return <Ionicons name="calculator-outline" size={size} color={color} />;
           } else if (route.name === 'Bookings') {
@@ -50,10 +53,9 @@ export default function DriverTabs({ setRole }) {
       })}
     >
       <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
-      <Tab.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.TERMINALS} component={TerminalsScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
-      <Tab.Screen name="Schedule" component={DriverScheduleScreen} options={{ headerShown: false }} />
-      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

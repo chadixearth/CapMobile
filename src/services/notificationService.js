@@ -428,7 +428,7 @@ class NotificationService {
           ownerIds,
           'New Special Event Request! 🎉',
           `${customerName} needs a carriage for ${eventType} (${paxCount} pax). Date: ${eventDate} at ${eventTime}. Tap to accept!`,
-          'special_event',
+          'booking',
           'owner'
         );
         
@@ -446,6 +446,117 @@ class NotificationService {
       
     } catch (error) {
       console.error('[NotificationService] Failed to notify owners:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Notify owner when their carriage has an issue
+  static async notifyOwnerOfCarriageIssue(ownerId, carriageData, issueType, description) {
+    try {
+      console.log('[NotificationService] Notifying owner of carriage issue:', carriageData.id || 'carriage');
+      
+      const carriageName = carriageData.carriage_code || carriageData.code || `TC${carriageData.id}`;
+      const driverName = carriageData.driver_name || carriageData.assigned_driver || 'Driver';
+      
+      let title, message;
+      switch (issueType) {
+        case 'maintenance':
+          title = 'Carriage Maintenance Required 🔧';
+          message = `${carriageName} needs maintenance. Driver ${driverName} reported: ${description}. Please schedule service.`;
+          break;
+        case 'accident':
+          title = 'Carriage Incident Report ⚠️';
+          message = `${carriageName} was involved in an incident. Driver ${driverName} is safe. Details: ${description}. Please contact driver.`;
+          break;
+        case 'breakdown':
+          title = 'Carriage Breakdown 🚫';
+          message = `${carriageName} has broken down. Driver ${driverName} needs assistance. Location: ${description}. Please provide support.`;
+          break;
+        default:
+          title = 'Carriage Issue Report 📋';
+          message = `${carriageName} has an issue reported by ${driverName}. Details: ${description}. Please review.`;
+      }
+      
+      const result = await this.sendNotification(
+        [ownerId],
+        title,
+        message,
+        'booking',
+        'owner'
+      );
+      
+      console.log('[NotificationService] Owner carriage issue notification result:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to notify owner of carriage issue:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Notify owner when payment is received for their carriage
+  static async notifyOwnerOfPaymentReceived(ownerId, bookingData, paymentAmount) {
+    try {
+      console.log('[NotificationService] Notifying owner of payment received:', bookingData.id || 'booking');
+      
+      const customerName = bookingData.customer_name || 'Customer';
+      const packageName = bookingData.package_name || 'tour';
+      const carriageName = bookingData.carriage_code || 'your carriage';
+      
+      const result = await this.sendNotification(
+        [ownerId],
+        'Payment Received! 💰',
+        `Payment of ₱${paymentAmount.toLocaleString()} received from ${customerName} for ${packageName} using ${carriageName}. Earnings will be processed.`,
+        'payment',
+        'owner'
+      );
+      
+      console.log('[NotificationService] Owner payment notification result:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to notify owner of payment:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Notify owner when their driver performance is concerning
+  static async notifyOwnerOfDriverPerformance(ownerId, driverData, performanceIssue) {
+    try {
+      console.log('[NotificationService] Notifying owner of driver performance issue:', driverData.id || 'driver');
+      
+      const driverName = driverData.name || driverData.driver_name || 'Driver';
+      const carriageName = driverData.carriage_code || 'assigned carriage';
+      
+      let title, message;
+      switch (performanceIssue.type) {
+        case 'cancellation_rate':
+          title = 'Driver Performance Alert 📊';
+          message = `${driverName} (${carriageName}) has a high cancellation rate: ${performanceIssue.rate}%. Consider reviewing their performance.`;
+          break;
+        case 'customer_complaint':
+          title = 'Customer Complaint 📝';
+          message = `Customer complaint received about ${driverName} (${carriageName}). Reason: ${performanceIssue.reason}. Please address with driver.`;
+          break;
+        case 'late_arrivals':
+          title = 'Punctuality Issue ⏰';
+          message = `${driverName} (${carriageName}) has been frequently late. Recent incidents: ${performanceIssue.count}. Please discuss punctuality.`;
+          break;
+        default:
+          title = 'Driver Performance Notice 📋';
+          message = `Performance issue noted for ${driverName} (${carriageName}). Details: ${performanceIssue.description}. Please review.`;
+      }
+      
+      const result = await this.sendNotification(
+        [ownerId],
+        title,
+        message,
+        'booking',
+        'owner'
+      );
+      
+      console.log('[NotificationService] Owner driver performance notification result:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to notify owner of driver performance:', error);
       return { success: false, error: error.message };
     }
   }

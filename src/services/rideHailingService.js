@@ -59,19 +59,89 @@ export async function checkActiveRide(userId, userType = 'customer') {
   }
 }
 
-// Create ride hailing booking
+// Monitor ride wait time and suggest cancellation
+export async function monitorRideWaitTime(bookingId, onWaitTimeUpdate) {
+  const checkInterval = setInterval(async () => {
+    try {
+      const waitResult = await checkRideWaitTime(bookingId);
+      if (waitResult.success) {
+        if (onWaitTimeUpdate) {
+          onWaitTimeUpdate(waitResult);
+        }
+        
+        // Stop monitoring if ride is no longer waiting
+        if (!waitResult.waiting) {
+          clearInterval(checkInterval);
+        }
+      }
+    } catch (error) {
+      console.error('Error monitoring wait time:', error);
+    }
+  }, 30000); // Check every 30 seconds
+  
+  return checkInterval;
+}
+
+// Validate user can create/accept rides
+export async function validateRideAction(userId, userType, action = 'create') {
+  try {
+    const activeCheck = await checkActiveRide(userId, userType);
+    
+    if (!activeCheck.success) {
+      return { canProceed: false, reason: 'Unable to check active rides', error: activeCheck.error };
+    }
+    
+    if (activeCheck.has_active_ride) {
+      const activeRides = activeCheck.active_rides || [];
+      const activeStatuses = activeRides.map(r => r.status).join(', ');
+      
+      if (userType === 'customer') {
+        return {
+          canProceed: false,
+          reason: `You have an active ride (${activeStatuses}). Complete or cancel it first.`,
+          activeRides: activeRides
+        };
+      } else if (userType === 'driver') {
+        return {
+          canProceed: false,
+          reason: `You have an active ride (${activeStatuses}). Complete or cancel it first.`,
+          activeRides: activeRides
+        };
+      }
+    }
+    
+    return { canProceed: true, reason: 'No active rides found' };
+  } catch (error) {
+    console.error('Error validating ride action:', error);
+    return { canProceed: false, reason: 'Validation failed', error: error.message };
+  }
+}
+
+// Create ride hailing booking with location
 export async function createRideBooking(bookingData) {
   try {
-    // Check for active rides first
-    const activeCheck = await checkActiveRide(bookingData.customer_id, 'customer');
+    // Validate user can create ride
+    const validation = await validateRideAction(bookingData.customer_id, 'customer', 'create');
     
-    if (activeCheck.success && activeCheck.has_active_ride) {
+    if (!validation.canProceed) {
       return {
         success: false,
-        error: 'You already have an active ride request. Please wait for it to complete or cancel it first.',
+        error: validation.reason,
         error_code: 'ACTIVE_RIDE_EXISTS',
-        active_rides: activeCheck.active_rides
+        active_rides: validation.activeRides
       };
+    }
+    
+    // Get current location if not provided
+    if (!bookingData.pickup_latitude || !bookingData.pickup_longitude) {
+      try {
+        const LocationService = (await import('./locationService')).default;
+        const location = await LocationService.getCurrentLocation();
+        bookingData.pickup_latitude = location.latitude;
+        bookingData.pickup_longitude = location.longitude;
+      } catch (locationError) {
+        console.warn('Could not get current location:', locationError);
+      }
     }
     
     const result = await apiCall('/ride-hailing/', {
@@ -100,15 +170,15 @@ export async function getAvailableRideBookings() {
 // Driver accepts ride booking
 export async function acceptRideBooking(bookingId, driverData) {
   try {
-    // Check if driver has active rides first
-    const activeCheck = await checkActiveRide(driverData.driver_id, 'driver');
+    // Validate driver can accept ride
+    const validation = await validateRideAction(driverData.driver_id, 'driver', 'accept');
     
-    if (activeCheck.success && activeCheck.has_active_ride) {
+    if (!validation.canProceed) {
       return {
         success: false,
-        error: 'You already have an active ride. Please complete or cancel your current ride first.',
+        error: validation.reason,
         error_code: 'DRIVER_ACTIVE_RIDE_EXISTS',
-        active_rides: activeCheck.active_rides
+        active_rides: validation.activeRides
       };
     }
     
@@ -120,6 +190,21 @@ export async function acceptRideBooking(bookingId, driverData) {
     return result;
   } catch (error) {
     console.error('Error accepting ride booking:', error);
+    throw error;
+  }
+}
+
+// Start ride booking (driver)
+export async function startRideBooking(bookingId, driverData) {
+  try {
+    const result = await apiCall(`/ride-hailing/start/${bookingId}/`, {
+      method: 'POST',
+      body: driverData
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error starting ride booking:', error);
     throw error;
   }
 }
@@ -310,6 +395,29 @@ export async function checkRideStatus(bookingId) {
   } catch (error) {
     console.error('Error checking ride status:', error);
     return { success: false, error: error.message };
+  }
+}
+
+// Check ride wait time and get cancellation suggestion
+export async function checkRideWaitTime(bookingId) {
+  try {
+    const result = await apiCall(`/ride-hailing/ride-wait-time/${bookingId}/`);
+    return result;
+  } catch (error) {
+    console.error('Error checking ride wait time:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Get nearest available drivers
+export async function getNearestDrivers(latitude, longitude, radiusKm = 5) {
+  try {
+    const LocationService = (await import('./locationService')).default;
+    const nearestDrivers = await LocationService.findNearestDrivers(latitude, longitude, radiusKm);
+    return { success: true, data: nearestDrivers };
+  } catch (error) {
+    console.error('Error getting nearest drivers:', error);
+    return { success: false, error: error.message, data: [] };
   }
 }
 

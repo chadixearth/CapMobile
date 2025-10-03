@@ -756,15 +756,23 @@ export async function uploadProfilePhoto(userId, photoUri) {
  * @param {string} newPassword
  * @returns {Promise<{ success: boolean, message?: string, error?: string }>}
  */
-export async function changePassword(userId, currentPassword, newPassword) {
+export async function changePassword(currentPassword, newPassword) {
   try {
-    console.log('[authService] Changing password for user:', userId);
-    
-    // Validate inputs
-    if (!userId || !currentPassword || !newPassword) {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
       return {
         success: false,
-        error: 'User ID, current password, and new password are required.'
+        error: 'User not logged in.'
+      };
+    }
+    
+    console.log('[authService] Changing password for user:', currentUser.id);
+    
+    // Validate inputs
+    if (!currentPassword || !newPassword) {
+      return {
+        success: false,
+        error: 'Current password and new password are required.'
       };
     }
     
@@ -785,7 +793,7 @@ export async function changePassword(userId, currentPassword, newPassword) {
     const result = await apiRequest('/auth/change-password/', {
       method: 'POST',
       body: JSON.stringify({
-        user_id: userId,
+        user_id: currentUser.id,
         current_password: currentPassword,
         new_password: newPassword
       })

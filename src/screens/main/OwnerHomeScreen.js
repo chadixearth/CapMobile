@@ -1,5 +1,5 @@
 // screens/main/OwnerHomeScreen.jsx
-import React, { useMemo, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useState, useLayoutEffect, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,14 @@ import {
   Animated,
   Easing,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { carriageService } from '../../services/tourpackage/fetchCarriage';
+import { getCurrentUser } from '../../services/authService';
+import NotificationService from '../../services/notificationService';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 const MAROON = '#6B2E2B';
 const TEXT_DARK = '#1F1F1F';
@@ -24,64 +29,15 @@ const { height: SCREEN_H } = Dimensions.get('window');
 // Local image for tartanillas
 const tartanillaImage = require('../../../assets/tartanilla.jpg');
 
-// ---- Mock data (replace with your API later) ----
-const MOCK_TARTANILLAS = [
-  {
-    id: '1',
-    code: 'TC143',
-    driver: {
-      name: 'Carlos Sainz Jr.',
-      email: 'carlossainz55@gmail.com',
-      phone: '09202171442',
-      birthdate: 'September 1, 1994',
-      address: 'Secret City',
-      avatar: 'https://i.pravatar.cc/128?img=68',
-    },
-    photo: tartanillaImage,
-  },
-  {
-    id: '2',
-    code: 'TC144',
-    driver: {
-      name: 'Lando Norris',
-      email: 'lando@example.com',
-      phone: '09171234567',
-      birthdate: 'November 13, 1999',
-      address: 'Cebu City',
-      avatar: 'https://i.pravatar.cc/128?img=12',
-    },
-    photo: tartanillaImage,
-  },
-  {
-    id: '3',
-    code: 'TC145',
-    driver: {
-      name: 'Max Verstappen',
-      email: 'max@example.com',
-      phone: '09991234567',
-      address: 'Lapu-Lapu City',
-      avatar: 'https://i.pravatar.cc/128?img=5',
-    },
-    photo: tartanillaImage,
-  },
-];
+// Default image for tartanillas
+const getCarriageImage = (carriage) => {
+  if (carriage?.image_url) {
+    return { uri: carriage.image_url };
+  }
+  return tartanillaImage;
+};
 
-const NOTIFS = [
-  {
-    id: 'n1',
-    title: 'Announcement',
-    body:
-      'Customer A booked the photo shoot in events. See bookings for more details.',
-    time: '01:51',
-  },
-  {
-    id: 'n2',
-    title: 'Announcement',
-    body:
-      'You declined the wedding shoot booking. See booking history for more details.',
-    time: '01:52',
-  },
-];
+// Remove dummy notifications - will use real notifications from API
 
 export default function OwnerHomeScreen({ navigation }) {
   // Hide the default stack header (keep only TARTRACKHeader)
@@ -91,7 +47,62 @@ export default function OwnerHomeScreen({ navigation }) {
 
   const [selected, setSelected] = useState(null);
   const [visible, setVisible] = useState(false);
+  const [carriages, setCarriages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const y = useMemo(() => new Animated.Value(SCREEN_H), []);
+  const { unreadCount } = useNotifications();
+
+  // Fetch owner's carriages and notifications
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser?.id) {
+          // Fetch carriages
+          const ownerCarriages = await carriageService.getByOwner(currentUser.id);
+          setCarriages(ownerCarriages || []);
+          
+          // Fetch notifications
+          const notificationResult = await NotificationService.getNotifications(currentUser.id);
+          if (notificationResult.success) {
+            // Get latest 3 notifications for preview
+            const latestNotifications = (notificationResult.data || []).slice(0, 3).map(notif => ({
+              id: notif.id,
+              title: notif.title,
+              body: notif.message,
+              time: formatNotificationTime(notif.created_at),
+              read: notif.read
+            }));
+            setNotifications(latestNotifications);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setCarriages([]);
+        setNotifications([]);
+      } finally {
+        setLoading(false);
+        setNotificationsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const formatNotificationTime = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    } catch {
+      return 'now';
+    }
+  };
 
   const openSheet = (item) => {
     setSelected(item);
@@ -116,7 +127,17 @@ export default function OwnerHomeScreen({ navigation }) {
     });
   };
 
-  const preview = MOCK_TARTANILLAS.slice(0, 2);
+  const preview = carriages.slice(0, 2);
+
+  const getNotificationIcon = (title) => {
+    const titleLower = title.toLowerCase();
+    if (titleLower.includes('booking') || titleLower.includes('request')) return 'calendar-outline';
+    if (titleLower.includes('payment') || titleLower.includes('paid')) return 'card-outline';
+    if (titleLower.includes('driver') || titleLower.includes('assigned')) return 'car-outline';
+    if (titleLower.includes('cancelled') || titleLower.includes('cancel')) return 'close-circle-outline';
+    if (titleLower.includes('completed') || titleLower.includes('finished')) return 'checkmark-circle-outline';
+    return 'notifications-outline';
+  };
 
   return (
     <View style={styles.container}>
@@ -139,22 +160,39 @@ export default function OwnerHomeScreen({ navigation }) {
         </View>
 
         <View style={styles.card}>
-          {NOTIFS.map((n) => (
-            <View key={n.id} style={styles.notifRow}>
-              <View style={styles.notifIconWrap}>
-                <Ionicons name="calendar-outline" size={18} color={MAROON} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.notifHeader}>
-                  <Text style={styles.notifTitle}>{n.title}</Text>
-                  <Text style={styles.notifTime}>{n.time}</Text>
-                </View>
-                <Text style={styles.notifBody} numberOfLines={2}>
-                  {n.body}
-                </Text>
-              </View>
+          {notificationsLoading ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={MAROON} />
+              <Text style={{ marginTop: 8, color: '#666' }}>Loading notifications...</Text>
             </View>
-          ))}
+          ) : notifications.length === 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Ionicons name="notifications-outline" size={32} color="#ccc" />
+              <Text style={{ marginTop: 8, color: '#666' }}>No notifications yet</Text>
+            </View>
+          ) : (
+            notifications.map((n) => (
+              <View key={n.id} style={[styles.notifRow, !n.read && styles.unreadNotif]}>
+                <View style={styles.notifIconWrap}>
+                  <Ionicons 
+                    name={getNotificationIcon(n.title)} 
+                    size={18} 
+                    color={MAROON} 
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.notifHeader}>
+                    <Text style={styles.notifTitle}>{n.title}</Text>
+                    <Text style={styles.notifTime}>{n.time}</Text>
+                  </View>
+                  <Text style={styles.notifBody} numberOfLines={2}>
+                    {n.body}
+                  </Text>
+                  {!n.read && <View style={styles.unreadDot} />}
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         {/* Quick Cards */}
@@ -191,47 +229,65 @@ export default function OwnerHomeScreen({ navigation }) {
         {/* List of Tartanillas (preview - max 2) */}
         <View style={[styles.headerRow, { marginTop: 10 }]}>
           <Text style={styles.sectionTitle}>List of Tartanilla Carriages</Text>
-          <TouchableOpacity onPress={() => navigation?.navigate?.('TartanillaCarriages')}>
+          <TouchableOpacity onPress={() => navigation?.navigate?.('MyCarriages')}>
             <Text style={styles.link}>View all</Text>
           </TouchableOpacity>
         </View>
 
         <View style={[styles.card, { paddingVertical: 12 }]}>
-          <FlatList
-            data={preview}
-            keyExtractor={(i) => i.id}
-            scrollEnabled={false}
-            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-            renderItem={({ item }) => (
-              <View style={styles.tartanillaRow}>
-                <Image source={item.photo} style={styles.tartanillaImg} />
-                <View style={styles.tartanillaInfo}>
-                  <Text style={styles.tcCode}>{item.code}</Text>
+          {loading ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={MAROON} />
+              <Text style={{ marginTop: 8, color: '#666' }}>Loading carriages...</Text>
+            </View>
+          ) : preview.length === 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Ionicons name="car-outline" size={32} color="#ccc" />
+              <Text style={{ marginTop: 8, color: '#666' }}>No carriages found</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={preview}
+              keyExtractor={(i) => String(i.id)}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+              renderItem={({ item }) => (
+                <View style={styles.tartanillaRow}>
+                  <Image source={getCarriageImage(item)} style={styles.tartanillaImg} />
+                  <View style={styles.tartanillaInfo}>
+                    <Text style={styles.tcCode}>{item.carriage_code || item.code || `TC${item.id}`}</Text>
 
-                  {/* Driver with people icon */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                    <Ionicons name="people-outline" size={16} color="#444" />
-                    <Text style={styles.tcDriver}> {item.driver.name}</Text>
+                    {/* Plate Number */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                      <Ionicons name="car-outline" size={16} color="#444" />
+                      <Text style={styles.tcPlate}> {item.plate_number || 'No plate number'}</Text>
+                    </View>
+
+                    {/* Driver with people icon */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <Ionicons name="people-outline" size={16} color="#444" />
+                      <Text style={styles.tcDriver}> {item.driver_name || item.driver?.name || 'No driver assigned'}</Text>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <TouchableOpacity style={styles.seeBtn} onPress={() => openSheet(item)}>
+                        <Text style={styles.seeBtnText}>See Details</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <TouchableOpacity style={styles.seeBtn} onPress={() => openSheet(item)}>
-                      <Text style={styles.seeBtnText}>See Details</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.trashBtn}
+                    onPress={() => {
+                      /* optional later */
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#7D7D7D" />
+                  </TouchableOpacity>
                 </View>
-
-                <TouchableOpacity
-                  style={styles.trashBtn}
-                  onPress={() => {
-                    /* optional later */
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={18} color="#7D7D7D" />
-                </TouchableOpacity>
-              </View>
-            )}
-          />
+              )}
+            />
+          )}
         </View>
 
         {/* DETAILS BOTTOM SHEET */}
@@ -241,36 +297,48 @@ export default function OwnerHomeScreen({ navigation }) {
             {selected && (
               <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
                 <View style={styles.driverHeader}>
-                  <Image source={selected.photo} style={styles.avatar} />
+                  <Image source={getCarriageImage(selected)} style={styles.avatar} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.headerCode}>{selected.code}</Text>
-                    <Text style={styles.headerDriver}>Driver : {selected.driver.name}</Text>
+                    <Text style={styles.headerCode}>{selected.carriage_code || selected.code || `TC${selected.id}`}</Text>
+                    <Text style={styles.headerDriver}>Driver : {selected.driver_name || selected.driver?.name || 'No driver assigned'}</Text>
                   </View>
                 </View>
 
                 <View style={styles.detailCard}>
                   <Text style={styles.detailLine}>
-                    <Text style={styles.bold}>Name : </Text>
-                    {selected.driver.name}
+                    <Text style={styles.bold}>Carriage Code : </Text>
+                    {selected.carriage_code || selected.code || `TC${selected.id}`}
                   </Text>
-                  {!!selected.driver.birthdate && (
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.bold}>Plate Number : </Text>
+                    {selected.plate_number || 'No plate number'}
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    <Text style={styles.bold}>Driver Name : </Text>
+                    {selected.driver_name || selected.driver?.name || 'No driver assigned'}
+                  </Text>
+                  {selected.driver_email && (
                     <Text style={styles.detailLine}>
-                      <Text style={styles.bold}>Birth Date : </Text>
-                      {selected.driver.birthdate}
+                      <Text style={styles.bold}>Driver Email : </Text>
+                      {selected.driver_email}
                     </Text>
                   )}
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.bold}>Contact # : </Text>
-                    {selected.driver.phone}
-                  </Text>
-                  <Text style={styles.detailLine}>
-                    <Text style={styles.bold}>Email : </Text>
-                    {selected.driver.email}
-                  </Text>
-                  {!!selected.driver.address && (
+                  {selected.driver_phone && (
                     <Text style={styles.detailLine}>
-                      <Text style={styles.bold}>Home Address : </Text>
-                      {selected.driver.address}
+                      <Text style={styles.bold}>Driver Contact : </Text>
+                      {selected.driver_phone}
+                    </Text>
+                  )}
+                  {selected.capacity && (
+                    <Text style={styles.detailLine}>
+                      <Text style={styles.bold}>Capacity : </Text>
+                      {selected.capacity} passengers
+                    </Text>
+                  )}
+                  {selected.status && (
+                    <Text style={styles.detailLine}>
+                      <Text style={styles.bold}>Status : </Text>
+                      {selected.status}
                     </Text>
                   )}
                 </View>
@@ -330,6 +398,18 @@ const styles = StyleSheet.create({
   notifTitle: { fontWeight: '700', color: TEXT_DARK },
   notifTime: { color: '#9A9A9A', fontSize: 11 },
   notifBody: { color: '#6D6D6D', fontSize: 12, marginTop: 2 },
+  unreadNotif: {
+    backgroundColor: '#f8f9fa',
+  },
+  unreadDot: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff4444',
+  },
 
   // Quick card
   quickCard: {
@@ -374,6 +454,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     alignSelf: 'flex-start',
   },
+  tcPlate: { color: '#2C2C2C', fontSize: 12, fontWeight: '600' },
   tcDriver: { color: '#2C2C2C', fontSize: 12 },
   seeBtn: {
     marginTop: 6,

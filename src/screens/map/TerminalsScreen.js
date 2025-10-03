@@ -6,13 +6,7 @@ import BackButton from '../../components/BackButton';
 import RideStatusCard from '../../components/RideStatusCard';
 import { getMyActiveRides } from '../../services/rideHailingService';
 import { getCurrentUser } from '../../services/authService';
-
-const TERMINALS = [
-  { id: '1', name: 'Plaza Independencia', latitude: 10.2926, longitude: 123.9058 },
-  { id: '2', name: 'Carbon Market', latitude: 10.2956, longitude: 123.8772 },
-  { id: '3', name: 'SM City Cebu', latitude: 10.3111, longitude: 123.9164 },
-  { id: '4', name: 'Ayala Center Cebu', latitude: 10.3173, longitude: 123.9058 },
-];
+import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -27,10 +21,34 @@ const TerminalsScreen = ({ navigation, route }) => {
   const [activeRides, setActiveRides] = useState([]);
   const [showRides, setShowRides] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [terminals, setTerminals] = useState([]);
+  const [mapData, setMapData] = useState(null);
 
   useEffect(() => {
     fetchActiveRides();
+    loadMapData();
   }, []);
+
+  const loadMapData = async () => {
+    try {
+      const [terminalData, fullMapData] = await Promise.all([
+        fetchTerminals({ type: 'pickup', active: true }),
+        fetchMapData({ cacheOnly: true })
+      ]);
+      
+      setTerminals(terminalData.terminals || []);
+      setMapData(fullMapData);
+    } catch (error) {
+      console.error('Error loading map data:', error);
+      // Fallback to default terminals
+      setTerminals([
+        { id: '1', name: 'Plaza Independencia', latitude: 10.2926, longitude: 123.9058 },
+        { id: '2', name: 'Carbon Market', latitude: 10.2956, longitude: 123.8772 },
+        { id: '3', name: 'SM City Cebu', latitude: 10.3111, longitude: 123.9164 },
+        { id: '4', name: 'Ayala Center Cebu', latitude: 10.3173, longitude: 123.9058 },
+      ]);
+    }
+  };
 
   const fetchActiveRides = async () => {
     try {
@@ -111,18 +129,23 @@ const TerminalsScreen = ({ navigation, route }) => {
       ) : (
         <View style={styles.mapContainer}>
           <LeafletMapView
-            region={DEFAULT_REGION}
-            markers={TERMINALS.map(t => ({
-              latitude: t.latitude,
-              longitude: t.longitude,
+            region={mapData?.config ? {
+              latitude: mapData.config.center_latitude,
+              longitude: mapData.config.center_longitude,
+              latitudeDelta: 0.06,
+              longitudeDelta: 0.06,
+            } : DEFAULT_REGION}
+            markers={terminals.map(t => ({
+              latitude: parseFloat(t.latitude),
+              longitude: parseFloat(t.longitude),
               title: t.name,
               description: `Tap to select as ${type}`,
               id: t.id,
-              pointType: 'terminal',
+              pointType: t.point_type || 'terminal',
               iconColor: selectedId === t.id ? '#6B2E2B' : '#00AA00',
             }))}
-            roads={[]}
-            routes={[]}
+            roads={mapData?.roads || []}
+            routes={mapData?.routes || []}
             showSatellite={false}
           />
         </View>

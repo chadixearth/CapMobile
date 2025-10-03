@@ -111,12 +111,12 @@ export default function AccountDetailsScreen({ navigation }) {
             setLastName(userData.last_name || nameParts[2] || '');
             setEmail(userData.email || '');
             setPhone(userData.phone || '');
-            setPhotoUrl(
-              userData.profile_photo ||
-                userData.profile_photo_url ||
-                userData.avatar_url ||
-                ''
-            );
+            // Prioritize profile_photo_url from database, then other sources
+            const profilePhotoUrl = userData.profile_photo_url || 
+                                  userData.profile_photo || 
+                                  userData.avatar_url || 
+                                  '';
+            setPhotoUrl(profilePhotoUrl);
           } else {
             const { data } = await supabase.auth.getUser();
             if (data?.user) {
@@ -128,7 +128,11 @@ export default function AccountDetailsScreen({ navigation }) {
               setLastName(nameParts[2] || '');
               setEmail(data.user.email || '');
               setPhone(data.user.user_metadata?.phone || '');
-              setPhotoUrl(data.user.user_metadata?.profile_photo_url || '');
+              // Get profile photo from auth metadata
+              const authPhotoUrl = data.user.user_metadata?.profile_photo_url || 
+                                 data.user.user_metadata?.profile_photo || 
+                                 '';
+              setPhotoUrl(authPhotoUrl);
             }
           }
 
@@ -274,8 +278,18 @@ export default function AccountDetailsScreen({ navigation }) {
         );
         if (result.success) {
           setPhotoUrl(result.photo_url);
-          await updateUserProfile(currentUser.id, { profile_photo_url: result.photo_url });
-          setSuccess('Profile photo updated!');
+          
+          // Ensure the profile photo URL is saved to the database
+          const profileUpdateResult = await updateUserProfile(currentUser.id, { 
+            profile_photo_url: result.photo_url 
+          });
+          
+          if (profileUpdateResult.success) {
+            setSuccess('Profile photo updated successfully!');
+          } else {
+            console.warn('Photo uploaded but failed to save to profile:', profileUpdateResult.error);
+            setSuccess('Profile photo uploaded!');
+          }
         } else {
           throw new Error(result.error || 'Failed to upload photo');
         }
@@ -616,6 +630,12 @@ export default function AccountDetailsScreen({ navigation }) {
       
       if (newPassword !== confirmPassword) {
         setPasswordMessage('New passwords do not match.');
+        return;
+      }
+      
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        setPasswordMessage('You must be logged in to change password.');
         return;
       }
       

@@ -6,6 +6,7 @@ import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
 import OwnerBookScreen from '../screens/main/OwnerBookScreen';
 import OwnerBreakevenScreen from '../screens/main/OwnerBreakevenScreen';
 import OwnerScheduleScreen from '../screens/main/OwnerScheduleScreen';
+import TerminalsScreen from '../screens/map/TerminalsScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
@@ -31,6 +32,8 @@ export default function OwnerTabs({ setRole }) {
         tabBarIcon: ({ color, size }) => {
           if (route.name === Routes.HOME) {
             return <Ionicons name="home-outline" size={size} color={color} />;
+          } else if (route.name === Routes.TERMINALS) {
+            return <Ionicons name="location-outline" size={size} color={color} />;
           } else if (route.name === Routes.BREAKEVEN) {
             return <Ionicons name="calculator-outline" size={size} color={color} />;
           } else if (route.name === Routes.EVENTS) {
@@ -54,26 +57,20 @@ export default function OwnerTabs({ setRole }) {
         component={OwnerHomeScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
-      <Tab.Screen 
-        name={Routes.BREAKEVEN} 
-        component={OwnerBreakevenScreen} 
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
-      
+      <Tab.Screen
+        name={Routes.TERMINALS}
+        component={TerminalsScreen}
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+      />
       <Tab.Screen
         name={Routes.EVENTS}
         component={OwnerBookScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
-      <Tab.Screen
-        name="Schedule"
-        component={OwnerScheduleScreen}
-        options={{ headerShown: false }}
-      />
-      <Tab.Screen
-        name={Routes.GOODS_SERVICES}
-        component={GoodsServicesScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
-      />
+      <Tab.Screen 
+        name={Routes.BREAKEVEN} 
+        component={OwnerBreakevenScreen} 
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen
         name={Routes.PROFILE}
         component={MenuScreen}
