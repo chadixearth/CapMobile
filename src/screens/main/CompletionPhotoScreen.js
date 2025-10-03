@@ -17,7 +17,8 @@ import ReportModal from '../../components/ReportModal';
 const MAROON = '#6B2E2B';
 
 export default function CompletionPhotoScreen({ navigation, route }) {
-  const { booking, driverId } = route.params;
+  const { booking, driverId, eventId, eventType, eventDetails, onComplete } = route.params;
+  const isSpecialEvent = eventType === 'special_event';
   const [photo, setPhoto] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [tripCompleted, setTripCompleted] = useState(false);
@@ -60,14 +61,27 @@ export default function CompletionPhotoScreen({ navigation, route }) {
 
     setUploading(true);
     try {
-      const result = await completeBookingWithPhoto(booking.id, driverId, photo);
+      let result;
+      
+      if (isSpecialEvent) {
+        // Complete special event
+        const { updateCustomRequestStatus } = require('../../services/specialpackage/customPackageRequest');
+        result = await updateCustomRequestStatus(eventId, 'special_event', { 
+          status: 'completed',
+          completion_photo: photo 
+        });
+      } else {
+        // Complete regular booking
+        result = await completeBookingWithPhoto(booking.id, driverId, photo);
+      }
       
       if (result.success) {
         setTripCompleted(true);
         Alert.alert(
-          'Trip Completed!',
-          'Photo uploaded and booking completed successfully. The tourist has been notified.'
+          isSpecialEvent ? 'Event Completed!' : 'Trip Completed!',
+          `Photo uploaded and ${isSpecialEvent ? 'event' : 'booking'} completed successfully. The customer has been notified.`
         );
+        if (onComplete) onComplete();
       } else {
         Alert.alert('Error', result.error || 'Failed to upload photo');
       }
@@ -101,15 +115,22 @@ export default function CompletionPhotoScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Complete Trip</Text>
+        <Text style={styles.headerTitle}>{isSpecialEvent ? 'Complete Event' : 'Complete Trip'}</Text>
       </View>
 
       <View style={styles.content}>
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Upload Completion Photo</Text>
           <Text style={styles.infoText}>
-            Take or select a photo to complete the trip. Once uploaded, the booking will be automatically completed.
+            Take or select a photo to complete the {isSpecialEvent ? 'event' : 'trip'}. Once uploaded, the {isSpecialEvent ? 'event' : 'booking'} will be automatically completed.
           </Text>
+          {isSpecialEvent && eventDetails && (
+            <View style={styles.eventDetails}>
+              <Text style={styles.eventDetailText}>Event: {eventDetails.event_type}</Text>
+              <Text style={styles.eventDetailText}>Customer: {eventDetails.customer_name}</Text>
+              <Text style={styles.eventDetailText}>Date: {eventDetails.event_date}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.photoSection}>
@@ -160,7 +181,7 @@ export default function CompletionPhotoScreen({ navigation, route }) {
             ) : (
               <>
                 <Ionicons name="cloud-upload" size={20} color="#fff" />
-                <Text style={styles.uploadButtonText}>Complete Trip</Text>
+                <Text style={styles.uploadButtonText}>{isSpecialEvent ? 'Complete Event' : 'Complete Trip'}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -236,6 +257,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+  },
+  eventDetails: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF5722',
+  },
+  eventDetailText: {
+    fontSize: 13,
+    color: '#333',
+    marginBottom: 4,
+    fontWeight: '500',
   },
   photoSection: {
     alignItems: 'center',

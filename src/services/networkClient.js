@@ -1,6 +1,7 @@
 import { apiBaseUrl } from './networkConfig';
 import { getAccessToken } from './authService';
 import connectionManager from './connectionManager';
+import connectionRecoveryService from './connectionRecoveryService';
 import ResponseHandler from './responseHandler';
 
 class NetworkClient {
@@ -103,6 +104,21 @@ class NetworkClient {
         
         lastError = error;
         
+        // Check if this is a recoverable connection error
+        if (connectionRecoveryService.isRecoverableError(error)) {
+          console.log(`Recoverable connection error detected: ${error.message}`);
+          
+          try {
+            // Attempt recovery and retry
+            const requestFunc = () => this.request(endpoint, options);
+            return await connectionRecoveryService.handleConnectionError(error, requestFunc);
+          } catch (recoveryError) {
+            console.error('Connection recovery failed:', recoveryError);
+            lastError = recoveryError;
+            break;
+          }
+        }
+        
         // Handle abort errors specifically
         if (error.name === 'AbortError' || (error.message && error.message.includes('Aborted'))) {
           console.log(`Request timeout on attempt ${attempt}`);
@@ -121,9 +137,12 @@ class NetworkClient {
         // Check for Windows socket errors specifically
         const isSocketError = error.message && (
           error.message.includes('WinError 10035') ||
+          error.message.includes('WinError 10054') ||
           error.message.includes('EWOULDBLOCK') ||
           error.message.includes('EAGAIN') ||
-          error.message.includes('socket operation could not be completed')
+          error.message.includes('socket operation could not be completed') ||
+          error.message.includes('forcibly closed') ||
+          error.message.includes('existing connection')
         );
         
         if (isConnectionError || isSocketError) {
@@ -146,6 +165,11 @@ class NetworkClient {
           
           const errorType = isSocketError ? 'socket' : 'network';
           console.log(`${errorType} error on attempt ${attempt}, retrying in ${delay}ms:`, error.message);
+          
+          // Force connection reset for Windows socket errors
+          if (isSocketError && attempt > 1) {
+            connectionManager.forceConnectionReset();
+          }
           
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;

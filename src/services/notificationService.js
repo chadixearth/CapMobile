@@ -380,6 +380,75 @@ class NotificationService {
       return { success: false, error: error.message };
     }
   }
+
+  // Notify all owners when someone books a special event
+  static async notifyOwnersOfNewSpecialEvent(eventData) {
+    try {
+      console.log('[NotificationService] Notifying owners of new special event:', eventData.id || 'new event');
+      
+      const customerName = eventData.customer_name || 'A customer';
+      const eventType = eventData.event_type || 'special event';
+      const paxCount = eventData.number_of_pax || 1;
+      const eventDate = eventData.event_date ? new Date(eventData.event_date).toLocaleDateString() : 'TBD';
+      const eventTime = eventData.event_time || 'TBD';
+      
+      // Get all owners to notify
+      let ownerCount = 0;
+      try {
+        const { data: owners } = await supabase
+          .from('users')
+          .select('id, status')
+          .in('role', ['owner', 'driver-owner']);
+        
+        ownerCount = owners ? owners.length : 0;
+        const activeCount = owners ? owners.filter(o => o.status === 'active').length : 0;
+        console.log(`[NotificationService] Found ${ownerCount} total owners (${activeCount} active, ${ownerCount - activeCount} inactive)`);
+        
+        if (ownerCount === 0) {
+          console.log('[NotificationService] No owners to notify');
+          return { success: true, message: 'No owners to notify' };
+        }
+        
+        const ownerIds = owners.map(o => o.id).filter(id => {
+          try {
+            // Validate UUID format
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          } catch {
+            return false;
+          }
+        });
+        
+        if (ownerIds.length === 0) {
+          console.log('[NotificationService] No valid owner UUIDs found');
+          return { success: true, message: 'No valid owners to notify' };
+        }
+        
+        // Send notification using the API
+        const result = await this.sendNotification(
+          ownerIds,
+          'New Special Event Request! 🎉',
+          `${customerName} needs a carriage for ${eventType} (${paxCount} pax). Date: ${eventDate} at ${eventTime}. Tap to accept!`,
+          'special_event',
+          'owner'
+        );
+        
+        console.log('[NotificationService] Owner notification result:', result);
+        return {
+          ...result,
+          owners_found: ownerCount,
+          owners_notified: ownerIds.length
+        };
+        
+      } catch (error) {
+        console.error('[NotificationService] Error in owner notification:', error);
+        return { success: false, error: error.message, owners_found: ownerCount };
+      }
+      
+    } catch (error) {
+      console.error('[NotificationService] Failed to notify owners:', error);
+      return { success: false, error: error.message };
+    }
+  }
   // Show immediate notification alert (disabled to prevent modal issues)
   static showNotificationAlert(title, message, onPress = null) {
     // Disabled - use local notifications instead

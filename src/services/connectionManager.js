@@ -45,6 +45,19 @@ class ConnectionManager {
     if (global.gc) {
       global.gc();
     }
+    
+    // Additional cleanup for React Native
+    if (global.__turboModuleProxy) {
+      // Clear any cached network modules
+      try {
+        global.__turboModuleProxy = null;
+        setTimeout(() => {
+          global.__turboModuleProxy = require('react-native/Libraries/TurboModule/TurboModuleRegistry');
+        }, 100);
+      } catch (e) {
+        console.warn('[ConnectionManager] Could not reset turbo modules:', e);
+      }
+    }
   }
 
   getConnectionHeaders() {
@@ -74,6 +87,11 @@ class ConnectionManager {
       errorMessage.includes('econnreset') ||
       errorMessage.includes('stream_id') ||
       errorMessage.includes('network request failed') ||
+      errorMessage.includes('winerror 10054') ||
+      errorMessage.includes('forcibly closed') ||
+      errorMessage.includes('existing connection') ||
+      errorMessage.includes('readerror') ||
+      errorMessage.includes('http2') ||
       errorName === 'aborterror'
     );
   }

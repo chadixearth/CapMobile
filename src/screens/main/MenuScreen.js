@@ -268,14 +268,14 @@ export default function MenuScreen({ navigation }) {
                 label="Earnings"
                 onPress={navigateToEarningsDetail}
               />
-              <Divider />
-              <ProfileItem
-                icon={<Ionicons name="map-outline" size={22} color={MAROON} />}
-                label="My Tour Packages"
-                onPress={() => navigation.navigate('MyTourPackages')}
-              />
               {role === 'driver' && (
                 <>
+                  <Divider />
+                  <ProfileItem
+                    icon={<Ionicons name="map-outline" size={22} color={MAROON} />}
+                    label="My Tour Packages"
+                    onPress={() => navigation.navigate('MyTourPackages')}
+                  />
                   <Divider />
                   <ProfileItem
                     icon={<Ionicons name="calendar-outline" size={22} color={MAROON} />}

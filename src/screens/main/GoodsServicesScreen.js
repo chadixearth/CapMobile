@@ -8,12 +8,16 @@ import {
   RefreshControl,
   TouchableOpacity,
   Dimensions,
+  TextInput,
+  Alert,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Button from '../../components/Button';
 import { useAuth } from '../../hooks/useAuth';
-import { listGoodsServicesPosts } from '../../services/goodsServices';
+import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
 import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
@@ -29,6 +33,14 @@ export default function GoodsServicesScreen() {
   const [reviews, setReviews] = useState([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [authorMap, setAuthorMap] = useState({}); // { [author_id]: { name, email } }
+  
+  // User's own goods & services profile
+  const [userProfile, setUserProfile] = useState(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editDescription, setEditDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  
+  const isDriverOrOwner = auth.user?.role === 'driver' || auth.user?.role === 'owner';
 
   const formatDateTime = (d) => {
     if (!d) return '';
@@ -39,6 +51,19 @@ export default function GoodsServicesScreen() {
     const ts = hasUpdate ? item.updated_at : item.created_at;
     return `${hasUpdate ? 'Updated' : 'Posted'} ${formatDateTime(ts)}`;
   };
+
+  const fetchUserProfile = useCallback(async () => {
+    if (!auth.user?.id || !isDriverOrOwner) return;
+    try {
+      const result = await getGoodsServicesProfileByAuthor(auth.user.id);
+      if (result.success) {
+        setUserProfile(result.data);
+        setEditDescription(result.data?.description || '');
+      }
+    } catch (e) {
+      console.error('Failed to fetch user profile:', e);
+    }
+  }, [auth.user?.id, isDriverOrOwner]);
 
   const fetchPosts = useCallback(async () => {
     setLoading(true);
@@ -130,14 +155,69 @@ export default function GoodsServicesScreen() {
     useCallback(() => {
       fetchPosts();
       fetchRecentReviews();
-    }, [fetchPosts, fetchRecentReviews])
+      fetchUserProfile();
+    }, [fetchPosts, fetchRecentReviews, fetchUserProfile])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchPosts(), fetchRecentReviews()]);
+    await Promise.all([fetchPosts(), fetchRecentReviews(), fetchUserProfile()]);
     setRefreshing(false);
-  }, [fetchPosts, fetchRecentReviews]);
+  }, [fetchPosts, fetchRecentReviews, fetchUserProfile]);
+
+  const handleSaveProfile = async () => {
+    if (!auth.user?.id) return;
+    setSaving(true);
+    try {
+      const result = await upsertGoodsServicesProfile(auth.user.id, editDescription.trim());
+      if (result.success) {
+        setUserProfile(result.data);
+        setEditModalVisible(false);
+        Alert.alert('Success', 'Your goods & services profile has been updated.');
+        fetchPosts(); // Refresh to show updated post
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save profile');
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClearProfile = async () => {
+    if (!userProfile?.id) return;
+    Alert.alert(
+      'Clear Profile',
+      'Are you sure you want to remove your goods & services profile?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              const result = await deleteGoodsServicesPost(userProfile.id, auth.user.id);
+              if (result.success) {
+                setUserProfile(null);
+                setEditDescription('');
+                setEditModalVisible(false);
+                Alert.alert('Success', 'Your goods & services profile has been removed.');
+                fetchPosts(); // Refresh to remove from list
+              } else {
+                Alert.alert('Error', result.error || 'Failed to clear profile');
+              }
+            } catch (e) {
+              Alert.alert('Error', e.message || 'Failed to clear profile');
+            } finally {
+              setSaving(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const renderMediaGrid = (mediaArr) => {
     if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
@@ -348,6 +428,32 @@ export default function GoodsServicesScreen() {
   return (
     <View style={styles.container}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      
+      {/* User's Profile Section for Drivers/Owners */}
+      {isDriverOrOwner && (
+        <View style={styles.userProfileSection}>
+          <View style={styles.profileHeader}>
+            <Text style={styles.profileTitle}>My Goods & Services</Text>
+            <TouchableOpacity 
+              style={styles.editButton}
+              onPress={() => setEditModalVisible(true)}
+            >
+              <Ionicons name={userProfile ? "create-outline" : "add-outline"} size={20} color={COLORS.primary} />
+              <Text style={styles.editButtonText}>{userProfile ? 'Edit' : 'Create'}</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {userProfile ? (
+            <View style={styles.currentProfile}>
+              <Text style={styles.currentDescription}>{userProfile.description}</Text>
+              <Text style={styles.profileDate}>Updated {formatDateTime(userProfile.updated_at)}</Text>
+            </View>
+          ) : (
+            <Text style={styles.noProfile}>No goods & services profile yet. Create one to showcase your services.</Text>
+          )}
+        </View>
+      )}
+      
       <FlatList
         data={posts}
         keyExtractor={(item, index) => `${item.id || index}`}
@@ -368,6 +474,7 @@ export default function GoodsServicesScreen() {
               onPress={() => {
                 fetchPosts();
                 fetchRecentReviews();
+                fetchUserProfile();
               }}
             />
           </View>
@@ -377,6 +484,50 @@ export default function GoodsServicesScreen() {
         scrollEnabled={true}
         bounces={true}
       />
+      
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+              <Text style={styles.cancelButton}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Goods & Services</Text>
+            <TouchableOpacity onPress={handleSaveProfile} disabled={saving}>
+              <Text style={[styles.saveButton, saving && styles.disabledButton]}>Save</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.inputLabel}>Describe your goods and services:</Text>
+            <TextInput
+              style={styles.textInput}
+              value={editDescription}
+              onChangeText={setEditDescription}
+              placeholder="Tell customers about the goods and services you offer..."
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+            />
+            
+            {userProfile && (
+              <TouchableOpacity 
+                style={styles.clearButton}
+                onPress={handleClearProfile}
+                disabled={saving}
+              >
+                <Ionicons name="trash-outline" size={16} color="#DC3545" />
+                <Text style={styles.clearButtonText}>Remove Profile</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -404,11 +555,138 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   listContent: { padding: 16, paddingBottom: 100 },
   error: { color: 'red', padding: 16 },
+  
+  // User Profile Section
+  userProfileSection: {
+    backgroundColor: COLORS.card,
+    margin: 16,
+    marginBottom: 8,
+    borderRadius: RADIUS,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.line,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  profileTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 8,
+  },
+  editButtonText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  currentProfile: {
+    padding: 12,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 8,
+  },
+  currentDescription: {
+    color: COLORS.text,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  profileDate: {
+    color: COLORS.sub,
+    fontSize: 12,
+  },
+  noProfile: {
+    color: COLORS.sub,
+    fontSize: 14,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: 12,
+  },
+  
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.line,
+    backgroundColor: COLORS.card,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  cancelButton: {
+    color: COLORS.sub,
+    fontSize: 16,
+  },
+  saveButton: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  modalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: COLORS.card,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    minHeight: 120,
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 24,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    backgroundColor: '#FFF5F5',
+  },
+  clearButtonText: {
+    color: '#DC3545',
+    fontWeight: '600',
+  },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
+    marginTop: 20,
   },
   empty: { 
     textAlign: 'center', 

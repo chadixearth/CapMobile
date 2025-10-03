@@ -135,6 +135,17 @@ export async function createSpecialEventRequest(specialEventData) {
     });
 
     if (result.success && result.data.success) {
+      // Notify all owners about the new special event
+      try {
+        const NotificationService = (await import('../notificationService')).default;
+        await NotificationService.notifyOwnersOfNewSpecialEvent({
+          ...result.data.data,
+          customer_name: specialEventData.customer_name || 'Customer'
+        });
+      } catch (notifError) {
+        console.warn('Failed to send owner notifications:', notifError);
+      }
+      
       return {
         success: true,
         data: result.data.data,

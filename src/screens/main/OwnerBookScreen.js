@@ -28,14 +28,15 @@ export default function OwnerBookScreen({ navigation }) {
   }, [navigation]);
 
   const [availableEvents, setAvailableEvents] = useState([]);
-  const [acceptedEvents, setAcceptedEvents] = useState([]);
+  const [ongoingEvents, setOngoingEvents] = useState([]);
+  const [historyEvents, setHistoryEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false); // used for pull-to-refresh & empty-state refresh
   const [user, setUser] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [acceptingEvent, setAcceptingEvent] = useState(false);
-  const [activeTab, setActiveTab] = useState('available'); // 'available' | 'history'
+  const [activeTab, setActiveTab] = useState('available'); // 'available' | 'ongoing' | 'history'
 
   // Bottom-sheet animation
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -62,13 +63,69 @@ export default function OwnerBookScreen({ navigation }) {
         return;
       }
       setUser(currentUser);
-      await fetchAvailableEvents();
-      // acceptedEvents untouched (design-only request)
+      await Promise.all([
+        fetchAvailableEvents(),
+        fetchOngoingEvents(currentUser.id),
+        fetchHistoryEvents(currentUser.id)
+      ]);
     } catch (error) {
       console.error('Error fetching events:', error);
       Alert.alert('Error', `Failed to load events: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOngoingEvents = async (ownerId) => {
+    try {
+      const { getAllCustomRequests } = require('../../services/specialpackage/customPackageRequest');
+      const eventsData = await getAllCustomRequests({ request_type: 'special_event' });
+      if (eventsData?.success && Array.isArray(eventsData.data)) {
+        const ownerEvents = eventsData.data.filter(event => 
+          event.owner_id === ownerId && 
+          ['owner_accepted', 'in_progress'].includes(event.status)
+        );
+        
+        // Auto-start events that should be in progress
+        const now = new Date();
+        const autoStartPromises = ownerEvents.map(async (event) => {
+          if (event.status === 'owner_accepted' && event.event_date && event.event_time) {
+            const eventDateTime = new Date(`${event.event_date}T${event.event_time}`);
+            if (now >= eventDateTime) {
+              await updateEventStatus(event.id, 'in_progress');
+              return { ...event, status: 'in_progress' };
+            }
+          }
+          return event;
+        });
+        
+        const updatedEvents = await Promise.all(autoStartPromises);
+        setOngoingEvents(updatedEvents);
+      } else {
+        setOngoingEvents([]);
+      }
+    } catch (error) {
+      console.error('Error fetching ongoing events:', error);
+      setOngoingEvents([]);
+    }
+  };
+
+  const fetchHistoryEvents = async (ownerId) => {
+    try {
+      const { getAllCustomRequests } = require('../../services/specialpackage/customPackageRequest');
+      const eventsData = await getAllCustomRequests({ request_type: 'special_event' });
+      if (eventsData?.success && Array.isArray(eventsData.data)) {
+        const ownerEvents = eventsData.data.filter(event => 
+          event.owner_id === ownerId && 
+          ['completed', 'cancelled'].includes(event.status)
+        );
+        setHistoryEvents(ownerEvents);
+      } else {
+        setHistoryEvents([]);
+      }
+    } catch (error) {
+      console.error('Error fetching history events:', error);
+      setHistoryEvents([]);
     }
   };
 
@@ -126,6 +183,27 @@ export default function OwnerBookScreen({ navigation }) {
       Alert.alert('Error', `Failed to accept event request: ${error.message}`);
     } finally {
       setAcceptingEvent(false);
+    }
+  };
+
+  const updateEventStatus = async (eventId, newStatus) => {
+    try {
+      const { updateCustomRequestStatus } = require('../../services/specialpackage/customPackageRequest');
+      const result = await updateCustomRequestStatus(eventId, 'special_event', { status: newStatus });
+      
+      if (result.success) {
+        const statusMessages = {
+          'in_progress': 'Event started successfully!',
+          'completed': 'Event completed successfully!'
+        };
+        Alert.alert('Success', statusMessages[newStatus] || 'Status updated successfully!');
+        fetchUserAndEvents();
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update event status');
+      }
+    } catch (error) {
+      console.error('Error updating event status:', error);
+      Alert.alert('Error', 'Failed to update event status');
     }
   };
 
@@ -244,26 +322,68 @@ export default function OwnerBookScreen({ navigation }) {
           <Text style={styles.acceptButtonText}>Accept Event</Text>
         </TouchableOpacity>
       )}
+      
+      {event.status === 'owner_accepted' && activeTab === 'ongoing' && (
+        <TouchableOpacity
+          style={[styles.acceptButton, { backgroundColor: '#1565C0' }]}
+          onPress={() => updateEventStatus(event.id, 'in_progress')}
+        >
+          <Ionicons name="play-circle" size={18} color="#fff" />
+          <Text style={styles.acceptButtonText}>Start Event</Text>
+        </TouchableOpacity>
+      )}
+      
+      {event.status === 'in_progress' && activeTab === 'ongoing' && (
+        <TouchableOpacity
+          style={[styles.acceptButton, { backgroundColor: '#4CAF50' }]}
+          onPress={() => handleCompleteEvent(event)}
+        >
+          <Ionicons name="camera" size={18} color="#fff" />
+          <Text style={styles.acceptButtonText}>Complete with Photo</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name={activeTab === 'available' ? 'star-outline' : 'time-outline'} size={64} color="#C9C9C9" />
-      <Text style={styles.emptyStateTitle}>
-        {activeTab === 'available' ? 'No Available Special Events' : 'No Event History'}
-      </Text>
-      <Text style={styles.emptyStateSubtitle}>
-        {activeTab === 'available'
-          ? 'There are currently no special events waiting for owners. Check back later!'
-          : "You haven't accepted any special events yet. Start by accepting available events!"}
-      </Text>
-      {/* Keep this empty-state refresh */}
-      <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderEmptyState = () => {
+    const getEmptyStateConfig = () => {
+      switch (activeTab) {
+        case 'available':
+          return {
+            icon: 'star-outline',
+            title: 'No Available Special Events',
+            subtitle: 'There are currently no special events waiting for owners. Check back later!'
+          };
+        case 'ongoing':
+          return {
+            icon: 'play-circle-outline',
+            title: 'No Ongoing Events',
+            subtitle: 'You have no events in progress. Accept available events to get started!'
+          };
+        case 'history':
+          return {
+            icon: 'time-outline',
+            title: 'No Event History',
+            subtitle: 'Your completed and cancelled events will appear here.'
+          };
+        default:
+          return { icon: 'star-outline', title: 'No Events', subtitle: '' };
+      }
+    };
+    
+    const config = getEmptyStateConfig();
+    
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name={config.icon} size={64} color="#C9C9C9" />
+        <Text style={styles.emptyStateTitle}>{config.title}</Text>
+        <Text style={styles.emptyStateSubtitle}>{config.subtitle}</Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
+          <Text style={styles.refreshButtonText}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderTabBar = () => (
     <View style={styles.tabBar}>
@@ -271,21 +391,54 @@ export default function OwnerBookScreen({ navigation }) {
         style={[styles.tabButton, activeTab === 'available' && styles.activeTabButton]}
         onPress={() => setActiveTab('available')}
       >
-        <Ionicons name="star-outline" size={18} color={activeTab === 'available' ? MAROON : '#777'} />
+        <Ionicons name="star-outline" size={16} color={activeTab === 'available' ? MAROON : '#777'} />
         <Text style={[styles.tabButtonText, activeTab === 'available' && styles.activeTabButtonText]}>Available</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.tabButton, activeTab === 'ongoing' && styles.activeTabButton]}
+        onPress={() => setActiveTab('ongoing')}
+      >
+        <Ionicons name="play-circle-outline" size={16} color={activeTab === 'ongoing' ? MAROON : '#777'} />
+        <Text style={[styles.tabButtonText, activeTab === 'ongoing' && styles.activeTabButtonText]}>Ongoing</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={[styles.tabButton, activeTab === 'history' && styles.activeTabButton]}
         onPress={() => setActiveTab('history')}
       >
-        <Ionicons name="time-outline" size={18} color={activeTab === 'history' ? MAROON : '#777'} />
+        <Ionicons name="time-outline" size={16} color={activeTab === 'history' ? MAROON : '#777'} />
         <Text style={[styles.tabButtonText, activeTab === 'history' && styles.activeTabButtonText]}>History</Text>
       </TouchableOpacity>
     </View>
   );
 
-  const currentEvents = activeTab === 'available' ? availableEvents : acceptedEvents;
+  const getCurrentEvents = () => {
+    switch (activeTab) {
+      case 'available': return availableEvents;
+      case 'ongoing': return ongoingEvents;
+      case 'history': return historyEvents;
+      default: return [];
+    }
+  };
+  
+  const currentEvents = getCurrentEvents();
+
+  const handleCompleteEvent = (event) => {
+    navigation.navigate('CompletionPhotoScreen', {
+      eventId: event.id,
+      eventType: 'special_event',
+      eventDetails: {
+        event_type: event.event_type,
+        customer_name: event.customer_name,
+        event_date: event.event_date,
+        event_time: event.event_time
+      },
+      onComplete: () => {
+        fetchUserAndEvents();
+      }
+    });
+  };
 
   const acceptTranslateY = acceptAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
   const acceptOpacity = acceptAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
@@ -300,11 +453,13 @@ export default function OwnerBookScreen({ navigation }) {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {activeTab === 'available' ? 'Available Special Events' : 'Event History'}
+            {activeTab === 'available' ? 'Available Special Events' : 
+             activeTab === 'ongoing' ? 'Ongoing Events' : 'Event History'}
           </Text>
           <Text style={styles.subtitle}>
             {user?.name || user?.user_metadata?.name || user?.email || 'Owner'}
-            {'\u2019'}s {activeTab === 'available' ? 'available' : 'accepted'} events
+            {'\u2019'}s {activeTab === 'available' ? 'available' : 
+                        activeTab === 'ongoing' ? 'ongoing' : 'completed'} events
           </Text>
 
           {/* header refresh button removed */}

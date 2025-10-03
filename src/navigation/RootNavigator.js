@@ -111,6 +111,7 @@ export default function RootNavigator() {
           <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="MyCarriages" component={MyCarriagesScreen} />
           <Stack.Screen name="CompletionPhoto" component={CompletionPhotoScreen} />
+          <Stack.Screen name="CompletionPhotoScreen" component={CompletionPhotoScreen} />
           <Stack.Screen name="PaymentReceipt" component={PaymentReceiptScreen} />
           <Stack.Screen name="DriverSchedule" component={DriverScheduleScreen} />
           <Stack.Screen name="SetAvailability" component={SetAvailabilityScreen} />

@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import OwnerHomeScreen from '../screens/main/OwnerHomeScreen';
 import OwnerBookScreen from '../screens/main/OwnerBookScreen';
 import OwnerBreakevenScreen from '../screens/main/OwnerBreakevenScreen';
+import OwnerScheduleScreen from '../screens/main/OwnerScheduleScreen';
 import MenuScreen from '../screens/main/MenuScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
@@ -34,6 +35,8 @@ export default function OwnerTabs({ setRole }) {
             return <Ionicons name="calculator-outline" size={size} color={color} />;
           } else if (route.name === Routes.EVENTS) {
             return <Ionicons name="star-outline" size={size} color={color} />;
+          } else if (route.name === 'Schedule') {
+            return <Ionicons name="calendar-outline" size={size} color={color} />;
           } else if (route.name === Routes.PROFILE) {
             return <Ionicons name="person-outline" size={size} color={color} />;
           } else if (route.name === Routes.GOODS_SERVICES) {
@@ -60,6 +63,11 @@ export default function OwnerTabs({ setRole }) {
         name={Routes.EVENTS}
         component={OwnerBookScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+      />
+      <Tab.Screen
+        name="Schedule"
+        component={OwnerScheduleScreen}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name={Routes.GOODS_SERVICES}

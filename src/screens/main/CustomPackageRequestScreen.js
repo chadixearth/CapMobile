@@ -11,6 +11,7 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import { createCustomTourRequest, createSpecialEventRequest } from '../../services/specialpackage/customPackageRequest';
@@ -37,9 +38,14 @@ export default function CustomPackageRequestScreen({ navigation }) {
   
   // Special event fields
   const [eventType, setEventType] = useState('');
-  const [eventDate, setEventDate] = useState('');
-  const [eventTime, setEventTime] = useState('');
+  const [eventDate, setEventDate] = useState(null);
+  const [eventTime, setEventTime] = useState(null);
   const [specialRequirements, setSpecialRequirements] = useState('');
+  
+  // Date/Time picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [datePickerMode, setDatePickerMode] = useState('preferred'); // 'preferred' or 'event'
   
   const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const EVENT_TYPES = ['Wedding', 'Birthday', 'Corporate Event', 'Graduation', 'Anniversary', 'Other'];
@@ -114,6 +120,34 @@ export default function CustomPackageRequestScreen({ navigation }) {
     return true;
   };
 
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      if (datePickerMode === 'preferred') {
+        setPreferredDate(selectedDate);
+      } else {
+        setEventDate(selectedDate);
+      }
+    }
+  };
+
+  const onTimeChange = (event, selectedTime) => {
+    setShowTimePicker(false);
+    if (selectedTime) {
+      setEventTime(selectedTime);
+    }
+  };
+
+  const formatDate = (date) => {
+    if (!date) return '';
+    return date.toLocaleDateString();
+  };
+
+  const formatTime = (time) => {
+    if (!time) return '';
+    return time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   const handleSubmit = async () => {
     if (!user?.id) {
       Alert.alert('Error', 'User not found. Please log in again.');
@@ -151,8 +185,8 @@ export default function CustomPackageRequestScreen({ navigation }) {
         const specialEventData = {
           customer_id: user.id,
           event_type: eventType.trim(),
-          event_date: eventDate,
-          event_time: eventTime || null,
+          event_date: eventDate ? eventDate.toISOString().split('T')[0] : null,
+          event_time: eventTime ? eventTime.toTimeString().split(' ')[0] : null,
           number_of_pax: parseInt(numberOfPax),
           pickup_location: pickupLocation.trim(), // This will be mapped to event_address in the service
           special_requirements: specialRequirements.trim(),
@@ -214,18 +248,18 @@ export default function CustomPackageRequestScreen({ navigation }) {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Preferred Date</Text>
-        <TextInput
-          style={styles.input}
-          value={preferredDate ? preferredDate.toDateString() : ''}
-          onChangeText={(value) => {
-            const date = new Date(value);
-            if (!isNaN(date.getTime())) {
-              setPreferredDate(date);
-            }
+        <TouchableOpacity
+          style={[styles.input, styles.dateInput]}
+          onPress={() => {
+            setDatePickerMode('preferred');
+            setShowDatePicker(true);
           }}
-          placeholder="MM/DD/YYYY (optional)"
-          placeholderTextColor="#999"
-        />
+        >
+          <Text style={[styles.dateText, !preferredDate && styles.placeholderText]}>
+            {preferredDate ? formatDate(preferredDate) : 'Select date (optional)'}
+          </Text>
+          <Ionicons name="calendar-outline" size={20} color={MAROON} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -260,24 +294,31 @@ export default function CustomPackageRequestScreen({ navigation }) {
       <View style={styles.rowContainer}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
           <Text style={styles.label}>Event Date *</Text>
-          <TextInput
-            style={styles.input}
-            value={eventDate}
-            onChangeText={setEventDate}
-            placeholder="MM/DD/YYYY"
-            placeholderTextColor="#999"
-          />
+          <TouchableOpacity
+            style={[styles.input, styles.dateInput]}
+            onPress={() => {
+              setDatePickerMode('event');
+              setShowDatePicker(true);
+            }}
+          >
+            <Text style={[styles.dateText, !eventDate && styles.placeholderText]}>
+              {eventDate ? formatDate(eventDate) : 'Select date'}
+            </Text>
+            <Ionicons name="calendar-outline" size={20} color={MAROON} />
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
           <Text style={styles.label}>Event Time</Text>
-          <TextInput
-            style={styles.input}
-            value={eventTime}
-            onChangeText={setEventTime}
-            placeholder="HH:MM"
-            placeholderTextColor="#999"
-          />
+          <TouchableOpacity
+            style={[styles.input, styles.dateInput]}
+            onPress={() => setShowTimePicker(true)}
+          >
+            <Text style={[styles.dateText, !eventTime && styles.placeholderText]}>
+              {eventTime ? formatTime(eventTime) : 'Select time'}
+            </Text>
+            <Ionicons name="time-outline" size={20} color={MAROON} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -459,6 +500,27 @@ export default function CustomPackageRequestScreen({ navigation }) {
 
         <View style={{ height: 50 }} />
       </ScrollView>
+
+      {/* Date Picker */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={datePickerMode === 'preferred' ? (preferredDate || new Date()) : (eventDate || new Date())}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onDateChange}
+          minimumDate={new Date()}
+        />
+      )}
+
+      {/* Time Picker */}
+      {showTimePicker && (
+        <DateTimePicker
+          value={eventTime || new Date()}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onTimeChange}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -570,6 +632,9 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 16,
     color: '#333',
+  },
+  placeholderText: {
+    color: '#999',
   },
   rowContainer: {
     flexDirection: 'row',
