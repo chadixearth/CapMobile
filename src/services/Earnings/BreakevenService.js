@@ -60,7 +60,7 @@ export async function getBreakeven({
 }
 
 /**
- * GET /breakeven/history?driver_id=&period_type=&limit=&exclude_current=1
+ * GET /breakeven/history?driver_id=&period_type=&limit=&exclude_current=1&offset=
  * Bucketing for history follows the server's DEFAULT_BUCKET_TZ (env).
  */
 export async function getBreakevenHistory({
@@ -68,12 +68,18 @@ export async function getBreakevenHistory({
   periodType = 'daily',
   limit = 30,
   excludeCurrent = true,
+  offset = 0,
+  dateFrom,
+  dateTo,
 }) {
   const params = new URLSearchParams();
   if (driverId) params.append('driver_id', String(driverId));
   if (periodType) params.append('period_type', String(periodType));
   if (limit) params.append('limit', String(limit));
   if (excludeCurrent) params.append('exclude_current', '1');
+  if (offset) params.append('offset', String(offset));
+  if (dateFrom) params.append('date_from', dateFrom);
+  if (dateTo) params.append('date_to', dateTo);
 
   const url = `${EARNINGS_API_BASE_URL}history?${params.toString()}`;
 
@@ -88,7 +94,6 @@ export async function getBreakevenHistory({
       },
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
 
     if (!res.ok) {
       // Return empty list gracefully
@@ -98,9 +103,10 @@ export async function getBreakevenHistory({
     const data = await res.json();
     return data;
   } catch (e) {
-    clearTimeout(timeoutId);
     // Fail soft with empty items so the UI can show a fallback message
     return { success: true, data: { items: [] } };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -163,6 +169,33 @@ export async function getTodayExpenses(driverId) {
 }
 
 /**
+ * Sum expenses from breakeven_history over a PH-bucketed range (weekly/monthly).
+ * Provide startUtc / endUtc as UTC ISO bounds corresponding to PH local 00:00..next 00:00.
+ * Uses period_type='daily' rows and sums `expenses`.
+ */
+export async function getExpensesSumInRange(driverId, startUtcISO, endUtcISO) {
+  try {
+    if (!driverId) return { success: false, error: 'driverId required' };
+    if (!startUtcISO || !endUtcISO) return { success: false, error: 'bounds required' };
+
+    const { data, error } = await supabase
+      .from('breakeven_history')
+      .select('expenses')
+      .eq('driver_id', driverId)
+      .eq('period_type', 'daily')
+      .gte('period_start', startUtcISO)
+      .lt('period_start', endUtcISO);
+
+    if (error) return { success: false, error: error.message };
+
+    const sum = (data || []).reduce((s, r) => s + (Number(r?.expenses) || 0), 0);
+    return { success: true, expenses: Number(sum.toFixed(2)) };
+  } catch (e) {
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
+
+/**
  * Get stored expenses from cache
  */
 export async function getBreakevenExpenseCache(driverId) {
@@ -182,13 +215,12 @@ export async function getBreakevenExpenseCache(driverId) {
 
 /**
  * Upsert a daily row in breakeven_history using the latest /breakeven summary.
- * This keeps today's (PH bucket) record fresh while the day is in progress.
  * Unique key: (driver_id, period_type, period_start)
  */
 export async function upsertBreakevenHistoryFromSummary({
   driverId,
-  summary,          // response.data from getBreakeven()
-  expenses = 0,     // the same value you passed to getBreakeven()
+  summary,
+  expenses = 0,
   periodType = 'daily',
 }) {
   try {
@@ -208,8 +240,8 @@ export async function upsertBreakevenHistoryFromSummary({
     const row = {
       driver_id: driverId,
       period_type: periodType,
-      period_start: summary.date_start, // already bucketed (PH) by API
-      period_end:   summary.date_end,   // inclusive-looking end from API
+      period_start: summary.date_start,
+      period_end:   summary.date_end,
       expenses: exps,
       revenue_driver: revenue,
       profit,
@@ -221,7 +253,7 @@ export async function upsertBreakevenHistoryFromSummary({
       snapshot_at: new Date().toISOString(),
     };
 
-    // Keep server cron in sync with the same expenses value
+    // Keep server cron in sync with the same expenses value (daily use)
     await setBreakevenExpenseCache(driverId, exps);
 
     const { error } = await supabase
