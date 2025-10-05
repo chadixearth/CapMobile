@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
+import LoadingScreen from '../../components/LoadingScreen';
 import { createCustomTourRequest, createSpecialEventRequest } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
 
@@ -55,6 +56,7 @@ export default function CustomPackageRequestScreen({ navigation }) {
   }, []);
 
   const fetchUser = async () => {
+    setLoading(true);
     try {
       const currentUser = await getCurrentUser();
       if (currentUser) {
@@ -69,6 +71,8 @@ export default function CustomPackageRequestScreen({ navigation }) {
       console.error('Error fetching user:', error);
       Alert.alert('Error', 'Please log in to make a custom request');
       navigation.goBack();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -428,6 +432,10 @@ export default function CustomPackageRequestScreen({ navigation }) {
       </View>
     </View>
   );
+
+  if (loading && !user) {
+    return <LoadingScreen message="Loading user information..." icon="person-outline" />;
+  }
 
   return (
     <KeyboardAvoidingView 

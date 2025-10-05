@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import LoadingScreen from '../../components/LoadingScreen';
 import { getCurrentUser } from '../../services/authService';
-import { getCarriagesByDriver, acceptCarriageAssignment, declineCarriageAssignment } from '../../services/api';
+import { getCarriagesByDriver, acceptCarriageAssignment, declineCarriageAssignment, updateCarriageStatus } from '../../services/api';
 
 const MAROON = '#6B2E2B';
 const MAROON_LIGHT = '#F5E9E2';
@@ -155,15 +157,14 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={{ flex: 1, backgroundColor: '#fff' }}>
         {!hideHeader && (
           <TARTRACKHeader
             onMessagePress={() => navigation.navigate('Chat')}
             onNotificationPress={() => navigation.navigate('Notification')}
           />
         )}
-        <ActivityIndicator size="large" color={MAROON} />
-        <Text style={styles.loadingText}>Loading assignments...</Text>
+        <LoadingScreen message="Loading carriage assignments..." icon="car-outline" />
       </View>
     );
   }
@@ -296,6 +297,16 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                     </View>
                   )}
                 </View>
+
+                <View style={styles.statusActions}>
+                  <TouchableOpacity
+                    style={styles.statusButton}
+                    onPress={() => openStatusModal(carriage)}
+                  >
+                    <Ionicons name={getStatusIcon(carriage.status)} size={16} color={MAROON} />
+                    <Text style={styles.statusButtonText}>Update Status</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </>
@@ -317,6 +328,64 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
           </View>
         )}
       </ScrollView>
+
+      {/* Status Update Modal */}
+      <Modal
+        visible={statusModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setStatusModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setStatusModalVisible(false)}>
+              <Text style={styles.cancelButton}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Update Status</Text>
+            <View style={{ width: 60 }} />
+          </View>
+          
+          <ScrollView style={styles.modalContent}>
+            {selectedCarriage && (
+              <View style={styles.carriageInfo}>
+                <Text style={styles.modalCarriagePlate}>{selectedCarriage.plate_number}</Text>
+                <Text style={styles.modalCarriageOwner}>Owner: {selectedCarriage.assigned_owner?.name || 'Unknown'}</Text>
+              </View>
+            )}
+            
+            <Text style={styles.statusLabel}>Select new status:</Text>
+            
+            {carriageStatuses.map((status) => (
+              <TouchableOpacity
+                key={status.value}
+                style={[
+                  styles.statusOption,
+                  selectedCarriage?.status === status.value && styles.currentStatusOption
+                ]}
+                onPress={() => handleUpdateCarriageStatus(selectedCarriage.id, status.value)}
+                disabled={updatingStatus || selectedCarriage?.status === status.value}
+              >
+                <View style={styles.statusOptionLeft}>
+                  <Ionicons name={status.icon} size={24} color={status.color} />
+                  <View style={styles.statusOptionText}>
+                    <Text style={styles.statusOptionLabel}>{status.label}</Text>
+                    {selectedCarriage?.status === status.value && (
+                      <Text style={styles.currentStatusText}>Current Status</Text>
+                    )}
+                  </View>
+                </View>
+                {updatingStatus ? (
+                  <ActivityIndicator size="small" color={MAROON} />
+                ) : (
+                  selectedCarriage?.status === status.value && (
+                    <Ionicons name="checkmark" size={20} color={status.color} />
+                  )
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -464,5 +533,99 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontFamily: 'monospace',
+  },
+  statusActions: {
+    marginTop: 8,
+  },
+  statusButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#F5E9E2',
+    borderRadius: 8,
+    gap: 6,
+  },
+  statusButtonText: {
+    color: MAROON,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0E7E3',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: TEXT,
+  },
+  cancelButton: {
+    color: MUTED,
+    fontSize: 16,
+  },
+  modalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  modalCarriagePlate: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: TEXT,
+    marginBottom: 4,
+  },
+  modalCarriageOwner: {
+    fontSize: 14,
+    color: MUTED,
+    marginBottom: 24,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: TEXT,
+    marginBottom: 16,
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+  },
+  currentStatusOption: {
+    backgroundColor: '#F5E9E2',
+    borderColor: MAROON,
+  },
+  statusOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusOptionText: {
+    marginLeft: 12,
+  },
+  statusOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: TEXT,
+  },
+  currentStatusText: {
+    fontSize: 12,
+    color: MAROON,
+    fontWeight: '500',
+    marginTop: 2,
   },
 });
