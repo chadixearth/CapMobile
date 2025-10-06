@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Button from '../../components/Button';
+import LoadingScreen from '../../components/LoadingScreen';
 import { useAuth } from '../../hooks/useAuth';
 import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
@@ -326,7 +327,15 @@ export default function GoodsServicesScreen() {
         {/* Enhanced Header */}
         <View style={styles.headerRow}>
           <View style={styles.avatarContainer}>
-            <Image source={{ uri: profilePhoto }} style={styles.avatar} />
+            {profilePhoto ? (
+              <Image source={{ uri: profilePhoto }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={styles.avatarText}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
             {userRole && (
               <View style={styles.roleIndicator}>
                 <Ionicons 
@@ -425,31 +434,60 @@ export default function GoodsServicesScreen() {
     );
   };
 
+  if (loading && posts.length === 0) {
+    return <LoadingScreen message="Loading goods & services..." icon="pricetags-outline" />;
+  }
+
   return (
     <View style={styles.container}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       
       {/* User's Profile Section for Drivers/Owners */}
       {isDriverOrOwner && (
-        <View style={styles.userProfileSection}>
-          <View style={styles.profileHeader}>
-            <Text style={styles.profileTitle}>My Goods & Services</Text>
+        <View style={styles.userProfileCard}>
+          <View style={styles.userProfileHeader}>
+            <View style={styles.userAvatarContainer}>
+              {auth.user?.profile_photo ? (
+                <Image source={{ uri: auth.user.profile_photo }} style={styles.userAvatar} />
+              ) : (
+                <View style={[styles.userAvatar, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
+                  <Text style={styles.userAvatarText}>
+                    {(auth.user?.name || auth.user?.email || 'U').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.userRoleIndicator}>
+                <Ionicons 
+                  name={auth.user?.role === 'driver' ? 'car' : 'business'} 
+                  size={10} 
+                  color={COLORS.white} 
+                />
+              </View>
+            </View>
+            <View style={styles.userInfoSection}>
+              <Text style={styles.userName}>{auth.user?.name || auth.user?.email || 'User'}</Text>
+              <Text style={styles.userRole}>{auth.user?.role?.toUpperCase()}</Text>
+            </View>
             <TouchableOpacity 
-              style={styles.editButton}
+              style={styles.editProfileButton}
               onPress={() => setEditModalVisible(true)}
             >
-              <Ionicons name={userProfile ? "create-outline" : "add-outline"} size={20} color={COLORS.primary} />
-              <Text style={styles.editButtonText}>{userProfile ? 'Edit' : 'Create'}</Text>
+              <Ionicons name={userProfile ? "create-outline" : "add-outline"} size={18} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
           
           {userProfile ? (
-            <View style={styles.currentProfile}>
-              <Text style={styles.currentDescription}>{userProfile.description}</Text>
-              <Text style={styles.profileDate}>Updated {formatDateTime(userProfile.updated_at)}</Text>
+            <View style={styles.userBioSection}>
+              <Text style={styles.userBioText}>{userProfile.description}</Text>
+              <Text style={styles.userBioDate}>Updated {formatDateTime(userProfile.updated_at)}</Text>
             </View>
           ) : (
-            <Text style={styles.noProfile}>No goods & services profile yet. Create one to showcase your services.</Text>
+            <TouchableOpacity 
+              style={styles.addBioSection}
+              onPress={() => setEditModalVisible(true)}
+            >
+              <Text style={styles.addBioText}>Add goods & services description...</Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -556,8 +594,8 @@ const styles = StyleSheet.create({
   listContent: { padding: 16, paddingBottom: 100 },
   error: { color: 'red', padding: 16 },
   
-  // User Profile Section
-  userProfileSection: {
+  // User Profile Section (Facebook-style)
+  userProfileCard: {
     backgroundColor: COLORS.card,
     margin: 16,
     marginBottom: 8,
@@ -565,53 +603,92 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.line,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  profileHeader: {
+  userProfileHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
-  profileTitle: {
+  userAvatarContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  userAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.secondary,
+  },
+  userAvatarText: {
+    color: COLORS.white,
+    fontWeight: '700',
+    fontSize: 20,
+  },
+  userRoleIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  userInfoSection: {
+    flex: 1,
+  },
+  userName: {
     fontSize: 16,
     fontWeight: '700',
     color: COLORS.text,
+    marginBottom: 2,
   },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: COLORS.secondary,
-    borderRadius: 8,
-  },
-  editButtonText: {
-    color: COLORS.primary,
+  userRole: {
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 14,
+    color: COLORS.sub,
+    letterSpacing: 0.5,
   },
-  currentProfile: {
-    padding: 12,
+  editProfileButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: COLORS.secondary,
-    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  currentDescription: {
+  userBioSection: {
+    paddingTop: 8,
+  },
+  userBioText: {
     color: COLORS.text,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     marginBottom: 8,
   },
-  profileDate: {
+  userBioDate: {
     color: COLORS.sub,
     fontSize: 12,
   },
-  noProfile: {
+  addBioSection: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  addBioText: {
     color: COLORS.sub,
-    fontSize: 14,
+    fontSize: 15,
     fontStyle: 'italic',
-    textAlign: 'center',
-    padding: 12,
   },
   
   // Modal Styles
@@ -686,7 +763,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
-    marginTop: 20,
   },
   empty: { 
     textAlign: 'center', 

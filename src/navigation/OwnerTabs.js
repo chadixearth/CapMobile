@@ -67,10 +67,11 @@ export default function OwnerTabs({ setRole }) {
         component={OwnerBookScreen}
         options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
       />
-      <Tab.Screen 
-        name={Routes.BREAKEVEN} 
-        component={OwnerBreakevenScreen} 
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen
+        name={Routes.GOODS_SERVICES}
+        component={GoodsServicesScreen}
+        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+      />
       <Tab.Screen
         name={Routes.PROFILE}
         component={MenuScreen}

@@ -166,4 +166,34 @@ export async function declineCarriageAssignment(carriageId, driverId) {
     }
     throw error;
   }
+}
+
+export async function updateCarriageStatus(carriageId, statusData) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/update-status/`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body: JSON.stringify(statusData),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error('Failed to update carriage status');
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.message?.includes('ConnectionTerminated')) {
+      throw new Error('Connection lost. Please check your network and try again.');
+    }
+    throw error;
+  }
 } 
