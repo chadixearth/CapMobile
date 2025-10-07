@@ -168,19 +168,19 @@ export async function declineCarriageAssignment(carriageId, driverId) {
   }
 }
 
-export async function updateCarriageStatus(carriageId, statusData) {
+export async function updateCarriageStatus(carriageId, newStatus) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/update-status/`, {
-      method: 'PATCH',
+    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/`, {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'Connection': 'close',
         'Cache-Control': 'no-cache',
       },
-      body: JSON.stringify(statusData),
+      body: JSON.stringify({ status: newStatus }),
       signal: controller.signal,
       cache: 'no-store',
     });

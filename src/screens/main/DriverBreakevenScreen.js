@@ -15,12 +15,14 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import BreakevenNotificationBadge from '../../components/BreakevenNotificationBadge';
 import { colors, spacing, card } from '../../styles/global';
 
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 
 import { getDriverEarningsStats } from '../../services/Earnings/EarningsService';
+import BreakevenNotificationManager from '../../services/breakeven';
 
 import {
   getBreakeven,
@@ -631,6 +633,25 @@ export default function EarningsScreen({ navigation, route }) {
           () => {}
         );
       }
+
+      // Check for breakeven notifications (only for Daily frequency)
+      if (frequency === 'Daily' && d && t > 0) {
+        try {
+          const currentData = {
+            expenses: t,
+            revenue_period: Number(d.revenue_period || 0),
+            total_bookings: Number(d.total_bookings || 0),
+            bookings_needed: Number(d.bookings_needed || 0)
+          };
+          
+          await BreakevenNotificationManager.checkBreakevenMilestones(
+            driverId,
+            currentData
+          );
+        } catch (error) {
+          console.warn('Breakeven notification check failed:', error);
+        }
+      }
     }, 200);
     return () => clearTimeout(handler);
   }, [driverId, periodKey, totalExpenses, fetchBreakevenBlock, frequency]);
@@ -820,7 +841,9 @@ export default function EarningsScreen({ navigation, route }) {
             <Text style={styles.sectionTitle}>Break Even Calculator</Text>
           </View>
 
-          <View style={styles.dropdownWrap}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <BreakevenNotificationBadge driverId={driverId} />
+            <View style={styles.dropdownWrap}>
             <TouchableOpacity
               style={styles.frequencyBtn}
               onPress={() => setFreqOpen((v) => !v)}
@@ -862,6 +885,7 @@ export default function EarningsScreen({ navigation, route }) {
                 })}
               </View>
             )}
+            </View>
           </View>
         </View>
 

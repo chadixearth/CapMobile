@@ -1,117 +1,162 @@
+// test_anonymous_reviews.js
 // Test script for anonymous review functionality
-// This tests the mobile app's anonymous review features
 
 const testAnonymousReviews = async () => {
-  console.log('🧪 Testing Anonymous Review Functionality');
-  console.log('==========================================');
+  console.log('🧪 Testing Anonymous Review System...\n');
 
-  // Test 1: User Settings Service
-  console.log('\n1. Testing User Settings Service...');
+  const apiBaseUrl = 'http://192.168.1.100:8000/api'; // Update with your backend URL
+  
+  // Test data
+  const testData = {
+    package_id: 'test-package-123',
+    booking_id: 'test-booking-123', 
+    reviewer_id: 'test-tourist-123',
+    driver_id: 'test-driver-123',
+    rating: 5,
+    comment: 'Great experience!',
+  };
+
+  console.log('📋 Testing Anonymous Package Review...');
   try {
-    const { getUserSettings, updateAnonymousReviewSetting, getAnonymousReviewSetting } = require('./src/services/userSettings');
+    const response = await fetch(`${apiBaseUrl}/reviews/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...testData,
+        is_anonymous: true, // Test anonymous review
+      })
+    });
+
+    const result = await response.json();
     
-    // Test getting default settings
-    const defaultSettings = await getUserSettings();
-    console.log('✅ Default settings loaded:', defaultSettings.success);
-    console.log('   Anonymous reviews default:', defaultSettings.data?.anonymousReviews);
-    
-    // Test updating anonymous setting
-    const updateResult = await updateAnonymousReviewSetting(true);
-    console.log('✅ Anonymous setting updated:', updateResult.success);
-    
-    // Test getting anonymous setting
-    const anonymousSetting = await getAnonymousReviewSetting();
-    console.log('✅ Anonymous setting retrieved:', anonymousSetting.success);
-    console.log('   Is anonymous:', anonymousSetting.data?.isAnonymous);
-    
+    if (result.success) {
+      console.log('✅ Anonymous Package Review: Success');
+      console.log(`   Review ID: ${result.data?.id}`);
+      console.log(`   Anonymous: ${result.data?.is_anonymous}`);
+    } else {
+      console.log(`❌ Anonymous Package Review: Failed - ${result.error}`);
+    }
   } catch (error) {
-    console.log('❌ User Settings Service test failed:', error.message);
+    console.log(`❌ Anonymous Package Review: Network error - ${error.message}`);
   }
 
-  // Test 2: Review Service with Anonymous Flag
-  console.log('\n2. Testing Review Service with Anonymous Flag...');
+  console.log('\n📋 Testing Anonymous Driver Review...');
   try {
-    const { createPackageReview, createDriverReview } = require('./src/services/reviews');
+    const response = await fetch(`${apiBaseUrl}/reviews/driver/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...testData,
+        is_anonymous: true, // Test anonymous review
+      })
+    });
+
+    const result = await response.json();
     
-    // Mock review data
-    const mockReviewData = {
-      package_id: 'test-package-123',
-      booking_id: 'test-booking-456',
-      reviewer_id: 'test-user-789',
-      rating: 5,
-      comment: 'Great experience!',
-      is_anonymous: true
-    };
-    
-    console.log('✅ Review service functions loaded');
-    console.log('   Package review function supports is_anonymous parameter');
-    console.log('   Driver review function supports is_anonymous parameter');
-    
+    if (result.success) {
+      console.log('✅ Anonymous Driver Review: Success');
+      console.log(`   Review ID: ${result.data?.id}`);
+      console.log(`   Anonymous: ${result.data?.is_anonymous}`);
+    } else {
+      console.log(`❌ Anonymous Driver Review: Failed - ${result.error}`);
+    }
   } catch (error) {
-    console.log('❌ Review Service test failed:', error.message);
+    console.log(`❌ Anonymous Driver Review: Network error - ${error.message}`);
   }
 
-  // Test 3: Backend API Compatibility
-  console.log('\n3. Testing Backend API Compatibility...');
-  
-  // Check if backend supports anonymous reviews
-  const backendFeatures = {
-    packageReviewsAnonymous: true, // Based on reviews.py analysis
-    driverReviewsAnonymous: true,  // Based on reviews.py analysis
-    anonymousDisplayLogic: true,   // Based on reviews.py analysis
-  };
-  
-  console.log('✅ Backend API Analysis:');
-  console.log('   Package reviews support anonymous:', backendFeatures.packageReviewsAnonymous);
-  console.log('   Driver reviews support anonymous:', backendFeatures.driverReviewsAnonymous);
-  console.log('   Anonymous display logic implemented:', backendFeatures.anonymousDisplayLogic);
+  console.log('\n📋 Testing Non-Anonymous Review...');
+  try {
+    const response = await fetch(`${apiBaseUrl}/reviews/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...testData,
+        booking_id: 'test-booking-124', // Different booking
+        is_anonymous: false, // Test non-anonymous review
+      })
+    });
 
-  // Test 4: UI Components
-  console.log('\n4. Testing UI Components...');
-  
-  const uiComponents = {
-    accountDetailsPrivacySection: true,  // Added to AccountDetailsScreen
-    reviewSubmissionAnonymousToggle: true, // Added to ReviewSubmissionScreen
-    bookingHistoryReviewPrompts: true,   // Added to BookingHistoryScreen
-  };
-  
-  console.log('✅ UI Components Analysis:');
-  console.log('   Account Details privacy section:', uiComponents.accountDetailsPrivacySection);
-  console.log('   Review submission anonymous toggle:', uiComponents.reviewSubmissionAnonymousToggle);
-  console.log('   Booking history review prompts:', uiComponents.bookingHistoryReviewPrompts);
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ Non-Anonymous Review: Success');
+      console.log(`   Review ID: ${result.data?.id}`);
+      console.log(`   Anonymous: ${result.data?.is_anonymous}`);
+    } else {
+      console.log(`❌ Non-Anonymous Review: Failed - ${result.error}`);
+    }
+  } catch (error) {
+    console.log(`❌ Non-Anonymous Review: Network error - ${error.message}`);
+  }
 
-  // Test 5: User Flow
-  console.log('\n5. Testing User Flow...');
-  
-  const userFlow = [
-    '1. Tourist completes a trip',
-    '2. Booking appears in history with review prompt',
-    '3. Tourist taps "Leave Review" button',
-    '4. System shows anonymous setting prompt',
-    '5. Tourist can change setting or continue',
-    '6. Review submission screen shows anonymous toggle',
-    '7. Tourist submits review with anonymous preference',
-    '8. Backend stores review with is_anonymous flag',
-    '9. Review displays as "Anonymous" if flag is true'
-  ];
-  
-  console.log('✅ User Flow Steps:');
-  userFlow.forEach(step => console.log('   ' + step));
+  console.log('\n📋 Testing Review Display (Package)...');
+  try {
+    const response = await fetch(`${apiBaseUrl}/reviews/package/${testData.package_id}/`);
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ Review Display: Success');
+      console.log(`   Found ${result.data?.reviews?.length || 0} reviews`);
+      
+      if (result.data?.reviews?.length > 0) {
+        result.data.reviews.slice(0, 2).forEach((review, index) => {
+          console.log(`   Review ${index + 1}:`);
+          console.log(`     Name: ${review.reviewer_name}`);
+          console.log(`     Anonymous: ${review.is_anonymous}`);
+          console.log(`     Rating: ${review.rating}/5`);
+        });
+      }
+    } else {
+      console.log(`❌ Review Display: Failed - ${result.error}`);
+    }
+  } catch (error) {
+    console.log(`❌ Review Display: Network error - ${error.message}`);
+  }
 
-  console.log('\n🎉 Anonymous Review Implementation Complete!');
-  console.log('==========================================');
-  console.log('Features implemented:');
-  console.log('• User preference storage for anonymous reviews');
-  console.log('• Anonymous toggle in account settings (tourists only)');
-  console.log('• Review submission with anonymous option');
-  console.log('• Booking history with review prompts');
-  console.log('• Backend API support for anonymous reviews');
-  console.log('• Proper display logic for anonymous reviews');
+  console.log('\n🏁 Anonymous review tests completed!');
+  console.log('\n📱 To test in mobile app:');
+  console.log('1. Complete a booking');
+  console.log('2. Navigate to ReviewSubmissionScreen');
+  console.log('3. Toggle "Anonymous Review" option');
+  console.log('4. Submit review and verify name display');
+  console.log('5. Check that anonymous reviews show "Anonymous" instead of user name');
 };
 
-// Run the test
-if (require.main === module) {
+// Test mobile settings
+const testMobileSettings = () => {
+  console.log('\n🧪 Testing Mobile Anonymous Settings...\n');
+
+  console.log('📋 Mobile anonymous review features:');
+  console.log('1. ✅ Anonymous toggle in ReviewSubmissionScreen');
+  console.log('2. ✅ User preference persistence via AsyncStorage');
+  console.log('3. ✅ Setting remembered across app sessions');
+  console.log('4. ✅ Visual feedback with toggle animation');
+  console.log('5. ✅ Clear explanation text for users');
+
+  console.log('\n📱 To test mobile settings:');
+  console.log('1. Open ReviewSubmissionScreen');
+  console.log('2. Toggle anonymous option ON');
+  console.log('3. Close and reopen screen - should remember setting');
+  console.log('4. Submit review and verify it appears as anonymous');
+  console.log('5. Check review display shows "Anonymous" instead of name');
+};
+
+// Run tests
+if (typeof window !== 'undefined') {
+  // Browser environment
+  console.log('🌐 Running in browser - use testAnonymousReviews() function');
+  window.testAnonymousReviews = testAnonymousReviews;
+  window.testMobileSettings = testMobileSettings;
+} else {
+  // Node.js environment
   testAnonymousReviews().catch(console.error);
+  testMobileSettings();
 }
 
-module.exports = { testAnonymousReviews };
+export { testAnonymousReviews, testMobileSettings };

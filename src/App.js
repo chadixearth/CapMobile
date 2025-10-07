@@ -10,6 +10,7 @@ import ErrorProvider from './components/ErrorProvider';
 import ErrorHandlingService from './services/errorHandlingService';
 import { NotificationProvider } from './contexts/NotificationContext';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
+import NetworkStatus from './components/NetworkStatus';
 import mobileDiagnostics from './services/mobileDiagnostics';
 
 // Suppress location-related console errors
@@ -113,6 +114,7 @@ export default function App() {
             });
           }}
         >
+            <NetworkStatus />
             <RootNavigator />
           </NavigationContainer>
         </NotificationProvider>

@@ -508,6 +508,19 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
+  const getStatusIcon = (status) => {
+    const statusConfig = {
+      available: { icon: 'checkmark-circle', color: '#28a745', bgColor: '#E8F5E9', text: 'Available', iconColor: '#28a745' },
+      in_use: { icon: 'time', color: '#dc3545', bgColor: '#FFEBEE', text: 'In Use', iconColor: '#dc3545' },
+      maintenance: { icon: 'build', color: '#ffc107', bgColor: '#FFF8E1', text: 'Maintenance', iconColor: '#ff8f00' },
+      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#ff8f00', bgColor: '#FFF3E0', text: 'Pending Driver', iconColor: '#ff8f00' },
+      driver_assigned: { icon: 'person-circle', color: '#2196F3', bgColor: '#E3F2FD', text: 'Driver Assigned', iconColor: '#2196F3' },
+      not_usable: { icon: 'close-circle', color: '#dc3545', bgColor: '#F5C6CB', text: 'Not Usable', iconColor: '#dc3545' },
+      default: { icon: 'help-circle', color: '#6c757d', bgColor: '#f5f5f5', text: 'Unknown', iconColor: '#6c757d' },
+    };
+    return statusConfig[status] || statusConfig.default;
+  };
+
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
       available: { icon: 'checkmark-circle', color: '#28a745', bgColor: '#E8F5E9', text: 'Available', iconColor: '#28a745' },
@@ -743,6 +756,16 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         </View>
       </View>
     </Modal>
+  );
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="car-outline" size={48} color="#ccc" />
+      <Text style={styles.emptyStateText}>No carriages found</Text>
+      <Text style={styles.emptyStateSubtext}>
+        Add your first carriage to get started
+      </Text>
+    </View>
   );
 
   const renderEditModal = () => (

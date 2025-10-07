@@ -186,7 +186,18 @@ const LeafletMapView = ({
           var roads = ${roadsJSON};
 
           // Function to get marker color
-          function getMarkerIcon(color, type) {
+          function getMarkerIcon(color, type, id) {
+            // Use horse icon for driver markers
+            if (id === 'driver_location') {
+              return L.divIcon({
+                html: '<div style="background-color: #FF9800; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"><span style="font-size: 16px;">🐎</span></div>',
+                className: 'custom-div-icon',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+                popupAnchor: [0, -15]
+              });
+            }
+            
             var iconColors = {
               '#FF0000': 'red', '#ff0000': 'red',
               '#00FF00': 'green', '#00ff00': 'green', '#00ff33': 'green',
@@ -215,7 +226,7 @@ const LeafletMapView = ({
           markers.forEach(function(marker) {
             if (marker.lat && marker.lng) {
               var leafletMarker = L.marker([marker.lat, marker.lng], {
-                icon: getMarkerIcon(marker.color, marker.type)
+                icon: getMarkerIcon(marker.color, marker.type, marker.id)
               }).addTo(map);
               
               // Add click handler for marker selection

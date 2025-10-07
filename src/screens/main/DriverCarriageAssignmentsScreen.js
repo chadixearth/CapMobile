@@ -36,6 +36,15 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState(null);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [selectedCarriage, setSelectedCarriage] = useState(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  const carriageStatuses = [
+    { value: 'available', label: 'Available', icon: 'checkmark-circle', color: SUCCESS },
+    { value: 'in_use', label: 'In Use', icon: 'time', color: WARNING },
+    { value: 'maintenance', label: 'Maintenance', icon: 'build', color: '#FF9800' },
+  ];
 
   useEffect(() => {
     fetchUserAndCarriages();
@@ -149,6 +158,47 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         return 'Available';
       default:
         return status;
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'waiting_driver_acceptance':
+        return 'hourglass-outline';
+      case 'driver_assigned':
+        return 'person-circle';
+      case 'available':
+        return 'checkmark-circle';
+      case 'in_use':
+        return 'time';
+      case 'maintenance':
+        return 'build';
+      default:
+        return 'help-circle';
+    }
+  };
+
+  const openStatusModal = (carriage) => {
+    setSelectedCarriage(carriage);
+    setStatusModalVisible(true);
+  };
+
+  const handleUpdateCarriageStatus = async (carriageId, newStatus) => {
+    setUpdatingStatus(true);
+    try {
+      const response = await updateCarriageStatus(carriageId, newStatus);
+      if (response.success) {
+        Alert.alert('Success', 'Status updated successfully!');
+        setStatusModalVisible(false);
+        await fetchUserAndCarriages();
+      } else {
+        Alert.alert('Error', response.error || 'Failed to update status');
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+      Alert.alert('Error', 'Failed to update status');
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 

@@ -95,6 +95,7 @@ export const cancelBooking = async (bookingId, customerId, reason = '') => {
 
 /**
  * Calculate cancellation fee based on booking date
+ * Updated: No cancellation fees for tourists - always full refund
  */
 export const calculateCancellationFee = (bookingDate, totalAmount) => {
   const booking = new Date(bookingDate);
@@ -102,22 +103,11 @@ export const calculateCancellationFee = (bookingDate, totalAmount) => {
   const diffTime = booking.getTime() - now.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  let feePercentage = 0;
-  let policyMessage = '';
-
-  if (diffDays >= 3) {
-    feePercentage = 0;
-    policyMessage = 'Free cancellation (3+ days notice)';
-  } else if (diffDays >= 1) {
-    feePercentage = 0.25;
-    policyMessage = '25% cancellation fee applies (less than 3 days notice)';
-  } else {
-    feePercentage = 0.50;
-    policyMessage = '50% cancellation fee applies (same day cancellation)';
-  }
-
-  const cancellationFee = totalAmount * feePercentage;
-  const refundAmount = totalAmount - cancellationFee;
+  // No cancellation fee for tourists - always full refund
+  const feePercentage = 0;
+  const policyMessage = 'Free cancellation - No fees for tourist cancellations';
+  const cancellationFee = 0;
+  const refundAmount = totalAmount;
 
   return {
     can_cancel: true,
