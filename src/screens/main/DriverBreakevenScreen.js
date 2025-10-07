@@ -1,3 +1,6 @@
+// BREAKEVEN SCREEN DRIVER
+
+
 // screens/DriverBreakevenScreen.js
 import React, { useMemo, useState, useLayoutEffect, useEffect, useCallback, useRef } from 'react';
 import {
@@ -11,12 +14,16 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Image,
+  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import BreakevenNotificationBadge from '../../components/BreakevenNotificationBadge';
 import BreakevenChart from '../../components/BreakevenChart';
+import HistoryModal from '../../components/HistoryModal';
+import LogoLoader from '../../components/customLoading';
 import { colors, spacing, card } from '../../styles/global';
 
 import { getCurrentUser } from '../../services/authService';
@@ -245,6 +252,7 @@ export default function EarningsScreen({ navigation, route }) {
   // Other
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [errorText, setErrorText] = useState('');
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0);
@@ -259,10 +267,35 @@ export default function EarningsScreen({ navigation, route }) {
   const [historyPage, setHistoryPage] = useState(0);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
 
+  // Animation for loading states
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   // TODAY fallback
   const [incomeToday, setIncomeToday] = useState(0);
 
   const periodKey = PERIOD_BY_FREQ[frequency];
+
+  // Animation effect for loading states
+  useEffect(() => {
+    if (loading || historyLoading || filterLoading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [loading, historyLoading, filterLoading, pulseAnim]);
 
   // --------- Reset helper to avoid stale values across filters ---------
   function resetBreakevenState() {
@@ -511,10 +544,12 @@ export default function EarningsScreen({ navigation, route }) {
 
   // Align WEEKLY & MONTHLY revenue via EarningsService
   const fetchAll = useCallback(
-    async (drvId, currentFrequency) => {
+    async (drvId, currentFrequency, isFilterChange = false) => {
       if (!drvId) return;
       setErrorText('');
-      setLoading(true);
+      if (!isFilterChange) {
+        setLoading(true);
+      }
 
       try {
         const period = PERIOD_BY_FREQ[currentFrequency];
@@ -587,7 +622,11 @@ export default function EarningsScreen({ navigation, route }) {
       } catch (e) {
         setErrorText((e && (e.message || e.toString())) || 'Failed to load earnings. Please try again.');
       } finally {
-        setLoading(false);
+        if (!isFilterChange) {
+          setLoading(false);
+        } else {
+          setFilterLoading(false);
+        }
       }
     },
     [fetchBreakevenBlock]
@@ -623,7 +662,7 @@ export default function EarningsScreen({ navigation, route }) {
   // Quick visual reset before each fetch on frequency change
   useEffect(() => {
     resetBreakevenState();
-    fetchAll(driverId, frequency);
+    fetchAll(driverId, frequency, true); // true indicates filter change
     loadChartData(); // Load chart data
   }, [driverId, frequency, fetchAll, loadChartData]);
 
@@ -878,12 +917,13 @@ export default function EarningsScreen({ navigation, route }) {
         onNotificationPress={() => navigation.navigate('Notification')}
       />
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingBottom: spacing.lg }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.scrollContainer}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={{ paddingBottom: spacing.lg }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Error banner */}
         {!!errorText && (
           <View style={styles.errorBanner}>
@@ -892,15 +932,7 @@ export default function EarningsScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Info / loading */}
-        {loading && (
-          <View style={[card, styles.elevatedCard, { alignItems: 'center' }]}>
-            <ActivityIndicator />
-            <Text style={{ marginTop: 8, color: colors.textSecondary, fontSize: 12 }}>
-              Loading earnings for breakeven…
-            </Text>
-          </View>
-        )}
+
 
         {/* Section header (dropdown only) */}
         <View style={styles.sectionRow}>
@@ -911,19 +943,25 @@ export default function EarningsScreen({ navigation, route }) {
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <BreakevenNotificationBadge driverId={driverId} />
-            <View style={styles.dropdownWrap}>
+          <View style={styles.dropdownWrap}>
             <TouchableOpacity
               style={styles.frequencyBtn}
               onPress={() => setFreqOpen((v) => !v)}
               activeOpacity={0.7}
             >
               <Text style={styles.frequencyText}>{frequency}</Text>
-              <Ionicons
-                name={freqOpen ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color={colors.primary}
-                style={{ marginLeft: 6 }}
-              />
+              {filterLoading ? (
+                <Animated.View style={{ opacity: pulseAnim, marginLeft: 6 }}>
+                  <Ionicons name="refresh" size={16} color={colors.primary} />
+                </Animated.View>
+              ) : (
+                <Ionicons
+                  name={freqOpen ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={colors.primary}
+                  style={{ marginLeft: 6 }}
+                />
+              )}
             </TouchableOpacity>
 
             {freqOpen && (
@@ -939,6 +977,7 @@ export default function EarningsScreen({ navigation, route }) {
                           resetBreakevenState();   // clear all period values
                           setExpenseItems([]);     // reset session adds
                           setExpenseInput('0.00'); // reset input
+                          setFilterLoading(true);  // start filter loading
                         }
                         setFrequency(opt);
                         setFreqOpen(false);
@@ -953,8 +992,8 @@ export default function EarningsScreen({ navigation, route }) {
                 })}
               </View>
             )}
-            </View>
           </View>
+        </View>
         </View>
 
         {/* Inputs Card */}
@@ -1300,144 +1339,39 @@ export default function EarningsScreen({ navigation, route }) {
         />
 
 
-      </ScrollView>
+        </ScrollView>
 
-      {/* ==================== HISTORY MODAL ==================== */}
-      <Modal visible={historyOpen} transparent animationType="fade" onRequestClose={closeHistory}>
-        <Pressable style={styles.modalBackdrop} onPress={closeHistory} />
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            {historyMode === 'list' ? (
-              <>
-                <Text style={styles.modalTitle}>Breakeven & Profit History</Text>
-                <TouchableOpacity onPress={closeHistory} style={styles.modalClose}>
-                  <Ionicons name="close" size={20} color={colors.text} />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity onPress={() => setHistoryMode('list')} style={styles.modalBack}>
-                  <Ionicons name="chevron-back" size={20} color={colors.primary} />
-                  <Text style={styles.modalBackText}>Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={closeHistory} style={styles.modalClose}>
-                  <Ionicons name="close" size={20} color={colors.text} />
-                </TouchableOpacity>
-              </>
-            )}
+        {/* Custom Loading - positioned over ScrollView content only */}
+        {loading && !refreshing && (
+          <View style={styles.customLoadingOverlay}>
+            <View style={styles.loadingContent}>
+              <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+                <Image 
+                  source={require('../../../assets/TarTrack Logo_sakto.png')} 
+                  style={styles.loadingLogo}
+                  resizeMode="contain"
+                />
+                <Text style={styles.loadingText}>Loading Breakeven Data...</Text>
+              </Animated.View>
+            </View>
           </View>
+        )}
+      </View>
 
-          {historyMode === 'list' && (
-            <View style={{ maxHeight: 420 }}>
-              {historyLoading ? (
-                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                  <ActivityIndicator />
-                  <Text style={{ marginTop: 8, color: colors.textSecondary, fontSize: 12 }}>Loading history…</Text>
-                </View>
-              ) : historyError ? (
-                <Text style={[styles.muted, { color: '#B3261E' }]}>{historyError}</Text>
-              ) : historyItems.length === 0 ? (
-                <Text style={styles.muted}>No history yet.</Text>
-              ) : (
-                <>
-                  {historyItems.map((h, idx) => {
-                    const sm = statusMeta(h);
-                    return (
-                      <TouchableOpacity
-                        key={h.id || idx}
-                        style={[styles.historyRow, idx < historyItems.length - 1 && styles.feedDivider]}
-                        onPress={() => onPickHistory(h)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={styles.historyLeft}>
-                          <Text style={styles.historyTitle}>{periodLabel(h.period_start, h.period_end /* PH */)}</Text>
-                          <Text style={styles.historySub}>
-                            Revenue ₱{formatPeso(h.revenue_driver)} • Expenses ₱{formatPeso(h.expenses)} • Profit ₱{formatPeso(h.profit)}
-                          </Text>
-                          <Text style={styles.historySubSmall}>
-                            Rides {h.rides_done}/{h.rides_needed}
-                          </Text>
-                        </View>
-                        <View style={[styles.statusPill, { backgroundColor: sm.bg, borderColor: sm.bg }]}>
-                          <MaterialCommunityIcons name={sm.icon} size={16} color={sm.fg} />
-                          <Text style={[styles.statusPillText, { color: sm.fg }]}>{sm.label}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                  {hasMoreHistory && (
-                    <TouchableOpacity
-                      onPress={loadMoreHistory}
-                      style={styles.loadMoreBtn}
-                      disabled={historyLoading}
-                      activeOpacity={0.7}
-                    >
-                      {historyLoading ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <>
-                          <Ionicons name="chevron-down" size={16} color={colors.primary} />
-                          <Text style={styles.loadMoreText}>Load More</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-            </View>
-          )}
-
-          {historyMode === 'detail' && selectedHistory && (
-            <View style={{ maxHeight: 460 }}>
-              <Text style={styles.detailDate}>{periodLabel(selectedHistory.period_start, selectedHistory.period_end /* PH */)}</Text>
-
-              {/* Status */}
-              {(() => {
-                const sm = statusMeta(selectedHistory);
-                return (
-                  <View style={[styles.statusPill, { alignSelf: 'flex-start', backgroundColor: sm.bg, borderColor: sm.bg, marginTop: 6 }]}>
-                    <MaterialCommunityIcons name={sm.icon} size={16} color={sm.fg} />
-                    <Text style={[styles.statusPillText, { color: sm.fg }]}>{sm.label}</Text>
-                  </View>
-                );
-              })()}
-
-              {/* Numbers */}
-              <View style={styles.detailGrid}>
-                <View className="detailCell" style={styles.detailCell}>
-                  <Text style={styles.detailLabel}>Revenue (driver)</Text>
-                  <Text style={styles.detailValue}>₱ {formatPeso(selectedHistory.revenue_driver)}</Text>
-                </View>
-                <View style={styles.detailCell}>
-                  <Text style={styles.detailLabel}>Expenses</Text>
-                  <Text style={styles.detailValue}>₱ {formatPeso(selectedHistory.expenses)}</Text>
-                </View>
-                <View style={styles.detailCell}>
-                  <Text style={styles.detailLabel}>Profit</Text>
-                  <Text style={styles.detailValue}>₱ {formatPeso(selectedHistory.profit)}</Text>
-                </View>
-                <View style={styles.detailCell}>
-                  <Text style={styles.detailLabel}>Rides</Text>
-                  <Text style={styles.detailValue}>{selectedHistory.rides_done}/{selectedHistory.rides_needed}</Text>
-                </View>
-              </View>
-
-              {/* Breakdown */}
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.detailSectionTitle}>Breakdown</Text>
-                <View className="mixRow" style={styles.mixRow}>
-                  <Text style={styles.mixLabel}>Standard rides (80%)</Text>
-                  <Text style={styles.mixValue}>₱ {formatPeso(selectedHistory?.breakdown?.standard_share || 0)}</Text>
-                </View>
-                <View style={[styles.mixRow, styles.feedDivider]}>
-                  <Text style={styles.mixLabel}>Custom tours (100%)</Text>
-                  <Text style={styles.mixValue}>₱ {formatPeso(selectedHistory?.breakdown?.custom_share || 0)}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
+      <HistoryModal
+        visible={historyOpen}
+        onClose={closeHistory}
+        historyItems={historyItems}
+        historyLoading={historyLoading}
+        historyError={historyError}
+        hasMoreHistory={hasMoreHistory}
+        onLoadMore={loadMoreHistory}
+        onPickHistory={onPickHistory}
+        selectedHistory={selectedHistory}
+        historyMode={historyMode}
+        setHistoryMode={setHistoryMode}
+        pulseAnim={pulseAnim}
+      />
     </View>
   );
 }
@@ -1986,5 +1920,64 @@ const styles = StyleSheet.create({
   },
   expensesSection: {
     marginBottom: 0,
+  },
+  // Logo loading styles
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 50,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  logo: {
+    width: 100,
+    height: 100,
+  },
+  historyLoadingContainer: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyLogo: {
+    width: 120,
+    height: 120,
+  },
+  loadMoreLogo: {
+    width: 24,
+    height: 24,
+  },
+  scrollContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  customLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.background,
+    zIndex: 1000,
+  },
+  loadingContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingLogo: {
+    marginTop: -100,
+    width: 200,
+    height: 200,
+  },
+  loadingText: {
+    marginTop: -70,
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
 });

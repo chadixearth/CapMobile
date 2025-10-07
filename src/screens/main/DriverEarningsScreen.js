@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// EARNINGS SCREEN
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +11,8 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  Image,
+  Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/authService';
@@ -92,14 +96,40 @@ export default function DriverEarningsScreen({ navigation }) {
   const [customDateRange, setCustomDateRange] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showPayoutHistory, setShowPayoutHistory] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     fetchUserAndEarnings();
   }, [selectedPeriod, customDateRange]);
 
-  const fetchUserAndEarnings = useCallback(async () => {
+  useEffect(() => {
+    fetchUserAndEarnings(true);
+  }, []);
+
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [loading, pulseAnim]);
+
+  const fetchUserAndEarnings = useCallback(async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      if (isInitialLoad) setLoading(true);
 
       // Get current user (cached)
       let currentUser = user || await getCurrentUser();
@@ -132,7 +162,7 @@ export default function DriverEarningsScreen({ navigation }) {
       console.error('Error fetching earnings:', error);
       Alert.alert('Error', `Failed to load earnings: ${error.message}`);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) setLoading(false);
     }
   }, [user, selectedPeriod, customDateRange]);
 
@@ -229,7 +259,7 @@ export default function DriverEarningsScreen({ navigation }) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchUserAndEarnings();
+    await fetchUserAndEarnings(false);
     setRefreshing(false);
   }, [fetchUserAndEarnings]);
 
@@ -512,7 +542,14 @@ export default function DriverEarningsScreen({ navigation }) {
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <Text style={styles.loadingText}>Loading earnings...</Text>
+        <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+          <Image 
+            source={require('../../../assets/TarTrack Logo_sakto.png')} 
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </Animated.View>
+        <Text style={styles.loadingText}>Fetching your earnings data...</Text>
       </View>
     );
   }
@@ -522,7 +559,7 @@ export default function DriverEarningsScreen({ navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
+          <Ionicons name="arrow-back" size={24} color="#fff" marginTop="20" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Earnings</Text>
 
@@ -575,16 +612,32 @@ export default function DriverEarningsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create({ 
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   loadingContainer: { justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: '#666' },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  logo: {
+    width: 230,
+    height: 230,
+  },
+  loadingText: {
+    marginTop: -120,
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+    backgroundColor: '#6B2E2B', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', top:20, paddingBottom:20 },
   content: { flex: 1, paddingHorizontal: 16 },
 
   /* Period selector */

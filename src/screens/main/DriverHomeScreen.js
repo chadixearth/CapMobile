@@ -1,3 +1,5 @@
+//DRIVER HOME SCREEN
+
 // screens/DriverHomeScreen.js
 import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import {
@@ -1135,55 +1137,68 @@ const styles = StyleSheet.create({
   efficiencyContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 16,
   },
   efficiencyCircle: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: SURFACE,
-    borderWidth: 3,
-    borderColor: MAROON,
+    backgroundColor: MAROON,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   efficiencyScore: {
     fontSize: 18,
     fontWeight: '900',
-    color: MAROON,
+    color: '#fff',
   },
   efficiencyLabel: {
-    fontSize: 9,
-    color: MUTED,
+    fontSize: 8,
+    color: '#fff',
+    marginTop: -2,
   },
   efficiencyDetails: {
     flex: 1,
   },
   efficiencyText: {
     fontSize: 11,
-    color: TEXT,
-    marginBottom: 4,
+    color: MUTED,
+    lineHeight: 16,
   },
   efficiencyTip: {
-    fontSize: 10,
-    color: MUTED,
-    fontStyle: 'italic',
+    fontSize: 11,
+    color: TEXT,
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 16,
   },
-
+  
+  /* Chart Legend */
   legendRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-    paddingTop: 8,
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
   },
-  legendBox: { width: 12, height: 12, borderRadius: 2, marginRight: 6 },
-  legendLine: { width: 14, height: 3, borderRadius: 2, marginRight: 6 },
-  legendText: { fontSize: 12, color: '#555', fontWeight: '600' },
+  legendBox: {
+    width: 12,
+    height: 8,
+    borderRadius: 2,
+    marginRight: 6,
+  },
+  legendLine: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 10,
+    color: MUTED,
+    fontWeight: '600',
+  },
 });

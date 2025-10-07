@@ -1,4 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+//ACCOUNT DETAILS SCREEN
+
+
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +15,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -37,15 +41,19 @@ import { useAuth } from '../../hooks/useAuth';
 import AccountDeletionHandler from '../../components/AccountDeletionHandler';
 import { getUserSettings, updateAnonymousReviewSetting } from '../../services/userSettings';
 
+const { width: SCREEN_W } = Dimensions.get('window');
+
 const COLORS = {
   maroon: '#6B2E2B',
+  maroon700: '#531F1D',
   text: '#0F172A',
   muted: '#6B7280',
   border: '#E5E7EB',
-  bg: '#F8FAFC',
+  wash: '#F8FAFC',
   white: '#FFFFFF',
   green: '#14532D',
   red: '#B91C1C',
+  inkSoft: 'rgba(15,23,42,0.06)',
 };
 
 export default function AccountDetailsScreen({ navigation }) {
@@ -82,9 +90,8 @@ export default function AccountDetailsScreen({ navigation }) {
   // Privacy settings state
   const [anonymousReviews, setAnonymousReviews] = useState(false);
 
-  // Danger Zone modal state
+  // Deactivation modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
   // Fetch user data
@@ -111,11 +118,12 @@ export default function AccountDetailsScreen({ navigation }) {
             setLastName(userData.last_name || nameParts[2] || '');
             setEmail(userData.email || '');
             setPhone(userData.phone || '');
-            // Prioritize profile_photo_url from database, then other sources
-            const profilePhotoUrl = userData.profile_photo_url || 
-                                  userData.profile_photo || 
-                                  userData.avatar_url || 
-                                  '';
+
+            const profilePhotoUrl =
+              userData.profile_photo_url ||
+              userData.profile_photo ||
+              userData.avatar_url ||
+              '';
             setPhotoUrl(profilePhotoUrl);
           } else {
             const { data } = await supabase.auth.getUser();
@@ -128,41 +136,37 @@ export default function AccountDetailsScreen({ navigation }) {
               setLastName(nameParts[2] || '');
               setEmail(data.user.email || '');
               setPhone(data.user.user_metadata?.phone || '');
-              // Get profile photo from auth metadata
-              const authPhotoUrl = data.user.user_metadata?.profile_photo_url || 
-                                 data.user.user_metadata?.profile_photo || 
-                                 '';
+              const authPhotoUrl =
+                data.user.user_metadata?.profile_photo_url ||
+                data.user.user_metadata?.profile_photo ||
+                '';
               setPhotoUrl(authPhotoUrl);
             }
           }
 
           if (authorIdForBio) {
             try {
-              const profileResult = await getGoodsServicesProfileByAuthor(
-                authorIdForBio
-              );
+              const profileResult = await getGoodsServicesProfileByAuthor(authorIdForBio);
               if (profileResult.success && profileResult.data) {
                 if (profileResult.data.description)
                   setBioDescription(profileResult.data.description);
-                if (profileResult.data.id)
-                  setExistingBioId(profileResult.data.id);
+                if (profileResult.data.id) setExistingBioId(profileResult.data.id);
               }
             } catch {}
           }
 
-          // Load privacy settings for tourists
           if (auth.role === 'tourist') {
             try {
               const settingsResult = await getUserSettings();
               if (settingsResult.success) {
                 setAnonymousReviews(settingsResult.data.anonymousReviews || false);
               }
-            } catch (error) {
-              console.error('Error loading privacy settings:', error);
+            } catch (err) {
+              console.error('Error loading privacy settings:', err);
             }
           }
-        } catch (error) {
-          console.error('Error fetching user data:', error);
+        } catch (err) {
+          console.error('Error fetching user data:', err);
           setError('Failed to load user data');
         }
       };
@@ -181,24 +185,28 @@ export default function AccountDetailsScreen({ navigation }) {
   }
   if (!auth.isAuthenticated) return null;
 
-  const avatarName = [firstName, middleName, lastName].filter(Boolean).join(' ');
-  const avatarUrl =
+  const avatarName = useMemo(() => 
+    [firstName, middleName, lastName].filter(Boolean).join(' '), 
+    [firstName, middleName, lastName]
+  );
+  
+  const avatarUrl = useMemo(() =>
     photoUrl
       ? photoUrl
       : avatarName
-      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          avatarName
-        )}&background=6B2E2B&color=fff&size=128`
-      : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128';
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(avatarName)}&background=6B2E2B&color=fff&size=128`
+      : 'https://ui-avatars.com/api/?name=User&background=6B2E2B&color=fff&size=128',
+    [photoUrl, avatarName]
+  );
 
   // Small helpers
-  const FullWidthButton = ({ title, onPress, tone = 'primary', loading }) => {
+  const FullWidthButton = useCallback(({ title, onPress, tone = 'primary', loading }) => {
     const isPrimary = tone === 'primary';
     return (
       <TouchableOpacity
         onPress={onPress}
         disabled={loading}
-        activeOpacity={0.9}
+        activeOpacity={0.95}
         style={[
           styles.fullBtn,
           isPrimary ? styles.fullBtnPrimary : styles.fullBtnGhost,
@@ -214,9 +222,9 @@ export default function AccountDetailsScreen({ navigation }) {
         )}
       </TouchableOpacity>
     );
-  };
+  }, []);
 
-  const Banner = ({ type = 'success', children }) => {
+  const Banner = useCallback(({ type = 'success', children }) => {
     const isError = type === 'error';
     return (
       <View style={[styles.banner, isError ? styles.bannerError : styles.bannerSuccess]}>
@@ -226,30 +234,28 @@ export default function AccountDetailsScreen({ navigation }) {
           color={isError ? COLORS.red : COLORS.green}
           style={{ marginRight: 8 }}
         />
-        <Text
-          style={[
-            styles.bannerText,
-            { color: isError ? COLORS.red : COLORS.green },
-          ]}
-        >
-          {children}
-        </Text>
+        <Text style={[styles.bannerText, { color: isError ? COLORS.red : COLORS.green }]}>{children}</Text>
       </View>
     );
-  };
+  }, []);
 
-  const Section = ({ icon, title, children, right }) => (
-    <View style={styles.sectionCard}>
+  const Section = useCallback(({ icon, title, subtitle, children, right }) => (
+    <View style={styles.sectionCard} pointerEvents="auto">
       <View style={styles.sectionHeader}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Ionicons name={icon} size={18} color={COLORS.maroon} />
-          <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <View style={styles.sectionIconCircle}>
+            <Ionicons name={icon} size={16} color={COLORS.maroon} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {!!subtitle && <Text style={styles.sectionSub}>{subtitle}</Text>}
+          </View>
         </View>
         {right}
       </View>
       {children}
     </View>
-  );
+  ), []);
 
   const handlePickImage = async () => {
     try {
@@ -257,8 +263,8 @@ export default function AccountDetailsScreen({ navigation }) {
       const image = await photoService.pickImage();
       if (!image) return;
       await uploadImage(image.uri);
-    } catch (error) {
-      console.error('Image picker error:', error);
+    } catch (err) {
+      console.error('Image picker error:', err);
       Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
@@ -272,18 +278,12 @@ export default function AccountDetailsScreen({ navigation }) {
 
       if (currentUser) {
         const photoService = new MobilePhotoUpload();
-        const result = await photoService.uploadProfilePhoto(
-          currentUser.id,
-          uri
-        );
+        const result = await photoService.uploadProfilePhoto(currentUser.id, uri);
         if (result.success) {
           setPhotoUrl(result.photo_url);
-          
-          // Ensure the profile photo URL is saved to the database
-          const profileUpdateResult = await updateUserProfile(currentUser.id, { 
-            profile_photo_url: result.photo_url 
+          const profileUpdateResult = await updateUserProfile(currentUser.id, {
+            profile_photo_url: result.photo_url,
           });
-          
           if (profileUpdateResult.success) {
             setSuccess('Profile photo updated successfully!');
           } else {
@@ -308,16 +308,11 @@ export default function AccountDetailsScreen({ navigation }) {
           .upload(uploadPath, blob, { upsert: true });
         if (uploadError) throw uploadError;
 
-        const { data: publicUrlData } = supabase.storage
-          .from('profile-photos')
-          .getPublicUrl(uploadPath);
-        if (!publicUrlData?.publicUrl)
-          throw new Error('Failed to get public URL');
+        const { data: publicUrlData } = supabase.storage.from('profile-photos').getPublicUrl(uploadPath);
+        if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL');
 
         setPhotoUrl(publicUrlData.publicUrl);
-        await supabase.auth.updateUser({
-          data: { profile_photo_url: publicUrlData.publicUrl },
-        });
+        await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
         setSuccess('Profile photo updated!');
       }
     } catch (err) {
@@ -330,7 +325,7 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-  // Web: file input change
+  // Web file input
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -344,10 +339,7 @@ export default function AccountDetailsScreen({ navigation }) {
         const reader = new FileReader();
         reader.onload = async (e) => {
           try {
-            const result = await uploadProfilePhoto(
-              currentUser.id,
-              e.target.result
-            );
+            const result = await uploadProfilePhoto(currentUser.id, e.target.result);
             if (result.success) {
               setPhotoUrl(result.photoUrl);
               await updateUserProfile(currentUser.id, { profile_photo_url: result.photoUrl });
@@ -377,15 +369,11 @@ export default function AccountDetailsScreen({ navigation }) {
           .upload(uploadPath, file, { upsert: true });
         if (uploadError) throw uploadError;
 
-        const { data: publicUrlData } = supabase.storage
-          .from('profile-photos')
-          .getPublicUrl(uploadPath);
+        const { data: publicUrlData } = supabase.storage.from('profile-photos').getPublicUrl(uploadPath);
         if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL');
 
         setPhotoUrl(publicUrlData.publicUrl);
-        await supabase.auth.updateUser({
-          data: { profile_photo_url: publicUrlData.publicUrl },
-        });
+        await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
         setSuccess('Profile photo updated!');
       }
     } catch (err) {
@@ -396,7 +384,7 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     setLoading(true);
     setError('');
     setSuccess('');
@@ -404,9 +392,7 @@ export default function AccountDetailsScreen({ navigation }) {
       const currentUser = await getCurrentUser();
 
       if (currentUser) {
-        const fullName = [firstName, middleName, lastName]
-          .filter(Boolean)
-          .join(' ');
+        const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
         const profileData = {
           name: fullName,
           first_name: firstName,
@@ -417,11 +403,7 @@ export default function AccountDetailsScreen({ navigation }) {
           profile_photo_url: photoUrl,
         };
         Object.keys(profileData).forEach((k) => {
-          if (
-            profileData[k] === '' ||
-            profileData[k] === null ||
-            profileData[k] === undefined
-          ) {
+          if (profileData[k] === '' || profileData[k] === null || profileData[k] === undefined) {
             delete profileData[k];
           }
         });
@@ -444,11 +426,7 @@ export default function AccountDetailsScreen({ navigation }) {
           }
         }
         if (metaError || emailError) {
-          setError(
-            metaError?.message ||
-              emailError?.message ||
-              'Failed to update account.'
-          );
+          setError(metaError?.message || emailError?.message || 'Failed to update account.');
         } else {
           setSuccess('Account updated successfully!');
         }
@@ -459,7 +437,7 @@ export default function AccountDetailsScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [firstName, middleName, lastName, email, phone, photoUrl]);
+  };
 
   const handleSaveBio = async () => {
     try {
@@ -480,10 +458,7 @@ export default function AccountDetailsScreen({ navigation }) {
       if (!bioDescription.trim()) {
         if (existingBioId) {
           try {
-            const del = await deleteGoodsServicesPost(
-              existingBioId,
-              currentUser.id
-            );
+            const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
             if (!del.success) {
               setBioMessage(del.error || 'Failed to clear bio');
               return;
@@ -503,52 +478,33 @@ export default function AccountDetailsScreen({ navigation }) {
       let media = [];
       if (bioPhotos.length > 0) {
         try {
-          const uploadRes = await uploadGoodsServicesMedia(
-            currentUser.id,
-            bioPhotos
-          );
+          const uploadRes = await uploadGoodsServicesMedia(currentUser.id, bioPhotos);
           if (!uploadRes.success) {
             setBioMessage(uploadRes.error || 'Failed to upload photos');
             return;
           }
-          media = uploadRes.urls
-            ? uploadRes.urls.map((url) => ({ url, type: 'image' }))
-            : [];
+          media = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
         } catch {
           setBioMessage('Failed to upload photos. Please try again.');
           return;
         }
       }
 
-      const result = await upsertGoodsServicesProfile(
-        currentUser.id,
-        bioDescription.trim(),
-        media
-      );
+      const result = await upsertGoodsServicesProfile(currentUser.id, bioDescription.trim(), media);
       if (result.success) {
         setBioMessage('Bio saved.');
         if (media.length > 0) setBioPhotos([]);
         const returned = result.data?.data || result.data;
-        if (
-          returned &&
-          (returned.id || (Array.isArray(returned) && returned[0]?.id))
-        ) {
+        if (returned && (returned.id || (Array.isArray(returned) && returned[0]?.id))) {
           const id = returned.id || returned[0]?.id;
           setExistingBioId(id);
         }
-        
-        // Show success alert
-        Alert.alert(
-          'Success',
-          'Your bio has been saved successfully!',
-          [{ text: 'OK' }]
-        );
-        
+
+        Alert.alert('Success', 'Your bio has been saved successfully!', [{ text: 'OK' }]);
+
         setTimeout(async () => {
           try {
-            const refreshResult = await getGoodsServicesProfileByAuthor(
-              currentUser.id
-            );
+            const refreshResult = await getGoodsServicesProfileByAuthor(currentUser.id);
             if (refreshResult.success && refreshResult.data) {
               setBioDescription(refreshResult.data.description || '');
               if (refreshResult.data.id) setExistingBioId(refreshResult.data.id);
@@ -569,10 +525,7 @@ export default function AccountDetailsScreen({ navigation }) {
     try {
       Alert.alert('Bio options', '', [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: existingBioId ? 'Update' : 'Add',
-          onPress: () => handleSaveBio(),
-        },
+        { text: existingBioId ? 'Update' : 'Add', onPress: () => handleSaveBio() },
         {
           text: 'Clear',
           style: 'destructive',
@@ -584,10 +537,7 @@ export default function AccountDetailsScreen({ navigation }) {
                 return;
               }
               if (existingBioId) {
-                const del = await deleteGoodsServicesPost(
-                  existingBioId,
-                  currentUser.id
-                );
+                const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
                 if (!del.success) {
                   setBioMessage(del.error || 'Failed to clear bio');
                   return;
@@ -609,38 +559,34 @@ export default function AccountDetailsScreen({ navigation }) {
   };
 
   const openDeleteModal = () => {
-    setDeleteConfirmText('');
     setDeleteOpen(true);
   };
 
-  const handleChangePassword = useCallback(async () => {
+  const handleChangePassword = async () => {
     try {
       setChangingPassword(true);
       setPasswordMessage('');
-      
+
       if (!currentPassword || !newPassword || !confirmPassword) {
         setPasswordMessage('All fields are required.');
         return;
       }
-      
       if (newPassword.length < 6) {
         setPasswordMessage('New password must be at least 6 characters.');
         return;
       }
-      
       if (newPassword !== confirmPassword) {
         setPasswordMessage('New passwords do not match.');
         return;
       }
-      
+
       const currentUser = await getCurrentUser();
       if (!currentUser) {
         setPasswordMessage('You must be logged in to change password.');
         return;
       }
-      
+
       const result = await changePassword(currentPassword, newPassword);
-      
       if (result.success) {
         setPasswordMessage('Password changed successfully!');
         setCurrentPassword('');
@@ -649,12 +595,12 @@ export default function AccountDetailsScreen({ navigation }) {
       } else {
         setPasswordMessage(result.error || 'Failed to change password.');
       }
-    } catch (error) {
-      setPasswordMessage(error.message || 'Failed to change password.');
+    } catch (err) {
+      setPasswordMessage(err.message || 'Failed to change password.');
     } finally {
       setChangingPassword(false);
     }
-  }, [currentPassword, newPassword, confirmPassword]);
+  };
 
   const confirmDelete = async () => {
     try {
@@ -675,347 +621,303 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-  // Change confirmation keyword from DELETE → DEACTIVATE
-  const deleteEnabled = deleteConfirmText.trim().toUpperCase() === 'DEACTIVATE';
+
+  const KAV_BEHAVIOR = Platform.select({ ios: 'padding', android: 'position' });
+  const KAV_OFFSET = Platform.select({ ios: 86, android: 0 });
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <BackButton onPress={() => navigation.goBack()} />
+    <View style={styles.container}>
+      {/* Header like MenuScreen */}
+      <View style={styles.hero}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Account Details</Text>
+          <View style={{ width: 24 }} />
+        </View>
+      </View>
 
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Header / Profile Card */}
-        <View style={styles.headerCard}>
-          <View style={{ alignItems: 'center' }}>
-            {Platform.OS === 'web' ? (
-              <>
-                <img
-                  src={avatarUrl}
-                  alt="Profile"
-                  style={{
-                    width: 104,
-                    height: 104,
-                    borderRadius: 52,
-                    border: `3px solid ${COLORS.maroon}`,
-                    objectFit: 'cover',
-                  }}
-                />
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                  onChange={handleFileChange}
-                  disabled={uploading}
-                />
-                <TouchableOpacity
-                  onPress={() => fileInputRef.current?.click()}
-                  style={styles.changePhotoBtn}
-                  disabled={uploading}
-                >
-                  <Ionicons name="camera" size={16} color={COLORS.maroon} />
-                  <Text style={styles.changePhotoText}>Change photo</Text>
-                </TouchableOpacity>
-                {uploading ? (
-                  <ActivityIndicator size="small" color={COLORS.maroon} />
-                ) : null}
-              </>
-            ) : (
-              <TouchableOpacity
-                onPress={handlePickImage}
+      {/* Floating profile card */}
+      <View style={styles.profileCard}>
+        <View style={styles.profileLeft}>
+          {Platform.OS === 'web' ? (
+            <>
+              <img
+                src={avatarUrl}
+                alt="Profile"
+                style={{
+                  width: 60, height: 60, borderRadius: 30,
+                  border: `2px solid ${COLORS.maroon}`,
+                  objectFit: 'cover',
+                }}
+              />
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
                 disabled={uploading}
-                activeOpacity={0.9}
-              >
-                <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-                {uploading && (
-                  <View style={styles.uploadingOverlay}>
-                    <ActivityIndicator size="small" color="#fff" />
-                  </View>
-                )}
-                <View style={styles.changePhotoBtn}>
-                  <Ionicons name="camera" size={16} color={COLORS.maroon} />
-                  <Text style={styles.changePhotoText}>Change photo</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
-            <Text style={styles.title}>
-              {avatarName || 'Account Details'}
+              />
+            </>
+          ) : (
+            <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {avatarName || 'Set your name'}
             </Text>
-            <Text style={styles.subtitle}>
-              Manage your profile and public info
+            <Text style={styles.profileEmail} numberOfLines={1}>
+              {email || 'Set your email'}
             </Text>
           </View>
         </View>
 
-        {/* Feedback */}
-        {!!error && <Banner type="error">{error}</Banner>}
-        {!!success && <Banner type="success">{success}</Banner>}
-
-        {/* Profile Details */}
-        <Section icon="person-circle-outline" title="Profile">
-          <View style={styles.fieldStack}>
-            <EditableField
-              value={firstName}
-              onChangeText={setFirstName}
-              placeholder="First Name"
-            />
-            <EditableField
-              value={middleName}
-              onChangeText={setMiddleName}
-              placeholder="Middle Name"
-            />
-            <EditableField
-              value={lastName}
-              onChangeText={setLastName}
-              placeholder="Last Name"
-            />
-          </View>
-        </Section>
-
-        {/* Contact */}
-        <Section icon="mail-outline" title="Contact">
-          <View style={styles.fieldStack}>
-            <EditableField
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Email"
-              keyboardType="email-address"
-            />
-            <EditableField
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Phone"
-              keyboardType="phone-pad"
-            />
-          </View>
-        </Section>
-
-        {/* Save CTA */}
-        <FullWidthButton
-          title={loading ? 'Saving…' : 'Save Changes'}
-          onPress={handleSave}
-          loading={loading}
-        />
-
-        {/* Change Password */}
-        <Section 
-          icon="lock-closed-outline" 
-          title="Security"
-          right={
-            <TouchableOpacity
-              onPress={() => setShowPasswords(!showPasswords)}
-              style={styles.iconPill}
-              activeOpacity={0.85}
-            >
-              <Ionicons 
-                name={showPasswords ? "eye-off-outline" : "eye-outline"} 
-                size={16} 
-                color={COLORS.maroon} 
-              />
-            </TouchableOpacity>
-          }
+        <TouchableOpacity
+          style={styles.editIconBtn}
+          onPress={Platform.OS === 'web' ? () => fileInputRef.current?.click() : handlePickImage}
+          disabled={uploading}
+          activeOpacity={0.85}
         >
-          <View style={styles.passwordCard}>
-            <Text style={styles.passwordLabel}>Change Password</Text>
-            <Text style={styles.passwordHelp}>
-              Update your password to keep your account secure.
-            </Text>
-            
-            <View style={styles.fieldStack}>
-              <View style={styles.passwordField}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Current Password"
-                  placeholderTextColor={COLORS.muted}
-                  secureTextEntry={!showPasswords}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-              
-              <View style={styles.passwordField}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="New Password (min 6 characters)"
-                  placeholderTextColor={COLORS.muted}
-                  secureTextEntry={!showPasswords}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-              
-              <View style={styles.passwordField}>
-                <TextInput
-                  style={styles.passwordInput}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm New Password"
-                  placeholderTextColor={COLORS.muted}
-                  secureTextEntry={!showPasswords}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            </View>
-            
-            {!!passwordMessage && (
-              <Text
-                style={[
-                  styles.passwordMessage,
-                  /success/i.test(passwordMessage)
-                    ? { color: COLORS.green }
-                    : { color: COLORS.red },
-                ]}
-              >
-                {passwordMessage}
-              </Text>
-            )}
-            
-            <TouchableOpacity
-              onPress={handleChangePassword}
-              style={[
-                styles.passwordBtn,
-                changingPassword && { opacity: 0.7 }
-              ]}
-              disabled={changingPassword}
-              activeOpacity={0.9}
-            >
-              {changingPassword ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="shield-checkmark" size={16} color="#fff" />
-                  <Text style={styles.passwordBtnText}>Change Password</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </Section>
+          {uploading ? (
+            <ActivityIndicator size="small" color={COLORS.maroon} />
+          ) : (
+            <Ionicons name="camera" size={20} color={COLORS.maroon} />
+          )}
+        </TouchableOpacity>
+      </View>
 
-        {/* Bio (Drivers / Owners) — redesigned */}
-        {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
+      <KeyboardAvoidingView style={styles.scrollContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="none"
+          keyboardShouldPersistTaps="always"
+          removeClippedSubviews={false}
+          nestedScrollEnabled
+          onStartShouldSetResponderCapture={() => true}
+          onResponderTerminationRequest={() => false}
+        >
+
+          {/* Feedback */}
+          {!!error && <Banner type="error">{error}</Banner>}
+          {!!success && <Banner type="success">{success}</Banner>}
+
+          {/* PROFILE & CONTACT */}
           <Section
-            icon="briefcase-outline"
-            title="Goods & Services Bio"
+            icon="person-circle-outline"
+            title="Profile & Contact"
+            subtitle="Your personal information and contact details"
+          >
+            <View style={styles.profileContactCard}>
+              {/* Name Section */}
+              <View style={[styles.profileSection, styles.profileSectionWithBorder]}>
+                <View style={styles.profileSectionHeader}>
+                  <View style={styles.profileSectionIcon}>
+                    <Ionicons name="person" size={14} color={COLORS.maroon} />
+                  </View>
+                  <Text style={styles.profileSectionTitle}>Personal Information</Text>
+                </View>
+                
+                <View style={styles.gridRow}>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      placeholder="First Name"
+                    />
+                  </View>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={middleName}
+                      onChangeText={setMiddleName}
+                      placeholder="Middle Name"
+                    />
+                  </View>
+                </View>
+                <View style={styles.gridRow}>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={lastName}
+                      onChangeText={setLastName}
+                      placeholder="Last Name"
+                    />
+                  </View>
+                  <View style={styles.gridCol} />
+                </View>
+              </View>
+
+              {/* Contact Section */}
+              <View style={styles.profileSection}>
+                <View style={styles.profileSectionHeader}>
+                  <View style={styles.profileSectionIcon}>
+                    <Ionicons name="mail" size={14} color={COLORS.maroon} />
+                  </View>
+                  <Text style={styles.profileSectionTitle}>Contact Information</Text>
+                </View>
+                
+                <View style={styles.gridRow}>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="Email Address"
+                      keyboardType="email-address"
+                    />
+                  </View>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={phone}
+                      onChangeText={setPhone}
+                      placeholder="Phone Number"
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <FullWidthButton title={loading ? 'Saving…' : 'Save Changes'} onPress={handleSave} loading={loading} />
+            </View>
+          </Section>
+
+          {/* SECURITY */}
+          <Section
+            icon="lock-closed-outline"
+            title="Security"
+            subtitle="Change your password"
             right={
               <TouchableOpacity
-                onPress={handleBioMenu}
+                onPress={() => setShowPasswords(!showPasswords)}
                 style={styles.iconPill}
                 activeOpacity={0.85}
               >
-                <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.maroon} />
+                <Ionicons name={showPasswords ? 'eye-off-outline' : 'eye-outline'} size={16} color={COLORS.maroon} />
               </TouchableOpacity>
             }
           >
-            <View style={styles.gsCard}>
-              {/* Label + character counter */}
-              <View style={styles.gsLabelRow}>
-                <Text style={styles.gsLabel}>Short description</Text>
+            <View style={styles.passwordCard}>
+              <View style={styles.fieldStack}>
+                <View style={styles.passwordField}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    placeholder="Current Password"
+                    placeholderTextColor={COLORS.muted}
+                    secureTextEntry={!showPasswords}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    blurOnSubmit={false}
+                    returnKeyType="next"
+                  />
+                </View>
+
+                <View style={styles.passwordField}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    placeholder="New Password (min 6 characters)"
+                    placeholderTextColor={COLORS.muted}
+                    secureTextEntry={!showPasswords}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    blurOnSubmit={false}
+                    returnKeyType="next"
+                  />
+                </View>
+
+                <View style={styles.passwordField}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Confirm New Password"
+                    placeholderTextColor={COLORS.muted}
+                    secureTextEntry={!showPasswords}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    blurOnSubmit={false}
+                    returnKeyType="done"
+                  />
+                </View>
+              </View>
+
+              {!!passwordMessage && (
                 <Text
                   style={[
-                    styles.gsChar,
-                    (bioDescription?.length || 0) > 480 && { color: COLORS.red },
+                    styles.passwordMessage,
+                    /success/i.test(passwordMessage) ? { color: COLORS.green } : { color: COLORS.red },
                   ]}
                 >
-                  {(bioDescription?.length || 0)}/500
+                  {passwordMessage}
                 </Text>
-              </View>
+              )}
 
-              {/* Description input */}
-              <TextInput
-                style={styles.gsInput}
-                value={bioDescription}
-                onChangeText={(t) => {
-                  if (t.length <= 500) setBioDescription(t);
-                }}
-                placeholder="Tell customers what you offer, your area, rates, and availability…"
-                placeholderTextColor={COLORS.muted}
-                multiline
-              />
+              <TouchableOpacity
+                onPress={handleChangePassword}
+                style={[styles.passwordBtn, changingPassword && { opacity: 0.7 }]}
+                disabled={changingPassword}
+                activeOpacity={0.95}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark" size={16} color="#fff" />
+                    <Text style={styles.passwordBtnText}>Change Password</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Section>
 
-              <Text style={styles.gsHelp}>
-                Tip: Keep it specific (services, locations, hours). You can add up to 5 photos.
-              </Text>
+          {/* GOODS & SERVICES BIO (drivers/owners only) */}
+          {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
+            <Section
+              icon="briefcase-outline"
+              title="Goods & Services Bio"
+              subtitle="Help customers understand your offerings"
+              right={
+                <TouchableOpacity onPress={handleBioMenu} style={styles.iconPill} activeOpacity={0.85}>
+                  <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.maroon} />
+                </TouchableOpacity>
+              }
+            >
+              <View style={styles.gsCard}>
+                <View style={styles.gsLabelRow}>
+                  <Text style={styles.gsLabel}>Short description</Text>
+                  <Text
+                    style={[
+                      styles.gsChar,
+                      (bioDescription?.length || 0) > 480 && { color: COLORS.red },
+                    ]}
+                  >
+                    {(bioDescription?.length || 0)}/500
+                  </Text>
+                </View>
 
-              {/* Controls row */}
-              <View style={styles.gsControls}>
-                <TouchableOpacity
-                  style={styles.gsAddBtn}
-                  onPress={async () => {
-                    try {
-                      const capacity = Math.max(0, 5 - bioPhotos.length);
-                      if (capacity <= 0) return;
-                      const uploader = new MobilePhotoUpload();
-                      const images = await uploader.pickMultipleImages(capacity);
-                      if (images && images.length > 0) {
-                        setBioPhotos((prev) => [...prev, ...images]);
-                      }
-                    } catch {
-                      setBioMessage('Failed to select images. Please try again.');
-                    }
+                <TextInput
+                  style={styles.gsInput}
+                  value={bioDescription}
+                  onChangeText={(t) => {
+                    if (t.length <= 500) setBioDescription(t);
                   }}
-                  disabled={bioPhotos.length >= 5 || savingBio}
-                  activeOpacity={0.9}
-                >
-                  <Ionicons name="images-outline" size={16} color={COLORS.maroon} />
-                  <Text style={styles.gsAddText}>Add photos</Text>
-                  <Text style={styles.gsAddCount}>({bioPhotos.length}/5)</Text>
-                </TouchableOpacity>
+                  placeholder="Tell customers what you offer, your area, rates, and availability…"
+                  placeholderTextColor={COLORS.muted}
+                  multiline
+                  blurOnSubmit={false}
+                  autoCorrect={false}
+                  autoCapitalize="sentences"
+                />
 
-                <View style={{ flex: 1 }} />
+                <Text style={styles.gsHelp}>Tip: Keep it specific (services, locations, hours). You can add up to 5 photos.</Text>
 
-                <TouchableOpacity
-                  onPress={handleSaveBio}
-                  activeOpacity={0.9}
-                  style={[styles.gsSaveBtn, savingBio && { opacity: 0.7 }]}
-                  disabled={savingBio}
-                >
-                  {savingBio ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons name="save-outline" size={16} color="#fff" />
-                      <Text style={styles.gsSaveText}>
-                        {existingBioId ? 'Update Bio' : 'Save Bio'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              {/* Photo grid */}
-              <View style={styles.gsGrid}>
-                {bioPhotos.map((photo, i) => (
-                  <View key={i} style={styles.gsTile}>
-                    <Image source={{ uri: photo.uri }} style={styles.gsThumb} />
-                    <TouchableOpacity
-                      style={styles.gsRemove}
-                      onPress={() =>
-                        setBioPhotos((prev) => prev.filter((_, idx) => idx !== i))
-                      }
-                      activeOpacity={0.9}
-                    >
-                      <Ionicons name="close" size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-
-                {bioPhotos.length < 5 && (
+                <View style={styles.gsControls}>
                   <TouchableOpacity
-                    style={styles.gsAddTile}
+                    style={styles.gsAddBtn}
                     onPress={async () => {
                       try {
                         const capacity = Math.max(0, 5 - bioPhotos.length);
@@ -1029,124 +931,162 @@ export default function AccountDetailsScreen({ navigation }) {
                         setBioMessage('Failed to select images. Please try again.');
                       }
                     }}
-                    activeOpacity={0.9}
+                    disabled={bioPhotos.length >= 5 || savingBio}
+                    activeOpacity={0.95}
                   >
-                    <Ionicons name="add" size={22} color={COLORS.maroon} />
-                    <Text style={styles.gsAddTileText}>Add</Text>
+                    <Ionicons name="images-outline" size={16} color={COLORS.maroon} />
+                    <Text style={styles.gsAddText}>Add photos</Text>
+                    <Text style={styles.gsAddCount}>({bioPhotos.length}/5)</Text>
                   </TouchableOpacity>
+
+                  <View style={{ flex: 1 }} />
+
+                  <TouchableOpacity
+                    onPress={handleSaveBio}
+                    activeOpacity={0.95}
+                    style={[styles.gsSaveBtn, savingBio && { opacity: 0.7 }]}
+                    disabled={savingBio}
+                  >
+                    {savingBio ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="save-outline" size={16} color="#fff" />
+                        <Text style={styles.gsSaveText}>{existingBioId ? 'Update Bio' : 'Save Bio'}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.gsGrid}>
+                  {bioPhotos.map((photo, i) => (
+                    <View key={i} style={styles.gsTile}>
+                      <Image source={{ uri: photo.uri }} style={styles.gsThumb} />
+                      <TouchableOpacity
+                        style={styles.gsRemove}
+                        onPress={() => setBioPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                        activeOpacity={0.9}
+                      >
+                        <Ionicons name="close" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  {bioPhotos.length < 5 && (
+                    <TouchableOpacity
+                      style={styles.gsAddTile}
+                      onPress={async () => {
+                        try {
+                          const capacity = Math.max(0, 5 - bioPhotos.length);
+                          if (capacity <= 0) return;
+                          const uploader = new MobilePhotoUpload();
+                          const images = await uploader.pickMultipleImages(capacity);
+                          if (images && images.length > 0) {
+                            setBioPhotos((prev) => [...prev, ...images]);
+                          }
+                        } catch {
+                          setBioMessage('Failed to select images. Please try again.');
+                        }
+                      }}
+                      activeOpacity={0.95}
+                    >
+                      <Ionicons name="add" size={22} color={COLORS.maroon} />
+                      <Text style={styles.gsAddTileText}>Add</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {!!bioMessage && (
+                  <Text
+                    style={[
+                      styles.gsNote,
+                      /saved|cleared/i.test(bioMessage) ? { color: COLORS.green } : { color: COLORS.red },
+                    ]}
+                  >
+                    {bioMessage}
+                  </Text>
                 )}
               </View>
+            </Section>
+          )}
 
-              {!!bioMessage && (
-                <Text
-                  style={[
-                    styles.gsNote,
-                    /saved|cleared/i.test(bioMessage)
-                      ? { color: COLORS.green }
-                      : { color: COLORS.red },
-                  ]}
-                >
-                  {bioMessage}
-                </Text>
-              )}
-            </View>
-          </Section>
-        )}
+          {/* PRIVACY (tourist) */}
+          {auth.role === 'tourist' && (
+            <Section icon="shield-outline" title="Privacy Settings" subtitle="Control how your name appears in reviews">
+              <View style={styles.privacyCard}>
+                <View style={styles.privacyHeader}>
+                  <View style={styles.privacyIconCircle}>
+                    <Ionicons name="eye-off" size={18} color={COLORS.maroon} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.privacyHeading}>Anonymous Reviews</Text>
+                    <Text style={styles.privacySub}>
+                      Choose whether to remain anonymous when giving reviews and ratings.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.privacyToggle, anonymousReviews && styles.privacyToggleActive]}
+                    onPress={() => {
+                      const newValue = !anonymousReviews;
+                      setAnonymousReviews(newValue);
+                      updateAnonymousReviewSetting(newValue);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.privacyToggleThumb, anonymousReviews && styles.privacyToggleThumbActive]} />
+                  </TouchableOpacity>
+                </View>
 
-        {/* Privacy Settings - For Tourists */}
-        {auth.role === 'tourist' && (
-          <Section icon="shield-outline" title="Privacy Settings">
-            <View style={styles.privacyCard}>
-              <View style={styles.privacyHeader}>
-                <View style={styles.privacyIconCircle}>
-                  <Ionicons name="eye-off" size={18} color={COLORS.maroon} />
+                <View style={styles.privacyInfo}>
+                  <View style={styles.privacyInfoItem}>
+                    <Ionicons name="checkmark-circle-outline" size={16} color={COLORS.green} />
+                    <Text style={styles.privacyInfoText}>When enabled, your name won't be shown in reviews</Text>
+                  </View>
+                  <View style={styles.privacyInfoItem}>
+                    <Ionicons name="information-circle-outline" size={16} color={COLORS.muted} />
+                    <Text style={styles.privacyInfoText}>You can still change this for individual reviews</Text>
+                  </View>
+                </View>
+              </View>
+            </Section>
+          )}
+
+          {/* DANGER ZONE */}
+          <Section icon="warning-outline" title="Account Deactivation" subtitle="Temporarily disable your account">
+            <View style={styles.dangerWrap}>
+              <View style={styles.dangerHeaderRow}>
+                <View style={styles.dangerIconCircle}>
+                  <Ionicons name="warning" size={18} color={COLORS.red} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.privacyHeading}>Anonymous Reviews</Text>
-                  <Text style={styles.privacySub}>
-                    Choose whether to remain anonymous when giving reviews and ratings.
-                  </Text>
+                  <Text style={styles.dangerHeading}>Deactivate your account</Text>
+                  <Text style={styles.dangerSub}>Your account will be deactivated now.</Text>
                 </View>
-                <TouchableOpacity
-                  style={[
-                    styles.privacyToggle,
-                    anonymousReviews && styles.privacyToggleActive
-                  ]}
-                  onPress={() => {
-                    const newValue = !anonymousReviews;
-                    setAnonymousReviews(newValue);
-                    updateAnonymousReviewSetting(newValue);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[
-                    styles.privacyToggleThumb,
-                    anonymousReviews && styles.privacyToggleThumbActive
-                  ]} />
-                </TouchableOpacity>
               </View>
-              
-              <View style={styles.privacyInfo}>
-                <View style={styles.privacyInfoItem}>
-                  <Ionicons name="checkmark-circle-outline" size={16} color={COLORS.green} />
-                  <Text style={styles.privacyInfoText}>
-                    When enabled, your name won't be shown in reviews
-                  </Text>
+
+              <View style={styles.dangerList}>
+                <View style={styles.dangerListItem}>
+                  <Ionicons name="remove-circle-outline" size={16} color={COLORS.red} />
+                  <Text style={styles.dangerListText}>Access to your bookings and data will be removed.</Text>
                 </View>
-                <View style={styles.privacyInfoItem}>
-                  <Ionicons name="information-circle-outline" size={16} color={COLORS.muted} />
-                  <Text style={styles.privacyInfoText}>
-                    You can still change this for individual reviews
-                  </Text>
+                <View style={styles.dangerListItem}>
+                  <Ionicons name="time-outline" size={16} color={COLORS.red} />
+                  <Text style={styles.dangerListText}>You can cancel deactivation by logging in again within 7 days.</Text>
                 </View>
+              </View>
+
+              <View style={styles.dangerActionsRow}>
+                <TouchableOpacity style={styles.dangerPrimaryBtn} activeOpacity={0.95} onPress={openDeleteModal}>
+                  <Ionicons name="trash" size={16} color="#fff" />
+                  <Text style={styles.dangerPrimaryText}>Deactivate Account</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </Section>
-        )}
 
-        {/* Danger Zone — Redesigned */}
-        <Section icon="warning-outline" title="ACCOUNT DEACTIVATION">
-          <View style={styles.dangerWrap}>
-            <View style={styles.dangerHeaderRow}>
-              <View style={styles.dangerIconCircle}>
-                <Ionicons name="warning" size={18} color={COLORS.red} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dangerHeading}>Deactivate your account</Text>
-                <Text style={styles.dangerSub}>
-                  Your account will be deactivated now.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.dangerList}>
-              <View style={styles.dangerListItem}>
-                <Ionicons name="remove-circle-outline" size={16} color={COLORS.red} />
-                <Text style={styles.dangerListText}>Access to your bookings and data will be removed.</Text>
-              </View>
-              <View style={styles.dangerListItem}>
-                <Ionicons name="time-outline" size={16} color={COLORS.red} />
-                <Text className="styles.dangerListText" style={styles.dangerListText}>You can cancel deactivation by logging in again within 7 days.</Text>
-              </View>
-            </View>
-
-            <View style={styles.dangerActionsRow}>
-             
-
-              <TouchableOpacity
-                style={styles.dangerPrimaryBtn}
-                activeOpacity={0.9}
-                onPress={openDeleteModal}
-              >
-                <Ionicons name="trash" size={16} color="#fff" />
-                <Text style={styles.dangerPrimaryText}>Deactivate Account</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Section>
-
-        <View style={{ height: 28 }} />
-      </ScrollView>
+          <View style={{ height: 32 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Deactivate Confirmation Modal */}
       <Modal
@@ -1164,38 +1104,28 @@ export default function AccountDetailsScreen({ navigation }) {
                 </View>
                 <Text style={styles.modalTitle}>Confirm deactivation</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => !deleting && setDeleteOpen(false)}
-                disabled={deleting}
-              >
+              <TouchableOpacity onPress={() => !deleting && setDeleteOpen(false)} disabled={deleting}>
                 <Ionicons name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalBody}>
               <Text style={styles.modalText}>
-                Deactivating your account will schedule it for removal in 7 days. To confirm,
-                type <Text style={{ fontWeight: '800', color: COLORS.text }}>DEACTIVATE</Text> below.
+                Your account will be temporarily deactivated and you'll be logged out immediately.
               </Text>
 
-              <TextInput
-                style={styles.confirmInput}
-                value={deleteConfirmText}
-                onChangeText={setDeleteConfirmText}
-                placeholder="Type DEACTIVATE to confirm"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="characters"
-                editable={!deleting}
-              />
-
-              <View style={styles.modalList}>
-                <View style={styles.modalListItem}>
-                  <Ionicons name="ban-outline" size={16} color={COLORS.red} />
-                  <Text style={styles.modalListText}>This action cannot be undone after 7 days.</Text>
+              <View style={styles.modalInfoBox}>
+                <View style={styles.modalInfoItem}>
+                  <Ionicons name="checkmark-circle" size={16} color={COLORS.green} />
+                  <Text style={styles.modalInfoText}>All your data will be safely preserved</Text>
                 </View>
-                <View style={styles.modalListItem}>
-                  <Ionicons name="log-out-outline" size={16} color={COLORS.red} />
-                  <Text style={styles.modalListText}>You’ll be logged out immediately.</Text>
+                <View style={styles.modalInfoItem}>
+                  <Ionicons name="time" size={16} color={COLORS.muted} />
+                  <Text style={styles.modalInfoText}>Reactivate by logging in within 7 days</Text>
+                </View>
+                <View style={styles.modalInfoItem}>
+                  <Ionicons name="trash" size={16} color={COLORS.red} />
+                  <Text style={styles.modalInfoText}>Account permanently deleted after 7 days</Text>
                 </View>
               </View>
 
@@ -1204,20 +1134,16 @@ export default function AccountDetailsScreen({ navigation }) {
                   style={[styles.modalBtn, styles.modalBtnGhost]}
                   onPress={() => setDeleteOpen(false)}
                   disabled={deleting}
-                  activeOpacity={0.9}
+                  activeOpacity={0.95}
                 >
                   <Text style={styles.modalBtnGhostText}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[
-                    styles.modalBtn,
-                    styles.modalBtnDanger,
-                    (!deleteEnabled || deleting) && { opacity: 0.6 },
-                  ]}
+                  style={[styles.modalBtn, styles.modalBtnDanger, deleting && { opacity: 0.6 }]}
                   onPress={confirmDelete}
-                  disabled={!deleteEnabled || deleting}
-                  activeOpacity={0.9}
+                  disabled={deleting}
+                  activeOpacity={0.95}
                 >
                   {deleting ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -1226,89 +1152,116 @@ export default function AccountDetailsScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
               </View>
-
-              <Text style={styles.confirmHint}>
-                Tip: You can restore access by logging in again within 7 days.
-              </Text>
             </View>
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
+const CARD = {
+  radius: 16,
+  border: StyleSheet.hairlineWidth,
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: COLORS.wash },
+  scrollContainer: { flex: 1 },
 
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: COLORS.maroon, fontSize: 16, fontWeight: '600' },
-
-  // Header card
-  headerCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    paddingVertical: 20,
+  /* HEADER */
+  hero: {
+    backgroundColor: COLORS.maroon,
+    paddingTop: Platform.OS === 'ios' ? 52 : 28,
+    paddingBottom: 18,
     paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 100,
-    marginBottom: 12,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-  avatar: {
-    width: 108,
-    height: 108,
-    borderRadius: 64,
-    borderWidth: 3,
-    borderColor: COLORS.maroon,
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  uploadingOverlay: {
-    position: 'absolute',
-    width: 108,
-    height: 108,
-    borderRadius: 64,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  changePhotoBtn: {
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#FDF4F4',
-    borderWidth: 1,
-    borderColor: '#F3DADA',
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+
+  /* PROFILE CARD */
+  profileCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
-  changePhotoText: {
-    color: COLORS.maroon,
-    fontWeight: '700',
-    fontSize: 12,
-    letterSpacing: 0.2,
+  profileLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
   },
-
-  title: {
-    fontSize: 22,
+  profileAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: COLORS.maroon,
+  },
+  profileName: {
+    fontSize: 16,
     fontWeight: '800',
-    color: COLORS.text,
-    marginTop: 12,
+    color: '#1F2937',
   },
-  subtitle: {
-    fontSize: 12,
-    color: COLORS.muted,
-    marginTop: 4,
+  profileEmail: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  editIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8DCD8',
   },
 
-  // Reusable section card
+  /* CONTENT */
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+
+  /* SECTION */
   sectionCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: CARD.radius,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     padding: 14,
     marginTop: 12,
@@ -1316,41 +1269,61 @@ const styles = StyleSheet.create({
   sectionHeader: {
     paddingHorizontal: 2,
     paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    marginBottom: 8,
+    borderBottomWidth: CARD.border,
+    borderBottomColor: '#EEF0F4',
+    marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  sectionIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FDF4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: CARD.border,
+    borderColor: '#F3DADA',
+    marginRight: 8,
+  },
   sectionTitle: {
-    marginLeft: 8,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
     color: COLORS.text,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.3,
+  },
+  sectionSub: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginTop: 2,
   },
   iconPill: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     backgroundColor: '#FAFAFA',
   },
 
-  // Fields
-  fieldStack: { gap: 10 },
+  /* GRID */
+  gridRow: {
+    flexDirection: SCREEN_W >= 720 ? 'row' : 'column',
+    gap: 10,
+  },
+  gridCol: {
+    flex: 1,
+  },
 
-  // Banners
+  /* BANNERS */
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderWidth: 1,
+    borderWidth: CARD.border,
     marginTop: 12,
   },
   bannerSuccess: {
@@ -1361,9 +1334,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
   },
-  bannerText: { fontSize: 13, fontWeight: '600' },
+  bannerText: { fontSize: 13, fontWeight: '700' },
 
-  // Primary / Ghost CTAs
+  /* BUTTONS */
   fullBtn: {
     height: 46,
     borderRadius: 12,
@@ -1371,293 +1344,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
   },
-  fullBtnPrimary: {
-    backgroundColor: COLORS.maroon,
-  },
-  fullBtnGhost: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.maroon,
-  },
-  fullBtnTextPrimary: { color: '#fff', fontWeight: '800' },
-  fullBtnTextGhost: { color: COLORS.maroon, fontWeight: '800' },
+  fullBtnPrimary: { backgroundColor: COLORS.maroon },
+  fullBtnGhost: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.maroon },
+  fullBtnTextPrimary: { color: '#fff', fontWeight: '900', letterSpacing: 0.2 },
+  fullBtnTextGhost: { color: COLORS.maroon, fontWeight: '900', letterSpacing: 0.2 },
 
-  // (Old Bio styles kept intact in case of reuse elsewhere)
-  bioInput: {
-    minHeight: 100,
-    maxHeight: 220,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 12,
-    color: COLORS.text,
-    backgroundColor: '#FBFBFB',
-  },
-  bioToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 10,
-  },
-  addPhotoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#FDF4F4',
-    borderWidth: 1,
-    borderColor: '#F3DADA',
-  },
-  addPhotoText: { color: COLORS.maroon, fontWeight: '700', fontSize: 12 },
-  photoStrip: { marginTop: 10 },
-  photoItem: {
-    width: 70,
-    height: 70,
-    borderRadius: 10,
-    marginRight: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  photoThumb: { width: '100%', height: '100%' },
-  removePhoto: {
-    position: 'absolute',
-    right: 6,
-    top: 6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bioNote: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  // ===== Redesigned Danger Zone =====
-  dangerWrap: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    backgroundColor: '#FFF7F7',
-    padding: 14,
-    gap: 12,
-  },
-  dangerHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  dangerIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  dangerHeading: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.red,
-  },
-  dangerSub: {
-    marginTop: 2,
-    fontSize: 12,
-    color: '#7F1D1D',
-  },
-  dangerList: {
-    gap: 6,
-  },
-  dangerListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dangerListText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#7F1D1D',
-  },
-  dangerActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    justifyContent: 'flex-end',
-  },
-  dangerGhostBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    backgroundColor: '#FFFFFF',
-  },
-  dangerGhostText: {
-    color: COLORS.red,
-    fontWeight: '800',
-    fontSize: 12,
-  },
-  dangerPrimaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: COLORS.red,
-  },
-  dangerPrimaryText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 12,
-  },
-
-  // ===== Modal Styles =====
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  modalCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    width: '100%',
-    maxWidth: 430,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  modalHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modalIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.text,
-  },
-  modalBody: {
-    padding: 16,
-  },
-  modalText: {
-    fontSize: 13,
-    color: COLORS.text,
-    lineHeight: 20,
-  },
-  confirmInput: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: COLORS.text,
-    backgroundColor: '#FAFAFA',
-  },
-  modalList: {
-    marginTop: 12,
-    gap: 8,
-  },
-  modalListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modalListText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  modalBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-  },
-  modalBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalBtnGhost: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  modalBtnDanger: {
-    backgroundColor: COLORS.red,
-  },
-  modalBtnGhostText: {
-    color: COLORS.text,
-    fontWeight: '800',
-  },
-  modalBtnDangerText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  confirmHint: {
-    marginTop: 10,
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-
-  // ===== Change Password Section =====
+  /* SECURITY */
   passwordCard: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
   },
-  passwordLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  passwordHelp: {
-    fontSize: 12,
-    color: COLORS.muted,
-    marginBottom: 12,
-  },
+  fieldStack: { gap: 10 },
   passwordField: {
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     borderRadius: 10,
     backgroundColor: '#FBFBFB',
@@ -1669,9 +1371,9 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   passwordMessage: {
-    marginTop: 8,
+    marginTop: 6,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   passwordBtn: {
     flexDirection: 'row',
@@ -1680,20 +1382,57 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: COLORS.maroon,
     paddingVertical: 12,
-    paddingHorizontal: 16,
     borderRadius: 10,
-    marginTop: 12,
+    marginTop: 10,
   },
-  passwordBtnText: {
-    color: '#fff',
+  passwordBtnText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+
+  /* PROFILE & CONTACT */
+  profileContactCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: CARD.border,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    padding: 0,
+    overflow: 'hidden',
+  },
+  profileSection: {
+    padding: 8,
+  },
+  profileSectionWithBorder: {
+    borderBottomWidth: CARD.border,
+    borderBottomColor: '#F1F5F9',
+  },
+  profileSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: CARD.border,
+    borderBottomColor: '#F8FAFC',
+  },
+  profileSectionIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FDF4F4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    borderWidth: CARD.border,
+    borderColor: '#F3DADA',
+  },
+  profileSectionTitle: {
+    fontSize: 13,
     fontWeight: '800',
-    fontSize: 14,
+    color: COLORS.text,
+    letterSpacing: 0.2,
   },
 
-  // ===== Goods & Services Bio (redesign) =====
+  /* GOODS & SERVICES */
   gsCard: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     borderRadius: 14,
     padding: 12,
@@ -1706,20 +1445,16 @@ const styles = StyleSheet.create({
   },
   gsLabel: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '900',
     color: COLORS.text,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  gsChar: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
+  gsChar: { fontSize: 11, fontWeight: '800', color: '#6B7280' },
   gsInput: {
     minHeight: 110,
     maxHeight: 220,
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     borderRadius: 12,
     padding: 12,
@@ -1727,17 +1462,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBFBFB',
     lineHeight: 20,
   },
-  gsHelp: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  gsControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    gap: 10,
-  },
+  gsHelp: { marginTop: 6, fontSize: 12, color: '#6B7280' },
+  gsControls: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 10 },
   gsAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1746,11 +1472,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: '#FDF4F4',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: '#F3DADA',
   },
-  gsAddText: { color: COLORS.maroon, fontWeight: '800', fontSize: 12 },
-  gsAddCount: { color: COLORS.maroon, fontWeight: '700', fontSize: 12, opacity: 0.9 },
+  gsAddText: { color: COLORS.maroon, fontWeight: '900', fontSize: 12 },
+  gsAddCount: { color: COLORS.maroon, fontWeight: '800', fontSize: 12 },
   gsSaveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1760,19 +1486,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: COLORS.maroon,
   },
-  gsSaveText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-  gsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
-  },
+  gsSaveText: { color: '#fff', fontWeight: '900', fontSize: 12 },
+  gsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   gsTile: {
     width: 86,
     height: 86,
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     position: 'relative',
   },
@@ -1792,34 +1513,25 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: '#F3DADA',
     backgroundColor: '#FFF7F7',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
-  gsAddTileText: { color: COLORS.maroon, fontWeight: '800', fontSize: 12 },
-  gsNote: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  gsAddTileText: { color: COLORS.maroon, fontWeight: '900', fontSize: 12 },
+  gsNote: { marginTop: 8, fontSize: 12, fontWeight: '800' },
 
-  // ===== Privacy Settings =====
+  /* PRIVACY */
   privacyCard: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: COLORS.border,
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
   },
-  privacyHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12,
-  },
+  privacyHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   privacyIconCircle: {
     width: 32,
     height: 32,
@@ -1827,59 +1539,115 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDF4F4',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: CARD.border,
     borderColor: '#F3DADA',
   },
-  privacyHeading: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.text,
-  },
-  privacySub: {
-    marginTop: 2,
-    fontSize: 12,
-    color: COLORS.muted,
-    lineHeight: 16,
-  },
-  privacyToggle: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#E5E7EB',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  privacyToggleActive: {
-    backgroundColor: COLORS.maroon,
-  },
+  privacyHeading: { fontSize: 16, fontWeight: '900', color: COLORS.text },
+  privacySub: { marginTop: 2, fontSize: 12, color: COLORS.muted },
+  privacyToggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#E5E7EB', padding: 2, justifyContent: 'center' },
+  privacyToggleActive: { backgroundColor: COLORS.maroon },
   privacyToggleThumb: {
-    width: 20,
-    height: 20,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF',
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2,
+  },
+  privacyToggleThumbActive: { transform: [{ translateX: 20 }] },
+  privacyInfo: { gap: 8, paddingTop: 8, borderTopWidth: CARD.border, borderTopColor: '#EEF0F4' },
+  privacyInfoItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  privacyInfoText: { flex: 1, fontSize: 12, color: COLORS.muted },
+
+  /* DANGER */
+  dangerWrap: {
+    borderRadius: 14,
+    borderWidth: CARD.border,
+    borderColor: '#FECACA',
+    backgroundColor: '#FFF7F7',
+    padding: 12,
+    gap: 10,
+  },
+  dangerHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  dangerIconCircle: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#FEE2E2',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: CARD.border, borderColor: '#FECACA',
+  },
+  dangerHeading: { fontSize: 16, fontWeight: '900', color: COLORS.red },
+  dangerSub: { marginTop: 2, fontSize: 12, color: '#7F1D1D' },
+  dangerList: { gap: 6 },
+  dangerListItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dangerListText: { flex: 1, fontSize: 13, color: '#7F1D1D' },
+  dangerActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: 'flex-end' },
+  dangerPrimaryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: COLORS.red,
+  },
+  dangerPrimaryText: { color: '#fff', fontWeight: '900', fontSize: 12 },
+
+  /* MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 430,
+    overflow: 'hidden',
+    borderWidth: CARD.border,
+    borderColor: COLORS.border,
+  },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: CARD.border,
+    borderBottomColor: '#EEF0F4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: CARD.border,
+    borderColor: '#FECACA',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '900', color: COLORS.text },
+  modalBody: { padding: 16 },
+  modalText: { fontSize: 13, color: COLORS.text, lineHeight: 20 },
+  modalInfoBox: {
+    backgroundColor: '#F8FAFC',
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
-  privacyToggleThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
-  privacyInfo: {
+    padding: 12,
+    marginTop: 16,
     gap: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
   },
-  privacyInfoItem: {
+  modalInfoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  privacyInfoText: {
+  modalInfoText: {
     flex: 1,
-    fontSize: 12,
-    color: COLORS.muted,
+    fontSize: 13,
+    color: COLORS.text,
   },
+  modalBtnRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  modalBtn: { flex: 1, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  modalBtnGhost: { backgroundColor: '#FFFFFF', borderWidth: CARD.border, borderColor: COLORS.border },
+  modalBtnDanger: { backgroundColor: COLORS.red },
+  modalBtnGhostText: { color: COLORS.text, fontWeight: '900' },
+  modalBtnDangerText: { color: '#FFFFFF', fontWeight: '900' },
+
+
+  /* LOADING */
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#fff', backgroundColor: COLORS.maroon, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
 });
