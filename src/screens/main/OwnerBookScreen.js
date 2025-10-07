@@ -19,6 +19,7 @@ import {
   ownerAcceptSpecialEventRequest,
 } from '../../services/specialpackage/customPackageRequest';
 import { getCurrentUser } from '../../services/authService';
+import { supabase } from '../../services/supabase';
 
 const MAROON = '#6B2E2B';
 
@@ -243,6 +244,10 @@ export default function OwnerBookScreen({ navigation }) {
 
   const formatTime = (timeString) => (timeString ? timeString : 'N/A');
 
+  const getConversationType = (event) => {
+    return 'special_event_request';
+  };
+
   const renderEventCard = (event) => (
     <View key={event.id} style={[styles.bookingCard, styles.specialEventCard]}>
       <View style={styles.bookingHeader}>
@@ -324,26 +329,136 @@ export default function OwnerBookScreen({ navigation }) {
       )}
       
       {event.status === 'owner_accepted' && activeTab === 'ongoing' && (
-        <TouchableOpacity
-          style={[styles.acceptButton, { backgroundColor: '#1565C0' }]}
-          onPress={() => updateEventStatus(event.id, 'in_progress')}
-        >
-          <Ionicons name="play-circle" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Start Event</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#1565C0' }]}
+            onPress={() => updateEventStatus(event.id, 'in_progress')}
+          >
+            <Ionicons name="play-circle" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Start Event</Text>
+          </TouchableOpacity>
+          
+          {/* Add message button */}
+          <TouchableOpacity 
+            style={[styles.acceptButton, styles.messageBtn]} 
+            onPress={async () => {
+              try {
+                // Get customer profile first
+                const customer = await getTouristProfile(event.customer_id);
+                
+                navigation.navigate('Communication', {
+                  screen: 'ChatRoom',
+                  params: { 
+                    bookingId: event.id,
+                    subject: `Special Event: ${event.event_type || 'Event'}`,
+                    participantRole: 'owner',
+                    requestType: 'special_event_request',
+                    packageId: null,
+                    eventId: event.special_event_request_id || null,
+                    contactName: customer?.name || event.customer_name || 'Customer',
+                    userRole: 'owner'
+                  }
+                });
+              } catch (error) {
+                console.error('Error getting customer info:', error);
+                // Fallback navigation if customer lookup fails
+                navigation.navigate('Communication', {
+                  screen: 'ChatRoom',
+                  params: {
+                    bookingId: event.id,
+                    subject: `Special Event: ${event.event_type || 'Event'}`,
+                    participantRole: 'owner',
+                    requestType: 'special_event_request',
+                    packageId: null,
+                    eventId: event.special_event_request_id || null,
+                    contactName: event.customer_name || 'Customer',
+                    userRole: 'owner'
+                  }
+                });
+              }
+            }}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Message Customer</Text>
+          </TouchableOpacity>
+        </>
       )}
       
       {event.status === 'in_progress' && activeTab === 'ongoing' && (
-        <TouchableOpacity
-          style={[styles.acceptButton, { backgroundColor: '#4CAF50' }]}
-          onPress={() => handleCompleteEvent(event)}
-        >
-          <Ionicons name="camera" size={18} color="#fff" />
-          <Text style={styles.acceptButtonText}>Complete with Photo</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[styles.acceptButton, { backgroundColor: '#4CAF50' }]}
+            onPress={() => handleCompleteEvent(event)}
+          >
+            <Ionicons name="camera" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Complete with Photo</Text>
+          </TouchableOpacity>
+          
+          {/* Add message button for in-progress events */}
+          <TouchableOpacity 
+            style={[styles.acceptButton, styles.messageBtn]} 
+            onPress={async () => {
+              try {
+                // Get customer profile first
+                const customer = await getTouristProfile(event.customer_id);
+                
+                navigation.navigate('Communication', {
+                  screen: 'ChatRoom',
+                  params: { 
+                    bookingId: event.id,
+                    subject: `Special Event: ${event.event_type || 'Event'}`,
+                    participantRole: 'owner',
+                    requestType: 'special_event_request',
+                    packageId: null,
+                    eventId: event.special_event_request_id || null,
+                    contactName: customer?.name || event.customer_name || 'Customer',
+                    userRole: 'owner'
+                  }
+                });
+              } catch (error) {
+                console.error('Error getting customer info:', error);
+                // Fallback navigation if customer lookup fails
+                navigation.navigate('Communication', {
+                  screen: 'ChatRoom',
+                  params: {
+                    bookingId: event.id,
+                    subject: `Special Event: ${event.event_type || 'Event'}`,
+                    participantRole: 'owner',
+                    requestType: 'special_event_request',
+                    packageId: null,
+                    eventId: event.special_event_request_id || null,
+                    contactName: event.customer_name || 'Customer',
+                    userRole: 'owner'
+                  }
+                });
+              }
+            }}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+            <Text style={styles.acceptButtonText}>Message Customer</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
+  const getTouristProfile = async (customerId) => {
+    if (!customerId || customerId === 'undefined') {
+      console.warn('No valid customerId provided');
+      return { id: null, name: 'Tourist' };
+    }
+
+    const { data, error } = await supabase
+      .from('public_user_profiles')
+      .select('id, name')
+      .eq('id', customerId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching tourist profile:', error);
+      return { id: customerId, name: 'Tourist' };
+    }
+    return data || { id: customerId, name: 'Tourist' };
+  };
 
   const renderEmptyState = () => {
     const getEmptyStateConfig = () => {
@@ -671,6 +786,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   specialEventAcceptButton: { backgroundColor: '#FF5722' },
+  messageBtn: {
+    backgroundColor: '#007AFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   acceptButtonText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   /* Loading */

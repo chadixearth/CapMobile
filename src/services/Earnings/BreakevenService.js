@@ -214,6 +214,46 @@ export async function getBreakevenExpenseCache(driverId) {
 }
 
 /**
+ * Get breakeven history directly from Supabase with proper filtering
+ */
+export async function getBreakevenHistoryDirect({
+  driverId,
+  periodType = 'daily',
+  limit = 30,
+  offset = 0,
+  excludeCurrent = false,
+}) {
+  try {
+    if (!driverId) return { success: false, error: 'driverId required' };
+    
+    let query = supabase
+      .from('breakeven_history')
+      .select('*')
+      .eq('driver_id', driverId)
+      .eq('period_type', periodType);
+    
+    // For daily, exclude today's record (PH timezone)
+    if (periodType === 'daily' && excludeCurrent) {
+      const now = new Date();
+      const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+      const todayPH = phTime.toISOString().split('T')[0];
+      const todayStartPH = `${todayPH}T00:00:00+08:00`;
+      
+      query = query.lt('period_start', todayStartPH);
+    }
+    
+    const { data, error } = await query
+      .order('period_start', { ascending: false })
+      .range(offset, offset + limit - 1);
+      
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: { items: data || [] } };
+  } catch (e) {
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
+
+/**
  * Upsert a daily row in breakeven_history using the latest /breakeven summary.
  * Unique key: (driver_id, period_type, period_start)
  */

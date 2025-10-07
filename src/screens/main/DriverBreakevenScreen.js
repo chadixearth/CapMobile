@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import BreakevenNotificationBadge from '../../components/BreakevenNotificationBadge';
+import BreakevenChart from '../../components/BreakevenChart';
 import { colors, spacing, card } from '../../styles/global';
 
 import { getCurrentUser } from '../../services/authService';
@@ -27,6 +28,7 @@ import BreakevenNotificationManager from '../../services/breakeven';
 import {
   getBreakeven,
   getBreakevenHistory,
+  getBreakevenHistoryDirect,
   upsertBreakevenHistoryFromSummary,
   setBreakevenExpenseCache,
   getTodayExpenses,
@@ -591,11 +593,39 @@ export default function EarningsScreen({ navigation, route }) {
     [fetchBreakevenBlock]
   );
 
+  // Load chart data when frequency changes
+  const loadChartData = useCallback(async () => {
+    if (!driverId) return;
+    
+    const periodTypeMap = {
+      'Daily': 'daily',
+      'Weekly': 'weekly',
+      'Monthly': 'monthly'
+    };
+    const periodType = periodTypeMap[frequency] || 'daily';
+    
+    try {
+      const res = await getBreakevenHistoryDirect({
+        driverId,
+        periodType,
+        limit: 10, // Show more data points for chart
+        offset: 0,
+        excludeCurrent: periodType === 'daily',
+      });
+      
+      const items = (res?.success && res?.data?.items) ? res.data.items : [];
+      setHistoryItems(items || []);
+    } catch (e) {
+      setHistoryItems([]);
+    }
+  }, [driverId, frequency]);
+
   // Quick visual reset before each fetch on frequency change
   useEffect(() => {
     resetBreakevenState();
     fetchAll(driverId, frequency);
-  }, [driverId, frequency, fetchAll]);
+    loadChartData(); // Load chart data
+  }, [driverId, frequency, fetchAll, loadChartData]);
 
   // Recompute & (daily) upsert when expenses change
   useEffect(() => {
@@ -672,6 +702,55 @@ export default function EarningsScreen({ navigation, route }) {
     setRefreshing(false);
   }, [driverId, frequency, fetchAll]);
 
+
+  // Reset expenses BOTH locally and in the DB (for Daily)
+  const onResetExpenses = useCallback(async () => {
+    if (!driverId) return;
+    try {
+      if (periodKey === 'today') {
+        // 1) Clear the writable cache used by Daily
+        await setBreakevenExpenseCache(driverId, 0);
+        console.log('[Breakeven] Daily cache reset → 0');
+
+        // 2) Hard-clear today's breakeven_history EXPENSES row (PH calendar day)
+        const [gteISO, ltISO] = getPhTodayUtcWindow(); // already defined above
+        const { error } = await supabase
+          .from('breakeven_history')
+          .update({ expenses: 0 })
+          .eq('driver_id', driverId)
+          .eq('period_type', 'daily')
+          .gte('period_start', gteISO)
+          .lt('period_start', ltISO);
+
+        if (error) {
+          console.log('[Breakeven] history reset error:', error.message || error);
+        } else {
+          console.log('[Breakeven] breakeven_history.expenses set to 0 for today');
+        }
+      }
+    } catch (e) {
+      console.log('[Breakeven] Failed to reset DB expenses:', e?.message || e);
+    } finally {
+      // Local/session clear
+      setExpenseItems([]);
+      setExpenseInput('0.00');
+      setDbExpensesBase(0);
+
+      // Clean local storage keys for the active period
+      try {
+        await AsyncStorage.removeItem(EXPENSES_INPUT_KEY(driverId, periodKey));
+        await AsyncStorage.setItem(
+          EXPENSES_META_KEY(driverId, periodKey),
+          JSON.stringify({ updatedAt: Date.now() })
+        );
+      } catch {}
+
+      // Re-fetch so baseExp = max(todayHistory=0, cache=0)
+      fetchAll(driverId, frequency);
+    }
+  }, [driverId, periodKey, frequency, fetchAll]);
+
+
   // History (kept)
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
@@ -681,26 +760,21 @@ export default function EarningsScreen({ navigation, route }) {
     setHistoryLoading(true);
     setHistoryPage(0);
 
-    // Get date filters based on current frequency
-    let dateFrom, dateTo;
-    if (frequency === 'Weekly') {
-      const [s, e] = getPhWeekUtcWindow();
-      dateFrom = s.split('T')[0];
-      dateTo = e.split('T')[0];
-    } else if (frequency === 'Monthly') {
-      const [s, e] = getPhMonthUtcWindow();
-      dateFrom = s.split('T')[0];
-      dateTo = e.split('T')[0];
-    }
+    // Map frequency to period_type
+    const periodTypeMap = {
+      'Daily': 'daily',
+      'Weekly': 'weekly', 
+      'Monthly': 'monthly'
+    };
+    const periodType = periodTypeMap[frequency] || 'daily';
 
     try {
-      const res = await getBreakevenHistory({
+      const res = await getBreakevenHistoryDirect({
         driverId,
-        periodType: 'daily',
+        periodType,
         limit: 5,
-        excludeCurrent: true,
-        dateFrom,
-        dateTo,
+        offset: 0,
+        excludeCurrent: periodType === 'daily',
       });
 
       const items = (res?.success && res?.data?.items) ? res.data.items : [];
@@ -713,7 +787,7 @@ export default function EarningsScreen({ navigation, route }) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [driverId]);
+  }, [driverId, frequency]);
 
   const loadMoreHistory = useCallback(async () => {
     if (historyLoading || !hasMoreHistory) return;
@@ -721,27 +795,21 @@ export default function EarningsScreen({ navigation, route }) {
     setHistoryLoading(true);
     const nextPage = historyPage + 1;
 
-    // Get date filters based on current frequency
-    let dateFrom, dateTo;
-    if (frequency === 'Weekly') {
-      const [s, e] = getPhWeekUtcWindow();
-      dateFrom = s.split('T')[0];
-      dateTo = e.split('T')[0];
-    } else if (frequency === 'Monthly') {
-      const [s, e] = getPhMonthUtcWindow();
-      dateFrom = s.split('T')[0];
-      dateTo = e.split('T')[0];
-    }
+    // Map frequency to period_type
+    const periodTypeMap = {
+      'Daily': 'daily',
+      'Weekly': 'weekly',
+      'Monthly': 'monthly'
+    };
+    const periodType = periodTypeMap[frequency] || 'daily';
 
     try {
-      const res = await getBreakevenHistory({
+      const res = await getBreakevenHistoryDirect({
         driverId,
-        periodType: 'daily',
+        periodType,
         limit: 5,
-        excludeCurrent: true,
         offset: nextPage * 5,
-        dateFrom,
-        dateTo,
+        excludeCurrent: periodType === 'daily',
       });
 
       const newItems = (res?.success && res?.data?.items) ? res.data.items : [];
@@ -753,7 +821,7 @@ export default function EarningsScreen({ navigation, route }) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [driverId, historyPage, historyLoading, hasMoreHistory]);
+  }, [driverId, frequency, historyPage, historyLoading, hasMoreHistory]);
 
   const closeHistory = () => {
     setHistoryOpen(false);
@@ -1093,8 +1161,8 @@ export default function EarningsScreen({ navigation, route }) {
             <View style={styles.tipBanner}>
               <Ionicons name="information-circle-outline" size={16} color="#0B3D91" style={{ marginRight: 8 }} />
               <Text style={styles.tipText}>
-                You have not reached profit yet. Accept about{' '}
-                <Text style={{ fontWeight: '800' }}>{bookingsNeeded}</Text> ride(s) in total to cover{' '}
+                You have not reached profit yet. Accept {' '}
+                <Text style={{ fontWeight: '800' }}></Text> ride(s) to cover{' '}
                 <Text style={{ fontWeight: '800' }}>
                   ₱ {formatPeso(totalExpenses)}
                 </Text>. Current deficit:{' '}
@@ -1107,139 +1175,131 @@ export default function EarningsScreen({ navigation, route }) {
 
           {/* Actions */}
           <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={clearExpenses} style={styles.btnOutline} activeOpacity={0.85}>
+            <TouchableOpacity onPress={onResetExpenses} style={styles.btnOutline} activeOpacity={0.85}>
               <Ionicons name="refresh" size={14} color={colors.primary} />
-              <Text style={styles.btnOutlineText}>Reset (session only)</Text>
+              <Text style={styles.btnOutlineText}>Reset expenses</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ====== Breakeven Summary card ====== */}
-        <View style={[card, styles.elevatedCard]}>
-          <View style={styles.summaryHeaderRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <MaterialCommunityIcons name="progress-clock" size={18} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.sectionTitle}>Breakeven Summary</Text>
+        {/* ====== Modern Breakeven Summary Card ====== */}
+        <View style={[card, styles.elevatedCard, styles.modernCard]}>
+          {/* Header */}
+          <View style={styles.modernHeader}>
+            <View style={styles.headerLeft}>
+              <View style={styles.modernIconContainer}>
+                <MaterialCommunityIcons name="chart-line" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.modernTitle}>Breakeven Summary</Text>
+                <Text style={styles.modernSubtitle}>{periodLabel(periodStart, periodEnd, PERIOD_LABEL_TZ)}</Text>
+              </View>
             </View>
-
-            {/* History icon → modal */}
-            <TouchableOpacity onPress={openHistory} style={styles.historyBtn} accessibilityLabel="Open breakeven & profit history">
-              <MaterialCommunityIcons name="history" size={18} color={colors.primary} />
-              <Text style={styles.historyBtnText}>History</Text>
+            <TouchableOpacity onPress={openHistory} style={styles.modernHistoryBtn}>
+              <Ionicons name="time-outline" size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
 
-          {/* Summary date (formatted in PH timezone) */}
-          <View style={styles.summaryDateWrap}>
-            <Text style={styles.summaryDateLabel}>Summary date</Text>
-            <Text style={styles.summaryDateValue}>{periodLabel(periodStart, periodEnd, PERIOD_LABEL_TZ)}</Text>
-          </View>
-
-          <Text style={styles.summaryLine}>
-            Breakeven at <Text style={styles.strong}>{bookingsNeeded}</Text> ride(s). You’re at{' '}
-            <Text style={styles.strong}>{acceptedBookings}</Text>.
-          </Text>
-
-          {/* progress bar */}
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${ridesProgress * 100}%` }]} />
-          </View>
-          <View style={styles.progressMeta}>
-            <Text style={styles.progressMetaText}>{Math.round(ridesProgress * 100)}%</Text>
-            <Text style={styles.progressMetaText}>({acceptedBookings}/{bookingsNeeded})</Text>
-          </View>
-
-          {/* margin/deficit */}
-          {currentProfit > 0 ? (
-            <View style={[styles.callout, styles.calloutSuccess]}>
-              <Ionicons name="shield-checkmark-outline" size={16} color="#1B5E20" style={{ marginRight: 8 }} />
-              <Text style={styles.calloutText}>
-                Safety margin: <Text style={styles.strong}>{safetyMarginPct ? `${safetyMarginPct.toFixed(1)}%` : '—'}</Text>. Keep it up!
-              </Text>
-            </View>
-          ) :  (
-            <View style={[styles.callout, styles.calloutWarn]}>
-              <Ionicons name="alert-outline" size={16} color="#8B2C2C" style={{ marginRight: 8 }} />
-              <Text style={styles.calloutText}>
-                Current deficit: <Text style={styles.strong}>₱ {formatPeso(Math.abs(currentProfit))}</Text>.
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* ====== Source Mix ====== */}
-        <View style={[card, styles.elevatedCard]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <MaterialCommunityIcons name="chart-donut" size={18} color={colors.primary} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Revenue Mix (Driver Share)</Text>
-          </View>
-
-          <View style={styles.mixRow}>
-            <View style={styles.mixLeft}>
-              <Text style={styles.mixLabel}>Standard rides (80%)</Text>
-              <Text style={styles.mixDesc}>Driver share from bookings</Text>
-            </View>
-            <Text style={styles.mixValue}>₱ {formatPeso(shareStandard)}</Text>
-          </View>
-
-          <View style={[styles.mixRow, styles.feedDivider]}>
-            <View style={styles.mixLeft}>
-              <Text style={styles.mixLabel}>Custom tours (100%)</Text>
-              <Text style={styles.mixDesc}>Driver share from custom</Text>
-            </View>
-            <Text style={styles.mixValue}>₱ {formatPeso(shareCustom)}</Text>
-          </View>
-
-          <View style={[styles.mixRow, { marginTop: 8 }]}>
-            <View style={styles.mixLeft}>
-              <Text style={[styles.mixLabel, { fontWeight: '800' }]}>Total (period)</Text>
-            </View>
-            <Text style={[styles.mixValue, { fontWeight: '900' }]}>₱ {formatPeso(revenuePeriod)}</Text>
-          </View>
-        </View>
-
-        {/* ====== Expense Breakdown ====== */}
-        <View style={[card, styles.elevatedCard]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Expenses Breakdown</Text>
-          </View>
-
-          {expenseItems.length === 0 ? (
-            <Text style={styles.muted}>
-              No new expenses added this session.
-            </Text>
-          ) : (
-            <View>
-              {expenseItems.map((amt, idx) => (
-                <View key={idx} style={[styles.mixRow, idx < expenseItems.length - 1 && styles.feedDivider]}>
-                  <View style={styles.mixLeft}>
-                    <Text style={styles.mixLabel}>Session Expense #{idx + 1}</Text>
+          {/* Status Overview */}
+          <View style={styles.statusOverview}>
+            {(() => {
+              const hasData = (acceptedBookings > 0) || (revenuePeriod > 0) || (totalExpenses > 0);
+              
+              if (!hasData) {
+                return (
+                  <View style={[styles.modernStatusBadge, { backgroundColor: '#F3F4F6' }]}>
+                    <MaterialCommunityIcons name="information-outline" size={18} color="#6B7280" />
+                    <Text style={[styles.modernStatusText, { color: '#6B7280' }]}>No Data Available</Text>
                   </View>
-                  <Text style={styles.mixValue}>₱ {formatPeso(amt)}</Text>
+                );
+              }
+              
+              const breakevenHit = (revenuePeriod || 0) >= (totalExpenses || 0);
+              const profitable = (revenuePeriod || 0) > (totalExpenses || 0);
+              const meta = statusMeta({ breakeven_hit: breakevenHit, profitable });
+              
+              return (
+                <View style={[styles.modernStatusBadge, { backgroundColor: meta.bg }]}>
+                  <MaterialCommunityIcons name={meta.icon} size={18} color={meta.fg} />
+                  <Text style={[styles.modernStatusText, { color: meta.fg }]}>{meta.label}</Text>
                 </View>
-              ))}
-            </View>
-          )}
-
-          <View style={[styles.mixRow, { marginTop: 8 }]}>
-            <View style={styles.mixLeft}>
-              <Text style={[styles.mixLabel, { fontWeight: '800' }]}>DB Expenses (base)</Text>
-              <Text style={styles.mixDesc}>
-                Daily: max(today history, cache). Weekly/Monthly: sum of breakeven history in range.
-              </Text>
-            </View>
-            <Text style={[styles.mixValue, { fontWeight: '900' }]}>₱ {formatPeso(dbExpensesBase)}</Text>
+              );
+            })()}
           </View>
 
-          <View style={[styles.mixRow]}>
-            <View style={styles.mixLeft}>
-              <Text style={[styles.mixLabel, { fontWeight: '800' }]}>Total Expenses (used)</Text>
-              <Text style={styles.mixDesc}>DB base + this session</Text>
+          {/* Progress Section */}
+          <View style={styles.progressSection}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressTitle}>Breakeven Progress</Text>
+              <Text style={styles.progressPercentage}>{Math.round(ridesProgress * 100)}%</Text>
             </View>
-            <Text style={[styles.mixValue, { fontWeight: '900' }]}>₱ {formatPeso(totalExpenses)}</Text>
+            <View style={styles.modernProgressTrack}>
+              <View style={[styles.modernProgressFill, { width: `${ridesProgress * 100}%` }]} />
+            </View>
+            <View style={styles.progressDetails}>
+              <Text style={styles.progressText}>{acceptedBookings} of {bookingsNeeded} rides completed</Text>
+            </View>
+          </View>
+
+          {/* Revenue & Expenses Breakdown */}
+          <View style={styles.breakdownSection}>
+            <Text style={styles.breakdownTitle}>Breakdown</Text>
+            
+            {/* Revenue Items */}
+            <View style={styles.breakdownGroup}>
+              <Text style={styles.breakdownGroupTitle}>Revenue Sources</Text>
+              <View style={styles.breakdownItem}>
+                <View style={styles.breakdownItemLeft}>
+                  <View style={[styles.breakdownDot, { backgroundColor: '#10B981' }]} />
+                  <Text style={styles.breakdownItemText}>Standard Rides</Text>
+                </View>
+                <Text style={styles.breakdownItemAmount}>₱{formatPeso(shareStandard)}</Text>
+              </View>
+              <View style={styles.breakdownItem}>
+                <View style={styles.breakdownItemLeft}>
+                  <View style={[styles.breakdownDot, { backgroundColor: '#3B82F6' }]} />
+                  <Text style={styles.breakdownItemText}>Custom Tours</Text>
+                </View>
+                <Text style={styles.breakdownItemAmount}>₱{formatPeso(shareCustom)}</Text>
+              </View>
+            </View>
+
+            {/* Expense Items */}
+            <View style={styles.breakdownGroup}>
+              <Text style={styles.breakdownGroupTitle}>Expenses</Text>
+              <View style={styles.breakdownItem}>
+                <View style={styles.breakdownItemLeft}>
+                  <View style={[styles.breakdownDot, { backgroundColor: '#F59E0B' }]} />
+                  <Text style={styles.breakdownItemText}>Base Expenses</Text>
+                </View>
+                <Text style={styles.breakdownItemAmount}>₱{formatPeso(dbExpensesBase)}</Text>
+              </View>
+              {expenseItems.length > 0 && (
+                <View style={styles.breakdownItem}>
+                  <View style={styles.breakdownItemLeft}>
+                    <View style={[styles.breakdownDot, { backgroundColor: '#EF4444' }]} />
+                    <Text style={styles.breakdownItemText}>Session Added</Text>
+                  </View>
+                  <Text style={styles.breakdownItemAmount}>₱{formatPeso(expenseItems.reduce((sum, n) => sum + (Number(n) || 0), 0))}</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
+
+        {/* Breakeven Chart */}
+        <BreakevenChart 
+          data={historyItems} 
+          currentData={{
+            revenue_driver: revenueForTile,
+            expenses: totalExpenses,
+            period_start: periodStart,
+            period_end: periodEnd,
+            period_type: frequency === 'Daily' ? 'daily' : frequency === 'Weekly' ? 'weekly' : 'monthly'
+          }}
+        />
+
+
       </ScrollView>
 
       {/* ==================== HISTORY MODAL ==================== */}
@@ -1599,7 +1659,7 @@ const styles = StyleSheet.create({
     borderColor: '#EDEDED',
     backgroundColor: '#fff',
   },
-  historyBtnText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+  historyBtnText: { color: colors.primary, fontWeight: '700', fontSize: 12, marginLeft: 4 },
   summaryDateWrap: { marginTop: 2, marginBottom: 8 },
   summaryDateLabel: { color: colors.textSecondary, fontSize: 11 },
   summaryDateValue: { color: colors.text, fontSize: 13, fontWeight: '700' },
@@ -1695,5 +1755,236 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
     marginLeft: 6,
+  },
+  // Breakeven Summary Card Styles
+  statusSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  periodLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  revenueSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  expensesSection: {
+    marginBottom: 0,
+  },
+  // Modern Card Styles
+  modernCard: {
+    overflow: 'hidden',
+  },
+  modernHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#F0E7E3',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0E7E3',
+    borderRadius:15,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  modernIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  modernTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  modernSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  modernHistoryBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F0E7E3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusOverview: {
+    padding: 16,
+    paddingBottom: 12,
+  },
+  modernStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  modernStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+
+  progressSection: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  progressTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  progressPercentage: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  modernProgressTrack: {
+    height: 6,
+    backgroundColor: '#F0E7E3',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  modernProgressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 3,
+  },
+  progressDetails: {
+    marginTop: 6,
+  },
+  progressText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  breakdownSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  breakdownTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  breakdownGroup: {
+    marginBottom: 12,
+  },
+  breakdownGroupTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  breakdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  breakdownItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  breakdownDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 10,
+  },
+  breakdownItemText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  breakdownItemAmount: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  // Additional styles from DriverBreakevenScreen_styles.js
+  statusSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 8,
+  },
+  periodLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  revenueSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  expensesSection: {
+    marginBottom: 0,
   },
 });
