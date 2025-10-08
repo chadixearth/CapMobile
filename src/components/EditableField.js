@@ -1,11 +1,14 @@
-import React, { memo } from 'react';
+//EDITABLE FIELD
+
+import React from 'react';
 import { View, TextInput, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const EditableField = memo(function EditableField({ value, onChangeText, placeholder, keyboardType, secureTextEntry }) {
+const EditableField = ({ value, onChangeText, placeholder, keyboardType, secureTextEntry }) => {
   return (
     <View style={styles.inputRow}>
       <TextInput
+        key={placeholder}
         style={styles.input}
         value={value}
         onChangeText={onChangeText}
@@ -13,11 +16,16 @@ const EditableField = memo(function EditableField({ value, onChangeText, placeho
         placeholderTextColor="#888"
         keyboardType={keyboardType}
         secureTextEntry={secureTextEntry}
+        blurOnSubmit={false}
+        returnKeyType="next"
+        autoCorrect={false}
+        autoCapitalize="none"
+        textContentType="none"
       />
       <Ionicons name="pencil-outline" size={18} color="#888" style={styles.inputIcon} />
     </View>
   );
-});
+};
 
 const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, position: 'relative' },

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+//PAYOUT HISTORY MODAL
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Modal,
   View,
@@ -7,7 +8,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  StatusBar,
+  Image,
+  Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatCurrency, getDriverPayoutHistory } from '../services/Earnings/EarningsService';
@@ -20,11 +22,15 @@ const MUTED = '#6B7280';
 const TEXT = '#1A1A1A';
 const PH_TZ = 'Asia/Manila';
 
+const ITEMS_PER_PAGE = 5;
+
 export default function PayoutHistoryModal({ visible, onClose, driverId }) {
   const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible && driverId) {
@@ -32,9 +38,31 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
     }
   }, [visible, driverId]);
 
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [loading, pulseAnim]);
+
   const fetchPayouts = async () => {
     setLoading(true);
     setErrorText('');
+    setCurrentPage(1);
     try {
       const result = await getDriverPayoutHistory(driverId);
       if (result.success) {
@@ -64,6 +92,16 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
     await fetchPayouts();
     setRefreshing(false);
   }, []);
+
+  const loadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
+  const displayedPayouts = useMemo(() => {
+    return payouts.slice(0, currentPage * ITEMS_PER_PAGE);
+  }, [payouts, currentPage]);
+
+  const hasMore = payouts.length > displayedPayouts.length;
 
   const fmtDate = (iso) => {
     if (!iso) return '—';
@@ -126,7 +164,7 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
   // Group by Month Year (e.g., "Sep 2025")
   const grouped = useMemo(() => {
     const map = new Map();
-    for (const p of payouts) {
+    for (const p of displayedPayouts) {
       const d = p?.payout_date ? new Date(p.payout_date) : null;
       const key = d
         ? d.toLocaleDateString('en-PH', { timeZone: PH_TZ, month: 'long', year: 'numeric' })
@@ -135,7 +173,7 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
       map.get(key).push(p);
     }
     return Array.from(map.entries()); // [ [sectionTitle, items[]], ... ]
-  }, [payouts]);
+  }, [displayedPayouts]);
 
   // Summary: totals
   const summary = useMemo(() => {
@@ -184,22 +222,26 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
 
         <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn} accessibilityLabel="Refresh">
           <Ionicons name="refresh" size={16} color={ACCENT} />
-          <Text style={styles.refreshText}>Refresh</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={styles.container}>
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={styles.container}>
         <Header />
 
         {loading ? (
           <View style={styles.loading}>
-            <ActivityIndicator size="small" color={ACCENT} />
-            <Text style={styles.loadingText}>Loading payouts…</Text>
+            <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+              <Image 
+                source={require('../../assets/TarTrack Logo_sakto.png')} 
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </Animated.View>
           </View>
         ) : errorText ? (
           <View style={styles.errorBox}>
@@ -282,21 +324,48 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
                 </View>
               </View>
             ))}
+            
+            {hasMore && (
+              <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore}>
+                <Ionicons name="chevron-down" size={16} color={ACCENT} />
+                <Text style={styles.loadMoreText}>Load More</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         )}
+        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  container: {
+    width: '100%',
+    height: '95%',
+    backgroundColor: BG,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
   headerWrap: {
     paddingTop: 8,
     paddingBottom: 10,
     backgroundColor: CARD,
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   handleBar: {
     width: 44, height: 4, borderRadius: 2,
@@ -340,8 +409,16 @@ const styles = StyleSheet.create({
   },
   refreshText: { marginLeft: 6, color: ACCENT, fontWeight: '700', fontSize: 12 },
 
-  loading: { flex: 1, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { marginTop: 10, color: MUTED, fontSize: 13 },
+  loading: { 
+    flex: 1, 
+    backgroundColor: CARD, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20
+  },
+  logoContainer: { alignItems: 'center', justifyContent: 'center', marginTop: -100 },
+  logo: { width: 200, height: 200 }, 
 
   errorBox: {
     margin: 16,
@@ -395,4 +472,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   ctaText: { color: '#fff', fontWeight: '800', fontSize: 12, marginLeft: 6 },
+
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: CARD,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  loadMoreText: {
+    color: ACCENT,
+    fontWeight: '700',
+    fontSize: 14,
+    marginLeft: 6,
+  },
 });

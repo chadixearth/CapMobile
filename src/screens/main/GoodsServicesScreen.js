@@ -1,3 +1,5 @@
+//GOODS AND SERVICES
+
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -526,44 +528,86 @@ export default function GoodsServicesScreen() {
       {/* Edit Modal */}
       <Modal
         visible={editModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
+        transparent={true}
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-              <Text style={styles.cancelButton}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Goods & Services</Text>
-            <TouchableOpacity onPress={handleSaveProfile} disabled={saving}>
-              <Text style={[styles.saveButton, saving && styles.disabledButton]}>Save</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalContent}>
-            <Text style={styles.inputLabel}>Describe your goods and services:</Text>
-            <TextInput
-              style={styles.textInput}
-              value={editDescription}
-              onChangeText={setEditDescription}
-              placeholder="Tell customers about the goods and services you offer..."
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-            
-            {userProfile && (
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setEditModalVisible(false)}
+          />
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={styles.headerSpacer} />
+              <View style={styles.modalTitleContainer}>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                <Text style={styles.modalSubtitle}>Showcase your services</Text>
+              </View>
               <TouchableOpacity 
-                style={styles.clearButton}
-                onPress={handleClearProfile}
-                disabled={saving}
+                style={styles.modalCloseButton}
+                onPress={() => setEditModalVisible(false)}
               >
-                <Ionicons name="trash-outline" size={16} color="#DC3545" />
-                <Text style={styles.clearButtonText}>Remove Profile</Text>
+                <Ionicons name="close" size={20} color={COLORS.sub} />
               </TouchableOpacity>
-            )}
-          </ScrollView>
+            </View>
+            
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <Ionicons name="business-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.inputLabel}>Services Description</Text>
+                </View>
+                <View style={styles.textInputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={editDescription}
+                    onChangeText={setEditDescription}
+                    placeholder="Describe the goods and services you offer to customers..."
+                    placeholderTextColor={COLORS.sub}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <View style={styles.inputFooter}>
+                    <Text style={styles.charCount}>{editDescription.length} characters</Text>
+                  </View>
+                </View>
+              </View>
+              
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={[styles.saveButton, saving && styles.disabledButton]}
+                  onPress={handleSaveProfile}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <View style={styles.buttonContent}>
+                      <Text style={styles.saveButtonText}>Saving...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.buttonContent}>
+                      <Ionicons name="checkmark" size={18} color={COLORS.white} />
+                      <Text style={styles.saveButtonText}>Save Changes</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                
+                {userProfile && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={handleClearProfile}
+                    disabled={saving}
+                  >
+                    <View style={styles.buttonContent}>
+                      <Ionicons name="trash-outline" size={16} color="#DC3545" />
+                      <Text style={styles.clearButtonText}>Remove</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </View>
@@ -692,71 +736,144 @@ const styles = StyleSheet.create({
   },
   
   // Modal Styles
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContainer: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.line,
-    backgroundColor: COLORS.card,
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.text,
+    marginBottom: 2,
   },
-  cancelButton: {
+  modalSubtitle: {
+    fontSize: 13,
     color: COLORS.sub,
-    fontSize: 16,
+    fontWeight: '500',
   },
-  saveButton: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    opacity: 0.5,
+  headerSpacer: {
+    width: 32,
   },
   modalContent: {
-    flex: 1,
-    padding: 16,
+    padding: 20,
+  },
+  inputContainer: {
+    marginBottom: 24,
+  },
+  inputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.text,
-    marginBottom: 8,
   },
-  textInput: {
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: COLORS.text,
+  textInputWrapper: {
+    backgroundColor: COLORS.secondary,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.line,
-    minHeight: 120,
+    overflow: 'hidden',
   },
-  clearButton: {
+  textInput: {
+    padding: 16,
+    fontSize: 15,
+    color: COLORS.text,
+    minHeight: 120,
+    lineHeight: 22,
+  },
+  inputFooter: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: COLORS.line,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.line,
+  },
+  charCount: {
+    fontSize: 11,
+    color: COLORS.sub,
+    textAlign: 'right',
+  },
+  actionButtons: {
+    gap: 10,
+  },
+  saveButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 24,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DC3545',
+  },
+  saveButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  clearButton: {
     backgroundColor: '#FFF5F5',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   clearButtonText: {
     color: '#DC3545',
+    fontSize: 13,
     fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   emptyContainer: {
     alignItems: 'center',

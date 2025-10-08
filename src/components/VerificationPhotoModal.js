@@ -1,3 +1,5 @@
+//VERIFICATION PHOTO MODAL
+
 import React, { useState } from 'react';
 import {
   View,
@@ -202,33 +204,33 @@ export default function VerificationPhotoModal({
               <Text style={styles.tipItem}>• Show completion of service</Text>
               <Text style={styles.tipItem}>• Include any relevant landmarks</Text>
             </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={onClose}
+                disabled={uploading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  styles.uploadButton,
+                  (!photo || uploading) && styles.disabledButton
+                ]}
+                onPress={uploadPhoto}
+                disabled={!photo || uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.uploadButtonText}>Upload Photo</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </ScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={onClose}
-              disabled={uploading}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.uploadButton,
-                (!photo || uploading) && styles.disabledButton
-              ]}
-              onPress={uploadPhoto}
-              disabled={!photo || uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.uploadButtonText}>Upload Photo</Text>
-              )}
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
     </Modal>
@@ -251,7 +253,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
@@ -261,7 +263,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   closeButton: {
-    padding: 5,
+    padding: 3,
   },
   modalBody: {
     padding: 20,
@@ -348,35 +350,43 @@ const styles = StyleSheet.create({
   modalFooter: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    gap: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    paddingBottom: 50,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 0,
   },
   button: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 28,
-    borderRadius: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 5,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 40,
   },
   cancelButton: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#6B2E2B',
   },
   cancelButtonText: {
     color: '#6B2E2B',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
   uploadButton: {
     backgroundColor: '#6B2E2B',
+    shadowColor: '#6B2E2B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   uploadButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
   disabledButton: {
