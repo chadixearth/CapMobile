@@ -54,29 +54,34 @@ export default function NotificationScreen({ navigation }) {
     const message = notification.message?.toLowerCase() || '';
     const userRole = user?.role;
     
-    // Smart navigation based on notification content and user role
-    if (title.includes('booking') || title.includes('request') || message.includes('booking')) {
-      if (userRole === 'tourist') {
-        navigation.navigate('Book');
-      } else if (userRole === 'driver' || userRole === 'driver-owner') {
-        navigation.navigate('Bookings');
-      } else if (userRole === 'owner') {
-        navigation.navigate('Bookings');
+    // Only navigate for specific actionable notifications
+    try {
+      if (title.includes('booking') || title.includes('request') || message.includes('booking')) {
+        if (userRole === 'tourist') {
+          navigation.navigate(Routes.BOOK);
+        } else if (userRole === 'driver' || userRole === 'driver-owner') {
+          navigation.navigate(Routes.BOOKINGS);
+        } else if (userRole === 'owner') {
+          navigation.navigate(Routes.BOOKINGS);
+        }
+      } else if (title.includes('payment') || title.includes('earning') || message.includes('payment')) {
+        if (userRole === 'driver' || userRole === 'driver-owner') {
+          navigation.navigate(Routes.BREAKEVEN);
+        } else if (userRole === 'tourist') {
+          navigation.navigate(Routes.BOOK);
+        }
+      } else if (title.includes('ride') || message.includes('ride')) {
+        if (userRole === 'tourist') {
+          navigation.navigate(Routes.BOOK);
+        } else if (userRole === 'driver' || userRole === 'driver-owner') {
+          navigation.navigate(Routes.BOOKINGS);
+        }
       }
-    } else if (title.includes('payment') || title.includes('earning') || message.includes('payment')) {
-      if (userRole === 'driver' || userRole === 'driver-owner') {
-        navigation.navigate('Breakeven');
-      } else if (userRole === 'tourist') {
-        navigation.navigate('Book');
-      }
-    } else if (title.includes('ride') || message.includes('ride')) {
-      if (userRole === 'tourist') {
-        navigation.navigate('Book');
-      } else if (userRole === 'driver' || userRole === 'driver-owner') {
-        navigation.navigate('Bookings');
-      }
+      // For announcements, updates, or other non-actionable notifications, just mark as read without navigation
+    } catch (error) {
+      console.log('Navigation not available for this notification type');
+      // Silently handle navigation errors - notification is already marked as read
     }
-    // No navigation for general announcements or unrecognized notifications
   };
 
   return (
@@ -167,10 +172,7 @@ function NotificationItem({ title, message, created_at, read, type, onPress }) {
   };
 
   return (
-    <TouchableOpacity 
-      style={[styles.itemRow, !read && styles.unreadItem]} 
-      onPress={onPress}
-    >
+    <View style={[styles.itemRow, !read && styles.unreadItem]}>
       <View style={[styles.iconCircle, { backgroundColor: getIconColor() + '20' }]}>
         <MaterialCommunityIcons name={getIcon()} size={22} color={getIconColor()} />
       </View>
@@ -181,8 +183,13 @@ function NotificationItem({ title, message, created_at, read, type, onPress }) {
         </View>
         <Text style={styles.itemMessage} numberOfLines={2}>{message}</Text>
         {!read && <View style={styles.unreadDot} />}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.actionButton} onPress={onPress}>
+            <Text style={styles.actionButtonText}>View</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -291,5 +298,21 @@ const styles = StyleSheet.create({
   emptyText: {
     color: MUTED,
     fontSize: 16,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    marginTop: 8,
+    gap: 8,
+  },
+  actionButton: {
+    backgroundColor: MAROON,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

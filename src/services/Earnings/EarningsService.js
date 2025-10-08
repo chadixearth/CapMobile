@@ -1,8 +1,9 @@
+import { apiClient } from '../improvedApiClient';
 import { getAccessToken } from '../authService';
 import { apiBaseUrl } from '../networkConfig';
 import { supabase } from '../supabase';
 
-const DEBUG_EARNINGS = true;
+const DEBUG_EARNINGS = __DEV__;
 const log = (...a) => DEBUG_EARNINGS && console.log('[EARNINGS]', ...a);
 
 const EARNINGS_API_BASE_URL = `${apiBaseUrl()}/earnings/`;
@@ -45,9 +46,9 @@ function startOfNextMonth(base = new Date()) {
 
 /* ------------------------- Supabase row helpers --------------------------- */
 function parseAmountLike(row) {
-  const amount = Number(row?.amount ?? row?.total_amount ?? 0) || 0;
-  const drv = row?.driver_earnings != null ? Number(row.driver_earnings) : amount * 0.8;
-  const adm = row?.admin_earnings != null ? Number(row.admin_earnings) : amount * 0.2;
+  const amount = Number(row?.amount ?? 0) || 0;
+  const drv = amount * 0.8;
+  const adm = amount * 0.2;
   return { amount, drv, adm };
 }
 function statusIsReversed(row) {
@@ -74,7 +75,7 @@ function parseDateSafely(v) {
 async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso') {
   let q = supabase
     .from('earnings')
-    .select('id, amount, total_amount, driver_earnings, admin_earnings, status, package_name, earning_date, driver_id');
+    .select('id, amount, status, earning_date, driver_id');
 
   q = q.eq('driver_id', String(driverId));
 
@@ -117,7 +118,7 @@ function aggregateEarnings(rows) {
     totalAdmin += adm;
     return {
       id: r.id,
-      package_name: r.package_name,
+      package_name: r.package_name || 'Tour Package',
       earning_date: r.earning_date,
       status: r.status,
       total_amount: amount,
@@ -203,9 +204,6 @@ async function computeFromSupabaseRobust(driverId, filters = {}) {
 /* --------------------------------- API ----------------------------------- */
 export async function getDriverEarnings(driverId, filters = {}) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
     const qs = new URLSearchParams();
     if (driverId !== undefined && driverId !== null && driverId !== '') {
       qs.append('driver_id', driverId);
@@ -215,18 +213,13 @@ export async function getDriverEarnings(driverId, filters = {}) {
       if (v !== undefined && v !== null && v !== '') qs.append(k, v);
     });
 
-    const url = `${EARNINGS_API_BASE_URL}mobile_earnings/?${qs.toString()}`;
-    const token = await getAccessToken().catch(() => null);
+    const endpoint = `/earnings/mobile_earnings/?${qs.toString()}`;
+    log('Calling API:', endpoint);
+    
+    const result = await apiClient.get(endpoint, { timeout: 30000 });
 
-    log('Calling API:', url);
-    const resp = await fetch(url, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (resp.ok) {
-      const data = await resp.json();
+    if (result.success) {
+      const data = result.data;
       const stats = data?.data?.statistics || {};
       const hadData =
         (Array.isArray(data?.data?.earnings) && data.data.earnings.length > 0) ||
@@ -242,7 +235,7 @@ export async function getDriverEarnings(driverId, filters = {}) {
       return await computeFromSupabaseRobust(driverId, filters);
     }
 
-    log('API non-OK, status:', resp.status);
+    log('API non-OK, status:', result.status);
     return await computeFromSupabaseRobust(driverId, filters);
   } catch (err) {
     log('API error, falling back:', err?.message || err);
@@ -330,8 +323,8 @@ export async function getDriverEarningsStats(driverId, period = 'month', customD
     });
 
     earnings_today = todayRows.reduce((sum, e) => {
-      const base = Number(e?.total_amount ?? e?.amount ?? 0);
-      const drv = e?.driver_earnings != null ? Number(e.driver_earnings) : base * 0.8;
+      const base = Number(e?.amount ?? 0);
+      const drv = base * 0.8;
       return sum + (Number.isFinite(drv) ? drv : 0);
     }, 0);
     
@@ -434,45 +427,34 @@ export function formatPercentage(percentage) {
  * Get weekly activity data for driver dashboard chart
  */
 export async function getDriverWeeklyActivity(driverId) {
-  console.log('[WEEKLY-API] Starting getDriverWeeklyActivity for driver:', driverId);
+  if (__DEV__) {
+    console.log('[WEEKLY-API] Starting getDriverWeeklyActivity for driver:', driverId);
+  }
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const url = `${EARNINGS_API_BASE_URL}weekly_activity/?driver_id=${encodeURIComponent(driverId)}`;
-    console.log('[WEEKLY-API] API Base URL:', EARNINGS_API_BASE_URL);
-    console.log('[WEEKLY-API] Full URL:', url);
+    const endpoint = `/earnings/weekly_activity/?driver_id=${encodeURIComponent(driverId)}`;
     
-    const token = await getAccessToken().catch(() => null);
-    console.log('[WEEKLY-API] Token available:', token ? 'Yes' : 'No');
+    if (__DEV__) {
+      console.log('[WEEKLY-API] Endpoint:', endpoint);
+    }
 
-    log('Calling weekly activity API:', url);
-    log('Using token:', token ? 'Present' : 'None');
+    log('Calling weekly activity API:', endpoint);
     
-    const resp = await fetch(url, {
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}) 
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    const result = await apiClient.get(endpoint, { timeout: 30000 });
 
-    console.log('[WEEKLY-API] Response status:', resp.status);
-    log('Weekly activity response status:', resp.status);
+    console.log('[WEEKLY-API] Response status:', result.status);
+    log('Weekly activity response status:', result.status);
     
-    if (resp.ok) {
-      const data = await resp.json();
+    if (result.success) {
+      const data = result.data;
       console.log('[WEEKLY-API] Response data:', data);
       log('Weekly activity response data:', data);
       return data;
     } else {
-      const errorText = await resp.text();
-      console.log('[WEEKLY-API] Error response:', errorText);
-      log('Weekly activity API error response:', errorText);
+      console.log('[WEEKLY-API] Error response:', result.error);
+      log('Weekly activity API error response:', result.error);
       return {
         success: false,
-        error: `HTTP ${resp.status}: ${errorText}`,
+        error: result.error || `HTTP ${result.status}`,
         data: []
       };
     }
@@ -496,26 +478,14 @@ export async function getPendingPayoutAmount(driverId) {
   }
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const result = await apiClient.get('/earnings/pending/', { timeout: 30000 });
 
-    const url = `${EARNINGS_API_BASE_URL}pending/`;
-    const token = await getAccessToken().catch(() => null);
-
-    const resp = await fetch(url, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      const txt = await resp.text();
-      console.error('Pending payouts API error:', txt);
-      throw new Error(`HTTP ${resp.status}: ${txt.substring(0, 200)}`);
+    if (!result.success) {
+      console.error('Pending payouts API error:', result.error);
+      throw new Error(result.error || 'Failed to fetch pending payouts');
     }
 
-    const rows = await resp.json();
+    const rows = result.data;
     const mine = (Array.isArray(rows) ? rows : []).filter(
       (p) => String(p?.driver_id || '') === String(driverId) && String(p?.status || '').toLowerCase() === 'pending'
     );
@@ -523,9 +493,8 @@ export async function getPendingPayoutAmount(driverId) {
     const amount = mine.reduce((s, r) => s + (Number(r?.total_amount) || 0), 0);
     return { success: true, data: { amount, payouts: mine, count: mine.length } };
   } catch (error) {
-    const isAbort = error?.name === 'AbortError' || /abort/i.test(error?.message || '');
-    if (isAbort) {
-      console.warn('Pending payouts request aborted/timeout. Returning zero.');
+    if (error?.message?.includes('timeout')) {
+      console.warn('Pending payouts request timeout. Returning zero.');
       return { success: true, data: { amount: 0, payouts: [], count: 0 } };
     }
     console.error('Error fetching pending payout amount:', error);
@@ -538,21 +507,13 @@ export async function getPendingPayoutAmount(driverId) {
  */
 export async function getDriverPayoutHistory(driverId) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const endpoint = `/earnings/payout_history/?driver_id=${encodeURIComponent(driverId)}`;
+    log('Calling payout history API:', endpoint);
+    
+    const result = await apiClient.get(endpoint, { timeout: 30000 });
 
-    const url = `${EARNINGS_API_BASE_URL}payout_history/?driver_id=${encodeURIComponent(driverId)}`;
-    const token = await getAccessToken().catch(() => null);
-
-    log('Calling payout history API:', url);
-    const resp = await fetch(url, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (resp.ok) {
-      const data = await resp.json();
+    if (result.success) {
+      const data = result.data;
       log('Payout history response:', data);
       return data;
     }

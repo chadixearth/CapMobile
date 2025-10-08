@@ -84,11 +84,36 @@ export async function apiRequest(endpoint, options = {}) {
     // Check for JWT expiry
     if (!response.ok && (response.status === 401 || 
         (data.error && data.error.includes('JWT expired')) ||
-        (data.error && data.error.includes('PGRST301')))) {
-      console.log('[authService] JWT expired, clearing session');
-      await clearStoredSession();
-      if (sessionExpiredCallback) {
-        sessionExpiredCallback();
+        (data.error && data.error.includes('PGRST301')) ||
+        (data.message && data.message.includes('JWT expired')))) {
+      console.log('[authService] JWT expired, attempting refresh');
+      
+      // Try to refresh token first
+      const refreshResult = await refreshAccessToken();
+      if (refreshResult.success) {
+        console.log('[authService] Token refreshed, retrying request');
+        // Retry the original request with new token
+        const newToken = await getAccessToken();
+        if (newToken && !isAuthEndpoint) {
+          headers.Authorization = `Bearer ${newToken}`;
+          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers,
+            signal: controller.signal,
+          });
+          const retryData = await retryResponse.json();
+          return {
+            success: retryResponse.ok,
+            data: retryData,
+            status: retryResponse.status,
+          };
+        }
+      } else {
+        console.log('[authService] Token refresh failed, clearing session');
+        await clearStoredSession();
+        if (sessionExpiredCallback) {
+          sessionExpiredCallback();
+        }
       }
     }
     
@@ -525,11 +550,77 @@ export async function getCurrentUser() {
 }
 
 /**
- * Get current access token from stored session
+ * Refresh access token using refresh token
+ * @returns {Promise<{ success: boolean, error?: string }>}
+ */
+export async function refreshAccessToken() {
+  try {
+    const session = await getStoredSession();
+    if (!session.refreshToken) {
+      return { success: false, error: 'No refresh token available' };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/refresh/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        refresh_token: session.refreshToken,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      // Store new tokens
+      await storeSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || session.refreshToken,
+        user: session.user,
+      });
+      return { success: true };
+    }
+
+    return { success: false, error: data.error || 'Token refresh failed' };
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Check if token needs refresh and refresh if necessary
+ * @returns {Promise<boolean>}
+ */
+export async function refreshTokenIfNeeded() {
+  try {
+    const session = await getStoredSession();
+    
+    if (!session.accessToken || !session.refreshToken) {
+      console.log('[AUTH] No tokens available for refresh check');
+      return false;
+    }
+    
+    // For now, we'll rely on the backend's JWT expiry handling
+    // and the existing refreshAccessToken function
+    // This is a placeholder for future token expiry checking
+    return true;
+  } catch (error) {
+    console.log('[AUTH] Token refresh check error:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Get current access token from stored session with auto-refresh
  * @returns {Promise<string|null>}
  */
 export async function getAccessToken() {
   try {
+    // Try to refresh token if needed
+    await refreshTokenIfNeeded();
+    
     const session = await getStoredSession();
     return session.accessToken || null;
   } catch (error) {

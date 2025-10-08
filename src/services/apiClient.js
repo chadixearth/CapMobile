@@ -1,6 +1,8 @@
 import { apiBaseUrl } from './networkConfig';
-import { getAccessToken, clearLocalSession } from './authService';
+import { getAccessToken, clearLocalSession, refreshAccessToken } from './authService';
 import { CommonActions } from '@react-navigation/native';
+import { withRetry } from './retryHelper';
+import { handleBookingError } from './bookingErrorHandler';
 
 let navigationRef = null;
 
@@ -114,8 +116,40 @@ class ApiClient {
           console.log(`[ApiClient] Auth error:`, data);
           
           const errorText = typeof data === 'string' ? data : JSON.stringify(data);
-          if (errorText.includes('token') || errorText.includes('expired') || errorText.includes('invalid')) {
-            console.log('[ApiClient] Token expired, clearing session and redirecting to login');
+          if (errorText.includes('token') || errorText.includes('expired') || errorText.includes('invalid') || errorText.includes('JWT expired')) {
+            console.log('[ApiClient] Token expired, attempting refresh');
+            
+            // Try to refresh token
+            const refreshResult = await refreshAccessToken();
+            if (refreshResult.success) {
+              console.log('[ApiClient] Token refreshed, retrying request');
+              // Retry the request with new token
+              const newToken = await getAccessToken();
+              if (newToken) {
+                headers.Authorization = `Bearer ${newToken}`;
+                const retryResponse = await fetch(`${this.baseURL}${endpoint}`, {
+                  method: 'GET',
+                  ...options,
+                  headers,
+                  signal: controller.signal,
+                  cache: 'no-store',
+                });
+                const retryData = retryResponse.headers.get('content-type')?.includes('application/json') 
+                  ? await retryResponse.json() 
+                  : await retryResponse.text();
+                
+                if (retryResponse.ok) {
+                  this.recordSuccess();
+                  return {
+                    success: true,
+                    data: retryData,
+                    status: retryResponse.status,
+                  };
+                }
+              }
+            }
+            
+            console.log('[ApiClient] Token refresh failed, clearing session and redirecting to login');
             await clearLocalSession();
             navigateToLogin();
             throw new Error('Session expired. Please login again.');
@@ -179,7 +213,7 @@ class ApiClient {
   }
 
   async get(endpoint, options = {}) {
-    return this.request(endpoint, { ...options, method: 'GET' });
+    return withRetry(() => this.request(endpoint, { ...options, method: 'GET' }));
   }
 
   async post(endpoint, data, options = {}) {

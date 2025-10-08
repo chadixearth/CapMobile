@@ -18,6 +18,21 @@ const DARK_GRAY = '#333';
 export default function TartanillaCarriagesScreen({ navigation }) {
   const auth = useAuth();
   const [carriages, setCarriages] = useState([]);
+  
+  // Debug effect to track carriages state changes
+  useEffect(() => {
+    console.log('=== CARRIAGES STATE CHANGED ===');
+    console.log('Carriages state:', carriages);
+    console.log('Carriages length:', carriages.length);
+    console.log('Is array:', Array.isArray(carriages));
+    console.log('First carriage:', carriages[0]);
+    console.log('================================');
+  }, [carriages]);
+
+  // Debug render - only in development
+  if (__DEV__) {
+    console.log('RENDER DEBUG - Loading:', loading, 'Auth loading:', auth.loading, 'Authenticated:', auth.isAuthenticated);
+  }
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
@@ -131,18 +146,32 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
       setUser(currentUser);
 
-      // Only owners should see their carriages
+      // Show carriages based on role
       const role = currentUser.role;
-      if (role !== 'owner') {
+      if (role !== 'owner' && role !== 'driver' && role !== 'driver-owner') {
         setCarriages([]);
         setLoading(false);
         return;
       }
 
       const result = await getMyCarriages();
+      console.log('getMyCarriages result:', result);
       if (result.success) {
-        console.log('Raw carriage data:', result.data);
-        setCarriages(result.data || []);
+        const carriageData = result.data || [];
+        console.log('About to set carriages state with:', carriageData);
+        console.log('Carriages array length:', carriageData.length);
+        console.log('Carriages array type:', Array.isArray(carriageData));
+        console.log('First carriage data:', carriageData[0]);
+        
+        // Force state update with a new array reference
+        const newCarriages = Array.isArray(carriageData) ? [...carriageData] : [];
+        setCarriages(newCarriages);
+        console.log('setCarriages called with:', newCarriages.length, 'items');
+        
+        // Force a re-render by updating loading state
+        setTimeout(() => {
+          console.log('Current carriages state after timeout:', carriages.length);
+        }, 100);
       } else {
         console.error('Error loading carriages:', result.error);
         setCarriages([]);
@@ -166,7 +195,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (auth.user?.role === 'owner') {
+      if (auth.user?.role === 'owner' || auth.user?.role === 'driver' || auth.user?.role === 'driver-owner') {
         const result = await getMyCarriages();
         if (result.success) {
           setCarriages(result.data || []);
@@ -298,9 +327,8 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       setConnectionStatus(result);
       
       if (result.success) {
-        // Update the API base URL to the working endpoint
+        // Update the current API URL for display
         const workingUrl = result.url;
-        setApiBaseUrl(workingUrl);
         setCurrentApiUrl(workingUrl);
         
         Alert.alert(
@@ -523,17 +551,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
-      available: { icon: 'checkmark-circle', color: '#28a745', bgColor: '#E8F5E9', text: 'Available', iconColor: '#28a745' },
-      in_use: { icon: 'time', color: '#dc3545', bgColor: '#FFEBEE', text: 'In Use', iconColor: '#dc3545' },
-      maintenance: { icon: 'build', color: '#ffc107', bgColor: '#FFF8E1', text: 'Maintenance', iconColor: '#ff8f00' },
-      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#ff8f00', bgColor: '#FFF3E0', text: 'Pending Driver', iconColor: '#ff8f00' },
-      driver_assigned: { icon: 'person-circle', color: '#2196F3', bgColor: '#E3F2FD', text: 'Driver Assigned', iconColor: '#2196F3' },
-      not_usable: { icon: 'close-circle', color: '#dc3545', bgColor: '#F5C6CB', text: 'Not Usable', iconColor: '#dc3545' },
-      default: { icon: 'help-circle', color: '#6c757d', bgColor: '#f5f5f5', text: 'Unknown', iconColor: '#6c757d' },
+      available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
+      in_use: { icon: 'time', color: '#EF4444', bgColor: '#FEF2F2', text: 'In Use' },
+      maintenance: { icon: 'build', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Maintenance' },
+      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Pending Driver' },
+      driver_assigned: { icon: 'person-circle', color: '#3B82F6', bgColor: '#EFF6FF', text: 'Driver Assigned' },
+      not_usable: { icon: 'close-circle', color: '#EF4444', bgColor: '#FEF2F2', text: 'Not Usable' },
+      suspended: { icon: 'pause-circle', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Suspended' },
+      out_of_service: { icon: 'close-circle', color: '#EF4444', bgColor: '#FEF2F2', text: 'Out of Service' },
+      default: { icon: 'help-circle', color: '#6B7280', bgColor: '#F9FAFB', text: 'Unknown' },
     };
 
-    const statusKey = carriage.status === 'driver_assigned' ? 'available' : (carriage.status?.toLowerCase());
+    const statusKey = carriage.status?.toLowerCase() || 'default';
     const status = statusConfig[statusKey] || statusConfig.default;
+    const isDriver = user?.role === 'driver';
 
     const cached = driverCache[carriage.assigned_driver_id];
 
@@ -561,120 +592,132 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       cached?.email ||
       (carriage.assigned_driver_id ? 'No email' : '');
 
+    const driverPhone =
+      carriage.assigned_driver?.phone ||
+      carriage.assigned_driver?.mobile ||
+      carriage.assigned_driver?.phone_number ||
+      cached?.phone ||
+      cached?.mobile ||
+      cached?.phone_number ||
+      '';
+
+    const driverAddress =
+      carriage.assigned_driver?.address ||
+      carriage.assigned_driver?.location ||
+      cached?.address ||
+      cached?.location ||
+      '';
+
     const hasDriverSelected = !!(carriage.assigned_driver_id || carriage.assigned_driver);
     const assignmentStatus = hasDriverSelected && carriage.status === 'waiting_driver_acceptance'
       ? 'Waiting for driver acceptance'
       : null;
     return (
-      <View key={carriage.id} style={styles.card}>
-        <View style={styles.cardHeader}>
+      <View key={carriage.id} style={styles.modernCard}>
+        <View style={styles.modernCardHeader}>
           <View style={styles.plateContainer}>
-            <Ionicons name="car" size={20} color={MAROON} style={styles.carIcon} />
-            <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: status.bgColor, marginLeft: 8 }]}>
-              <Ionicons name={status.icon} size={14} color={status.iconColor} style={styles.statusIcon} />
-              <Text style={[styles.statusText, { color: status.color }]}>
-                {status.text}
-              </Text>
+            <View style={styles.plateIconContainer}>
+              <Ionicons name="car" size={24} color={MAROON} />
+            </View>
+            <View style={styles.plateInfo}>
+              <Text style={styles.modernPlateNumber}>{carriage.plate_number}</Text>
+              <View style={[styles.modernStatusBadge, { backgroundColor: status.bgColor }]}>
+                <Ionicons name={status.icon} size={12} color={status.color} />
+                <Text style={[styles.modernStatusText, { color: status.color }]}>
+                  {status.text}
+                </Text>
+              </View>
             </View>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
-              <TouchableOpacity
-                style={styles.statusEditButton}
-                onPress={() => openEditModal(carriage)}
-                disabled={savingEdit}
-              >
-                <Ionicons name="pencil" size={14} color="#fff" />
-                <Text style={styles.statusEditButtonText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          {!isDriver && hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+            <TouchableOpacity
+              style={styles.modernEditButton}
+              onPress={() => openEditModal(carriage)}
+              disabled={savingEdit}
+            >
+              <Ionicons name="pencil" size={16} color={MAROON} />
+            </TouchableOpacity>
+          )}
         </View>
 
-        <View style={styles.cardContent}>
-          <View style={styles.infoRow}>
-            <Ionicons name="person" size={16} color="#555" style={styles.infoIcon} />
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoLabel}>Driver</Text>
-              <Text style={styles.infoValue} numberOfLines={1}>{driverName}</Text>
+        <View style={styles.modernCardContent}>
+          <View style={styles.modernInfoGrid}>
+            <View style={styles.modernInfoItem}>
+              <View style={styles.modernInfoHeader}>
+                <Ionicons name="person" size={18} color={MAROON} />
+                <Text style={styles.modernInfoLabel}>Driver</Text>
+              </View>
+              <Text style={styles.modernInfoValue} numberOfLines={1}>{driverName}</Text>
               {driverEmail && (
-                <Text style={[styles.infoLabel, { marginTop: 2, fontSize: 11, color: '#888' }]} numberOfLines={1}>{driverEmail}</Text>
+                <Text style={styles.modernInfoSubtext} numberOfLines={1}>{driverEmail}</Text>
+              )}
+              {driverPhone && (
+                <Text style={styles.modernInfoSubtext} numberOfLines={1}>📱 {driverPhone}</Text>
+              )}
+              {driverAddress && (
+                <Text style={styles.modernInfoSubtext} numberOfLines={1}>📍 {driverAddress}</Text>
+              )}
+              {!isDriver && (
+                <View style={styles.modernActionButtons}>
+                  {!hasDriverSelected && (
+                    <TouchableOpacity 
+                      style={styles.modernAssignButton}
+                      onPress={() => openDriverModal(carriage)}
+                      disabled={assigningDriver}
+                    >
+                      <Ionicons name="person-add" size={14} color="#fff" />
+                      <Text style={styles.modernButtonText}>Assign</Text>
+                    </TouchableOpacity>
+                  )}
+                  {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
+                    <TouchableOpacity 
+                      style={styles.modernChangeButton}
+                      onPress={() => openDriverModal(carriage)}
+                      disabled={assigningDriver}
+                    >
+                      <Ionicons name="sync-outline" size={14} color="#fff" />
+                      <Text style={styles.modernButtonText}>Change</Text>
+                    </TouchableOpacity>
+                  )}
+                  {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+                    <TouchableOpacity 
+                      style={styles.modernReassignButton}
+                      onPress={() => openDriverModal(carriage)}
+                      disabled={assigningDriver}
+                    >
+                      <Ionicons name="swap-horizontal" size={14} color="#fff" />
+                      <Text style={styles.modernButtonText}>Reassign</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
             </View>
-            {!hasDriverSelected && (
-              <TouchableOpacity 
-                style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
-                onPress={() => openDriverModal(carriage)}
-                disabled={assigningDriver}
-              >
-                <Ionicons name={'person-add'} size={14} color="#fff" />
-                <Text style={styles.assignButtonText}>Assign</Text>
-              </TouchableOpacity>
-            )}
-            {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
-              <TouchableOpacity 
-                style={[styles.assignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
-                onPress={() => openDriverModal(carriage)}
-                disabled={assigningDriver}
-              >
-                <Ionicons name={'sync-outline'} size={14} color="#fff" />
-                <Text style={styles.assignButtonText}>Change</Text>
-              </TouchableOpacity>
-            )}
-            {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
-              <TouchableOpacity 
-                style={[styles.reassignButton, { opacity: assigningDriver ? 0.6 : 1 }]}
-                onPress={() => openDriverModal(carriage)}
-                disabled={assigningDriver}
-              >
-                <Ionicons name="swap-horizontal" size={14} color="#fff" />
-                <Text style={styles.reassignButtonText}>Reassign</Text>
-              </TouchableOpacity>
-            )}
-          </View>
 
-          <View style={styles.infoRow}>
-            <Ionicons name="people" size={16} color="#555" style={styles.infoIcon} />
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoLabel}>Capacity</Text>
-              <Text style={styles.infoValue}>{carriage.capacity || 'N/A'} persons</Text>
-            </View>
-          </View>
-
-          {carriage.eligibility && (
-            <View style={styles.infoRow}>
-              <Ionicons name="shield-checkmark" size={16} color="#555" style={styles.infoIcon} />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Eligibility</Text>
-                <Text style={styles.infoValue}>
-                  {carriage.eligibility.charAt(0).toUpperCase() + carriage.eligibility.slice(1)}
-                </Text>
+            <View style={styles.modernInfoItem}>
+              <View style={styles.modernInfoHeader}>
+                <Ionicons name="people" size={18} color={MAROON} />
+                <Text style={styles.modernInfoLabel}>Capacity</Text>
               </View>
+              <Text style={styles.modernInfoValue}>{carriage.capacity || 'N/A'} persons</Text>
             </View>
-          )}
+          </View>
 
           {assignmentStatus && (
-            <View style={styles.infoRow}>
-              <Ionicons name="information-circle" size={16} color="#ff8f00" style={styles.infoIcon} />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Assignment Status</Text>
-                <Text style={[styles.infoValue, { color: '#ff8f00' }]}>
-                  {assignmentStatus}
-                </Text>
-              </View>
+            <View style={styles.modernAlertBox}>
+              <Ionicons name="information-circle" size={16} color="#F59E0B" />
+              <Text style={styles.modernAlertText}>{assignmentStatus}</Text>
             </View>
           )}
 
           {carriage.notes && (
-            <View style={[styles.infoRow, { alignItems: 'flex-start' }]}> 
-              <Ionicons name="document-text" size={16} color="#555" style={[styles.infoIcon, { marginTop: 2 }]} />
-              <View style={[styles.infoTextContainer, { flex: 1 }]}>
-                <Text style={styles.infoLabel}>Notes</Text>
-                <Text style={[styles.infoValue, { flex: 1 }]} numberOfLines={2}>
-                  {carriage.notes}
-                </Text>
+            <View style={styles.modernNotesSection}>
+              <View style={styles.modernInfoHeader}>
+                <Ionicons name="document-text" size={16} color={MAROON} />
+                <Text style={styles.modernInfoLabel}>Notes</Text>
               </View>
+              <Text style={styles.modernNotesText} numberOfLines={2}>
+                {carriage.notes}
+              </Text>
             </View>
           )}
         </View>
@@ -740,6 +783,16 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                       <Text style={styles.driverEmail} numberOfLines={1}>
                         {item.email || 'No email'}
                       </Text>
+                      {(item.phone || item.mobile || item.phone_number) && (
+                        <Text style={styles.driverPhone} numberOfLines={1}>
+                          📱 {item.phone || item.mobile || item.phone_number}
+                        </Text>
+                      )}
+                      {(item.address || item.location) && (
+                        <Text style={styles.driverPhone} numberOfLines={1}>
+                          📍 {item.address || item.location}
+                        </Text>
+                      )}
                       <Text style={styles.driverRole}>
                         {item.role || 'driver'}
                       </Text>
@@ -758,15 +811,23 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     </Modal>
   );
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="car-outline" size={48} color="#ccc" />
-      <Text style={styles.emptyStateText}>No carriages found</Text>
-      <Text style={styles.emptyStateSubtext}>
-        Add your first carriage to get started
-      </Text>
-    </View>
-  );
+  const renderEmptyState = () => {
+    const isDriver = user?.role === 'driver';
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="car-outline" size={48} color="#ccc" />
+        <Text style={styles.emptyStateText}>
+          {isDriver ? 'No tartanilla assigned' : 'No carriages found'}
+        </Text>
+        <Text style={styles.emptyStateSubtext}>
+          {isDriver 
+            ? 'Contact your owner to get a tartanilla assigned to you'
+            : 'Add your first carriage to get started'
+          }
+        </Text>
+      </View>
+    );
+  };
 
   const renderEditModal = () => (
     <Modal
@@ -818,7 +879,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Status *</Text>
               <View style={styles.statusOptions}>
-                {['available', 'in_use', 'maintenance', 'not_usable'].map((status) => (
+                {['available', 'in_use', 'maintenance', 'out_of_service'].map((status) => (
                   <TouchableOpacity
                     key={status}
                     style={[
@@ -831,7 +892,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                   >
                     <Ionicons name={(statusConfig[status]?.icon || 'help-circle')} size={16} color={(statusConfig[status]?.color || '#666')} style={styles.statusIcon} />
                     <Text style={[styles.statusOptionText, { color: (statusConfig[status]?.color || '#666') }, editForm.status === status && styles.statusOptionTextSelected]}>
-                      {status === 'not_usable' ? 'Not Usable' : (statusConfig[status]?.text || 'Unknown')}
+                      {status === 'out_of_service' ? 'Out of Service' : (statusConfig[status]?.text || 'Unknown')}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -875,19 +936,20 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       
       <View style={styles.headerContainer}>
         <Text style={styles.heading}>Carriage Management</Text>
-        <Text style={styles.subheading}>Manage your tartanilla carriages and drivers</Text>
+        <Text style={styles.subheading}>
+          {user?.role === 'driver' ? 'View your assigned carriages' : 'Manage your tartanilla carriages and drivers'}
+        </Text>
       </View>
       
       {/* Driver Assignment Modal */}
       {renderDriverModal()}
       
-      {user?.role === 'owner' && (
+      {(user?.role === 'owner' || user?.role === 'driver-owner') && (
         <TouchableOpacity 
           style={styles.addButton}
           onPress={() => setShowAddModal(true)}
         >
           <Ionicons name="add" size={24} color="#fff" />
-          {/* <Text style={styles.addButtonText}>Add Carriage</Text> */}
         </TouchableOpacity>
       )}
       
@@ -1061,11 +1123,29 @@ const statusConfig = {
     bgColor: '#E3F2FD',
     text: 'Driver Assigned',
   },
+  out_of_service: {
+    icon: 'close-circle',
+    color: '#dc3545',
+    bgColor: '#F5C6CB',
+    text: 'Out of Service',
+  },
   not_usable: {
     icon: 'close-circle',
     color: '#dc3545',
     bgColor: '#F5C6CB',
     text: 'Not Usable',
+  },
+  suspended: {
+    icon: 'pause-circle',
+    color: '#ff8f00',
+    bgColor: '#FFF3E0',
+    text: 'Suspended',
+  },
+  eligible: {
+    icon: 'checkmark-circle',
+    color: '#28a745',
+    bgColor: '#E8F5E9',
+    text: 'Eligible',
   },
   default: {
     icon: 'help-circle',
@@ -1076,6 +1156,163 @@ const statusConfig = {
 };
 
 const styles = StyleSheet.create({
+  // Modern Card Styles
+  modernCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  modernCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  plateIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  plateInfo: {
+    flex: 1,
+  },
+  modernPlateNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  modernStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  modernStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  modernEditButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernCardContent: {
+    gap: 16,
+  },
+  modernInfoGrid: {
+    gap: 16,
+  },
+  modernInfoItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modernInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modernInfoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginLeft: 8,
+  },
+  modernInfoValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  modernInfoSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  modernActionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  modernAssignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MAROON,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  modernChangeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F59E0B',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  modernReassignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3B82F6',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  modernButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  modernAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 12,
+    padding: 12,
+  },
+  modernAlertText: {
+    fontSize: 14,
+    color: '#92400E',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  modernNotesSection: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modernNotesText: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+  },
   // Modal Styles
   modalOverlay: {
     flex: 1,

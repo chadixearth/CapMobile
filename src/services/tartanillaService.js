@@ -70,14 +70,23 @@ export async function getMyCarriages() {
     const testRes = await testConnection();
     console.log('Connection test result:', testRes);
     
-    // For drivers, get carriages assigned to them (but driver-owners should see owned carriages instead)
+    // For drivers, get carriages assigned to them
     if (user.role === 'driver') {
       console.log('Fetching carriages for driver:', user.id);
       const res = await request(`/tartanilla-carriages/get_by_driver/?driver_id=${user.id}`);
       console.log('Driver carriages response:', res);
       
-      if (res.ok) {
-        return { success: true, data: res.data?.data || [] };
+      if (res.ok && res.data) {
+        console.log('Full driver response:', JSON.stringify(res.data, null, 2));
+        // Handle the response format: {"data": [...], "success": true}
+        const carriages = res.data.data || res.data || [];
+        console.log('Parsed driver carriages data:', carriages);
+        console.log('Carriages count:', carriages.length);
+        
+        // Ensure we return an array
+        const finalCarriages = Array.isArray(carriages) ? carriages : [];
+        console.log('Final carriages to return:', finalCarriages.length);
+        return { success: true, data: finalCarriages };
       }
       console.error('Failed to fetch driver carriages:', res.data);
       return { success: false, error: res.data?.error || 'Failed to fetch carriages' };
@@ -90,7 +99,19 @@ export async function getMyCarriages() {
       console.log('Owner carriages response:', res);
       
       if (res.ok) {
-        return { success: true, data: res.data?.data || [] };
+        console.log('Full owner response:', JSON.stringify(res.data, null, 2));
+        // Handle both response formats: {data: [...]} and {success: true, data: [...]}
+        let carriages = [];
+        if (res.data?.success && Array.isArray(res.data?.data)) {
+          carriages = res.data.data;
+        } else if (Array.isArray(res.data?.data)) {
+          carriages = res.data.data;
+        } else if (Array.isArray(res.data)) {
+          carriages = res.data;
+        }
+        console.log('Parsed owner carriages data:', carriages);
+        console.log('Carriages count:', carriages.length);
+        return { success: true, data: carriages };
       }
       console.error('Failed to fetch owner carriages:', res.data);
       return { success: false, error: res.data?.error || 'Failed to fetch carriages' };

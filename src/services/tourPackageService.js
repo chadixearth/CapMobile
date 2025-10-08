@@ -1,32 +1,20 @@
-import { apiBaseUrl } from './networkConfig';
-import { getAccessToken, getCurrentUser } from './authService';
+import { apiClient } from './improvedApiClient';
+import { getCurrentUser } from './authService';
 
+// Legacy request function for backward compatibility
 async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 15000 } = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const token = await getAccessToken().catch(() => null);
-    const response = await fetch(`${apiBaseUrl()}${path}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...headers,
-      },
-      body,
-      signal: controller.signal,
-    });
-    const contentType = response.headers.get('content-type') || '';
-    const data = contentType.includes('application/json') ? await response.json() : await response.text();
-    return { ok: response.ok, status: response.status, data };
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      return { ok: false, status: 0, data: { success: false, error: 'Request timeout' } };
-    }
-    return { ok: false, status: 0, data: { success: false, error: error.message || 'Network error' } };
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const result = await apiClient.makeRequest(path, {
+    method,
+    headers,
+    body: body ? JSON.parse(body) : null,
+    timeout: timeoutMs
+  });
+  
+  return {
+    ok: result.success,
+    status: result.status || 0,
+    data: result.data || { success: false, error: result.error }
+  };
 }
 
 export async function getMyTourPackages() {
@@ -36,14 +24,14 @@ export async function getMyTourPackages() {
       return { success: false, error: 'User not authenticated' };
     }
     
-    const res = await request('/tourpackage/', { method: 'GET' });
-    if (res.ok) {
-      const packages = res.data?.data || res.data || [];
+    const result = await apiClient.get('/tourpackage/');
+    if (result.success) {
+      const packages = result.data?.data || result.data || [];
       // Filter by driver_id
       const myPackages = packages.filter(pkg => pkg.driver_id === user.id);
       return { success: true, data: myPackages };
     }
-    return { success: false, error: res.data?.error || 'Failed to fetch my tour packages' };
+    return { success: false, error: result.error || 'Failed to fetch my tour packages' };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to fetch tour packages' };
   }
@@ -60,48 +48,43 @@ export async function createTourPackage(packageData) {
       driver_id: user?.id
     };
     
-    const res = await request('/tourpackage/', {
-      method: 'POST',
-      body: JSON.stringify(dataWithDriver),
-      timeoutMs: 30000,
+    const result = await apiClient.post('/tourpackage/', dataWithDriver, {
+      timeout: 30000,
     });
-    if (res.ok && (res.data?.success || res.status === 201)) {
-      return { success: true, data: res.data?.data || res.data };
+    if (result.success && (result.data?.success || result.status === 201)) {
+      return { success: true, data: result.data?.data || result.data };
     }
-    return { success: false, error: res.data?.error || 'Failed to create tour package' };
+    return { success: false, error: result.error || 'Failed to create tour package' };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to create tour package' };
   }
 }
 
 export async function updateTourPackage(packageId, packageData) {
-  const res = await request(`/tourpackage/${packageId}/`, {
-    method: 'PUT',
-    body: JSON.stringify(packageData),
-    timeoutMs: 30000,
+  const result = await apiClient.put(`/tourpackage/${packageId}/`, packageData, {
+    timeout: 30000,
   });
-  if (res.ok && (res.data?.success || res.status === 200)) {
-    return { success: true, data: res.data?.data || res.data };
+  if (result.success && (result.data?.success || result.status === 200)) {
+    return { success: true, data: result.data?.data || result.data };
   }
-  return { success: false, error: res.data?.error || 'Failed to update tour package' };
+  return { success: false, error: result.error || 'Failed to update tour package' };
 }
 
 export async function togglePackageStatus(packageId) {
-  const res = await request(`/tourpackage/${packageId}/toggle_status/`, {
-    method: 'POST',
-    timeoutMs: 15000,
+  const result = await apiClient.post(`/tourpackage/${packageId}/toggle_status/`, null, {
+    timeout: 15000,
   });
-  if (res.ok && (res.data?.success || res.status === 200)) {
-    return { success: true, data: res.data?.data || res.data };
+  if (result.success && (result.data?.success || result.status === 200)) {
+    return { success: true, data: result.data?.data || result.data };
   }
-  return { success: false, error: res.data?.error || 'Failed to toggle package status' };
+  return { success: false, error: result.error || 'Failed to toggle package status' };
 }
 
 export async function getPickupPoints() {
-  const res = await request('/tourpackage/get_pickup_points/', { method: 'GET' });
-  if (res.ok) {
-    const points = res.data?.data || res.data || [];
+  const result = await apiClient.get('/tourpackage/get_pickup_points/');
+  if (result.success) {
+    const points = result.data?.data || result.data || [];
     return { success: true, data: points };
   }
-  return { success: false, error: res.data?.error || 'Failed to fetch pickup points' };
+  return { success: false, error: result.error || 'Failed to fetch pickup points' };
 }
