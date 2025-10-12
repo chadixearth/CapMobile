@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { createTourPackage, updateTourPackage, getPickupPoints } from '../../services/tourPackageService';
+import { createTourPackage, updateTourPackage, getPickupPoints, getDropoffPoints } from '../../services/tourPackageService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -42,8 +42,11 @@ export default function CreateTourPackageScreen({ navigation, route }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [pickupPoints, setPickupPoints] = useState([]);
+  const [dropoffPoints, setDropoffPoints] = useState([]);
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingPickups, setLoadingPickups] = useState(true);
+  const [loadingDropoffs, setLoadingDropoffs] = useState(false);
   const [photoUri, setPhotoUri] = useState(null);
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -86,6 +89,58 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     } finally {
       setLoadingPickups(false);
     }
+  };
+
+  const fetchDropoffPoints = async (pickupId, pickupName) => {
+    try {
+      setLoadingDropoffs(true);
+      const result = await getDropoffPoints(pickupId, pickupName);
+      if (result.success) {
+        const points = result.data || [];
+        setDropoffPoints(points);
+        
+        // Show feedback to user
+        if (points.length > 0) {
+          Alert.alert(
+            'Pickup Selected',
+            `Found ${points.length} compatible drop-off locations for ${pickupName}`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'No Drop-off Points',
+            `No compatible drop-off points found for ${pickupName}. You can still create the package with a custom destination.`,
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        console.error('Error fetching dropoff points:', result.error);
+        setDropoffPoints([]);
+      }
+    } catch (error) {
+      console.error('Error fetching dropoff points:', error);
+      setDropoffPoints([]);
+    } finally {
+      setLoadingDropoffs(false);
+    }
+  };
+
+  const showDropoffModal = () => {
+    Alert.alert(
+      'Select Drop-off Location',
+      'Choose from available locations:',
+      [
+        ...dropoffPoints.map(point => ({
+          text: `${point.name}${point.description ? ` - ${point.description}` : ''}`,
+          onPress: () => {
+            updateField('dropoff_lat', point.latitude);
+            updateField('dropoff_lng', point.longitude);
+            updateField('destination', point.name);
+          }
+        })),
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   const updateField = (field, value) => {
@@ -263,10 +318,27 @@ export default function CreateTourPackageScreen({ navigation, route }) {
               style={styles.mapButton}
               onPress={() => navigation.navigate('MapView', {
                 mode: 'selectPickup',
-                onLocationSelect: (location) => {
+                onLocationSelect: async (location) => {
                   updateField('pickup_location', location.name);
                   updateField('pickup_lat', location.latitude);
                   updateField('pickup_lng', location.longitude);
+                  
+                  // Clear existing dropoff selection
+                  updateField('destination', '');
+                  updateField('dropoff_lat', '');
+                  updateField('dropoff_lng', '');
+                  setDropoffPoints([]);
+                  
+                  // Store selected pickup point for dropoff fetching
+                  setSelectedPickupPoint({
+                    id: location.id,
+                    name: location.name,
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                  });
+                  
+                  // Fetch compatible dropoff points
+                  await fetchDropoffPoints(location.id, location.name);
                 }
               })}
             >
@@ -280,22 +352,49 @@ export default function CreateTourPackageScreen({ navigation, route }) {
           {/* Drop Location */}
           <View style={styles.field}>
             <Text style={styles.label}>Drop Location</Text>
-            <TouchableOpacity
-              style={styles.mapButton}
-              onPress={() => navigation.navigate('MapView', {
-                mode: 'selectDrop',
-                onLocationSelect: (location) => {
-                  updateField('dropoff_lat', location.latitude);
-                  updateField('dropoff_lng', location.longitude);
-                  updateField('destination', location.name);
-                }
-              })}
-            >
-              <Ionicons name="map-outline" size={20} color={MAROON} />
-              <Text style={styles.mapButtonText}>
-                {(formData.dropoff_lat && formData.dropoff_lng) ? 'Drop Location Selected' : 'Select Drop Location'}
-              </Text>
-            </TouchableOpacity>
+            {!selectedPickupPoint ? (
+              <View style={[styles.mapButton, styles.disabledButton]}>
+                <Ionicons name="map-outline" size={20} color="#ccc" />
+                <Text style={[styles.mapButtonText, { color: '#ccc' }]}>Select pickup location first</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.mapButton}
+                onPress={() => {
+                  if (dropoffPoints.length === 0) {
+                    Alert.alert('No Drop-off Points', 'No compatible drop-off points found for the selected pickup location.');
+                    return;
+                  }
+                  
+                  // Show dropoff selection modal
+                  Alert.alert(
+                    'Select Drop-off Location',
+                    'Choose from available drop-off points:',
+                    [
+                      ...dropoffPoints.slice(0, 3).map(point => ({
+                        text: point.name,
+                        onPress: () => {
+                          updateField('dropoff_lat', point.latitude);
+                          updateField('dropoff_lng', point.longitude);
+                          updateField('destination', point.name);
+                        }
+                      })),
+                      ...(dropoffPoints.length > 3 ? [{
+                        text: 'More options...',
+                        onPress: () => showDropoffModal()
+                      }] : []),
+                      { text: 'Cancel', style: 'cancel' }
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="map-outline" size={20} color={MAROON} />
+                <Text style={styles.mapButtonText}>
+                  {formData.destination || `Select from ${dropoffPoints.length} available locations`}
+                </Text>
+                {loadingDropoffs && <ActivityIndicator size="small" color={MAROON} />}
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Duration & Max Pax */}
@@ -535,7 +634,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.5,
+    backgroundColor: '#f5f5f5',
   },
   submitButtonText: {
     color: '#fff',

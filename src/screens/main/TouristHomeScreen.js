@@ -78,6 +78,9 @@ export default function TouristHomeScreen({ navigation }) {
   const [allRoads, setAllRoads] = useState([]);
   const [filteredPackages, setFilteredPackages] = useState([]);
   const [sortBy, setSortBy] = useState('default'); // 'default', 'price_low', 'price_high', 'rating'
+  const [peopleFilter, setPeopleFilter] = useState(1);
+  const [timeFilter, setTimeFilter] = useState('any'); // 'any', 'morning', 'afternoon', 'evening'
+  const [showFilters, setShowFilters] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -255,11 +258,35 @@ export default function TouristHomeScreen({ navigation }) {
   // Filter + Sort
   useEffect(() => {
     let filtered = [...tourPackages];
-    if (search.trim()) {
-      filtered = filtered.filter(pkg => 
-        pkg.package_name?.toLowerCase().includes(search.toLowerCase())
-      );
+    
+
+    
+    // People filter
+    filtered = filtered.filter(pkg => {
+      const maxPax = parseInt(pkg.max_pax) || 1;
+      return maxPax >= peopleFilter;
+    });
+    
+    // Time filter
+    if (timeFilter !== 'any') {
+      filtered = filtered.filter(pkg => {
+        const startTime = pkg.start_time || '09:00';
+        const hour = parseInt(startTime.split(':')[0]);
+        
+        switch (timeFilter) {
+          case 'morning':
+            return hour >= 6 && hour < 12;
+          case 'afternoon':
+            return hour >= 12 && hour < 18;
+          case 'evening':
+            return hour >= 18 || hour < 6;
+          default:
+            return true;
+        }
+      });
     }
+    
+    // Sort
     switch (sortBy) {
       case 'price_low':
         filtered.sort((a, b) => (a.price || 0) - (b.price || 0));
@@ -279,7 +306,7 @@ export default function TouristHomeScreen({ navigation }) {
         break;
     }
     setFilteredPackages(filtered);
-  }, [tourPackages, search, sortBy]);
+  }, [tourPackages, sortBy, peopleFilter, timeFilter]);
 
   useFocusEffect(React.useCallback(() => () => {}, []));
 
@@ -525,8 +552,22 @@ export default function TouristHomeScreen({ navigation }) {
         throw new Error(result.error || 'Failed to create ride booking');
       }
     } catch (err) {
-      console.error('Ride booking error:', err);
-      Alert.alert('Error', err.message || 'Failed to request ride.');
+      // Handle active ride error gracefully (don't log as error)
+      if (err.message && err.message.includes('active ride request')) {
+        console.log('Ride booking prevented - user has active ride');
+        setSheetVisible(false);
+        Alert.alert(
+          'Active Ride Found',
+          'You already have an active ride request. Please wait for it to complete or cancel it first.',
+          [
+            { text: 'Track My Rides', onPress: () => navigation.navigate('Terminals') },
+            { text: 'OK' }
+          ]
+        );
+      } else {
+        console.error('Ride booking error:', err);
+        Alert.alert('Error', err.message || 'Failed to request ride.');
+      }
     } finally {
       setRequesting(false);
     }
@@ -543,61 +584,95 @@ export default function TouristHomeScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B2E2B" />}
       >
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Tour Packages</Text>
+          <Text style={styles.sectionTitle}>Discover Cebu</Text>
+          <Text style={styles.sectionSubtitle}>Find the perfect tour experience</Text>
         </View>
 
-        {/* Search Bar — old design applied */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#fff" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search Packages"
-            value={search}
-            onChangeText={setSearch}
-            placeholderTextColor="#fff"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')} style={styles.clearSearch}>
-              <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.9)" />
+        {/* Enhanced Filter Section */}
+        <View style={styles.filterSection}>
+          <View style={styles.filterHeader}>
+            <Text style={styles.filterLabel}>Filters & Sort</Text>
+            <TouchableOpacity 
+              style={styles.filterToggle}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons name={showFilters ? 'chevron-up' : 'chevron-down'} size={16} color="#6B2E2B" />
+              <Text style={styles.filterToggleText}>{showFilters ? 'Hide' : 'Show'}</Text>
             </TouchableOpacity>
+          </View>
+          
+          {showFilters && (
+            <View style={styles.filterContent}>
+              {/* People Filter */}
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterGroupLabel}>People</Text>
+                <View style={styles.peopleFilter}>
+                  <TouchableOpacity 
+                    style={styles.peopleBtn}
+                    onPress={() => setPeopleFilter(Math.max(1, peopleFilter - 1))}
+                  >
+                    <Ionicons name="remove" size={16} color="#6B2E2B" />
+                  </TouchableOpacity>
+                  <Text style={styles.peopleCount}>{peopleFilter}</Text>
+                  <TouchableOpacity 
+                    style={styles.peopleBtn}
+                    onPress={() => setPeopleFilter(peopleFilter + 1)}
+                  >
+                    <Ionicons name="add" size={16} color="#6B2E2B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              {/* Time Filter */}
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterGroupLabel}>Time</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {[
+                    { key: 'any', label: 'Any Time' },
+                    { key: 'morning', label: 'Morning' },
+                    { key: 'afternoon', label: 'Afternoon' },
+                    { key: 'evening', label: 'Evening' }
+                  ].map(time => (
+                    <TouchableOpacity
+                      key={time.key}
+                      style={[styles.timeBtn, timeFilter === time.key && styles.timeBtnActive]}
+                      onPress={() => setTimeFilter(time.key)}
+                    >
+                      <Text style={[styles.timeBtnText, timeFilter === time.key && styles.timeBtnTextActive]}>
+                        {time.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              
+              {/* Sort Options */}
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterGroupLabel}>Sort by</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {[
+                    { key: 'default', label: 'Default' },
+                    { key: 'price_low', label: 'Price ↑' },
+                    { key: 'price_high', label: 'Price ↓' },
+                    { key: 'rating', label: 'Rating ↓' }
+                  ].map(filter => (
+                    <TouchableOpacity
+                      key={filter.key}
+                      style={[styles.sortBtn, sortBy === filter.key && styles.sortBtnActive]}
+                      onPress={() => setSortBy(filter.key)}
+                    >
+                      <Text style={[styles.sortBtnText, sortBy === filter.key && styles.sortBtnTextActive]}>
+                        {filter.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
           )}
         </View>
 
-        {/* Filter Row */}
-        <View style={styles.filterRow}>
-          <Text style={styles.filterLabel}>Sort by:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {[
-              { key: 'default', label: 'Default' },
-              { key: 'price_low', label: 'Price ↑' },
-              { key: 'price_high', label: 'Price ↓' },
-              { key: 'rating', label: 'Rating ↓' }
-            ].map(filter => (
-              <TouchableOpacity
-                key={filter.key}
-                style={[styles.filterBtn, sortBy === filter.key && styles.filterBtnActive]}
-                onPress={() => setSortBy(filter.key)}
-              >
-                <Text style={[styles.filterBtnText, sortBy === filter.key && styles.filterBtnTextActive]}>
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
 
-        <Text
-          style={[
-            styles.networkStatus,
-            {
-              marginHorizontal: 16,
-              marginBottom: 8,
-              color: networkStatus === 'Connected' ? '#4CAF50' : networkStatus === 'Failed' ? '#F44336' : '#666',
-            },
-          ]}
-        >
-          Network: {networkStatus}  ·  Source: {dataSource}
-        </Text>
 
         {loadingPackages ? (
           <View style={{ alignItems: 'center', marginVertical: 16 }}>
@@ -607,11 +682,10 @@ export default function TouristHomeScreen({ navigation }) {
         ) : filteredPackages.length === 0 ? (
           <View style={styles.noPackagesContainer}>
             <Text style={styles.noPackagesText}>
-              {search.trim() ? 'No packages match your search' : 'No tour packages available'}
+              No tour packages available
             </Text>
             <Text style={styles.noPackagesSubtext}>
-              {search.trim() ? 'Try a different search term' : 
-               dataSource === 'No Data' ? 'API endpoint not returning valid data' : 'Please try again later'}
+              Please try adjusting your filters or try again later
             </Text>
           </View>
         ) : (
@@ -683,35 +757,52 @@ export default function TouristHomeScreen({ navigation }) {
                   <View
                     style={[
                       styles.statusBadge,
-                      pkg.is_active === false && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' },
+                      (pkg.is_active === false || pkg.is_expired) && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' },
                     ]}
                   >
                     <Ionicons
-                      name={pkg.is_active === false ? 'close-circle-outline' : 'checkmark-circle-outline'}
+                      name={(pkg.is_active === false || pkg.is_expired) ? 'close-circle-outline' : 'checkmark-circle-outline'}
                       size={12}
-                      color={pkg.is_active === false ? '#d32f2f' : '#2e7d32'}
+                      color={(pkg.is_active === false || pkg.is_expired) ? '#d32f2f' : '#2e7d32'}
                     />
                     <Text
                       style={[
                         styles.statusText,
-                        { color: pkg.is_active === false ? '#d32f2f' : '#2e7d32' },
+                        { color: (pkg.is_active === false || pkg.is_expired) ? '#d32f2f' : '#2e7d32' },
                       ]}
                       numberOfLines={1}
                     >
-                      {pkg.is_active === false ? 'Unavailable' : 'Available'}
+                      {pkg.is_expired ? 'Expired' : pkg.is_active === false ? 'Unavailable' : 'Available'}
                     </Text>
                   </View>
 
                   <TouchableOpacity
-                    style={styles.bookBtn}
+                    style={[styles.bookBtn, (pkg.is_active === false || pkg.is_expired) && styles.bookBtnDisabled]}
                     onPress={() => {
+                      if (pkg.is_expired) {
+                        Alert.alert(
+                          'Package Expired',
+                          'This tour package has expired and is no longer available for booking.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
+                      if (pkg.is_active === false) {
+                        Alert.alert(
+                          'Package Unavailable',
+                          'This tour package is currently unavailable for booking.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
                       setSelectedPackage(pkg);
                       setModalVisible(true);
                     }}
+                    disabled={pkg.is_active === false || pkg.is_expired}
                   >
                     <Ionicons name="book-outline" size={12} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.bookBtnText} numberOfLines={1}>
-                      Book
+                      {pkg.is_expired ? 'Expired' : 'Book'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -938,55 +1029,103 @@ const styles = StyleSheet.create({
 
   scrollContent: { paddingBottom: 24, paddingTop: 12 },
 
-  sectionHeader: { marginHorizontal: 16, marginTop: 8, marginBottom: 6 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#222' },
+  sectionHeader: { marginHorizontal: 16, marginTop: 8, marginBottom: 16 },
+  sectionTitle: { fontSize: 24, fontWeight: '800', color: '#222', marginBottom: 4 },
+  sectionSubtitle: { fontSize: 14, color: '#666', fontWeight: '500' },
 
-  networkStatus: { fontSize: 12, fontWeight: '600' },
 
-  /* Search Bar — old design */
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6B2E2B',
-    borderRadius: 20,
+
+  /* Enhanced Filter Section */
+  filterSection: {
     marginHorizontal: 16,
     marginBottom: 12,
-    paddingHorizontal: 16,
-    height: 40,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: {
-    flex: 1,
-    color: '#fff',
-    marginLeft: 8,
-    paddingVertical: 0,
-    fontSize: 14,
-  },
-  clearSearch: { padding: 4 },
-
-  /* Filter Row */
-  filterRow: {
+  filterHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 12,
+    justifyContent: 'space-between',
   },
   filterLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
-    marginRight: 12,
   },
-  filterBtn: {
+  filterToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  filterToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B2E2B',
+  },
+  filterContent: {
+    marginTop: 12,
+    gap: 12,
+  },
+  filterGroup: {
+    gap: 8,
+  },
+  filterGroupLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    textTransform: 'uppercase',
+  },
+  
+  /* People Filter */
+  peopleFilter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  peopleBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  peopleCount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#6B2E2B',
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  
+  /* Time Filter */
+  timeBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: '#F0F0F0',
     marginRight: 8,
   },
-  filterBtnActive: { backgroundColor: '#6B2E2B' },
-  filterBtnText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  filterBtnTextActive: { color: '#fff' },
+  timeBtnActive: { backgroundColor: '#6B2E2B' },
+  timeBtnText: { fontSize: 12, fontWeight: '600', color: '#666' },
+  timeBtnTextActive: { color: '#fff' },
+  
+  /* Sort Filter */
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+    marginRight: 8,
+  },
+  sortBtnActive: { backgroundColor: '#6B2E2B' },
+  sortBtnText: { fontSize: 12, fontWeight: '600', color: '#666' },
+  sortBtnTextActive: { color: '#fff' },
 
   /* Grid */
   gridWrap: {
@@ -1050,6 +1189,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bookBtnDisabled: {
+    backgroundColor: '#C7C7C7',
   },
   bookBtnText: { color: '#fff', fontWeight: '800', fontSize: 11 },
 

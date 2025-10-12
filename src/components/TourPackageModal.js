@@ -15,6 +15,7 @@ import {
   Dimensions,
   Pressable,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -213,14 +214,14 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
 
                 {/* Availability moved here */}
                 <AdaptiveChip>
-                  <View style={[styles.pillDot, { backgroundColor: packageData?.is_active ? '#16A34A' : '#DC2626' }]} />
+                  <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && !packageData?.is_expired) ? '#16A34A' : '#DC2626' }]} />
                   <Text
                     style={[
                       styles.chipText,
-                      { color: packageData?.is_active ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
+                      { color: (packageData?.is_active && !packageData?.is_expired) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
                     ]}
                   >
-                    {packageData?.is_active ? 'Available' : 'Unavailable'}
+                    {packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Available' : 'Unavailable'}
                   </Text>
                 </AdaptiveChip>
               </View>
@@ -378,18 +379,34 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
             </View>
 
             <TouchableOpacity
-              style={[styles.cta, !packageData?.is_active && styles.ctaDisabled]}
+              style={[styles.cta, (!packageData?.is_active || packageData?.is_expired) && styles.ctaDisabled]}
               onPress={() => {
+                if (packageData?.is_expired) {
+                  Alert.alert(
+                    'Package Expired',
+                    'This tour package has expired and is no longer available for booking.',
+                    [{ text: 'OK' }]
+                  );
+                  return;
+                }
+                if (!packageData?.is_active) {
+                  Alert.alert(
+                    'Package Unavailable',
+                    'This tour package is currently unavailable for booking.',
+                    [{ text: 'OK' }]
+                  );
+                  return;
+                }
                 onClose?.();
                 onBook?.();
               }}
-              disabled={!packageData?.is_active}
+              disabled={!packageData?.is_active || packageData?.is_expired}
               accessibilityRole="button"
-              accessibilityLabel={packageData?.is_active ? 'Book now' : 'Unavailable'}
+              accessibilityLabel={packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Book now' : 'Unavailable'}
             >
               <Ionicons name="calendar-outline" size={18} color="#fff" />
               <Text style={styles.ctaText}>
-                {packageData?.is_active ? 'Book Now' : 'Unavailable'}
+                {packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Book Now' : 'Unavailable'}
               </Text>
             </TouchableOpacity>
           </View>

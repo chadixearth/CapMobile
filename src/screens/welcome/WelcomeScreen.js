@@ -38,13 +38,7 @@ const WelcomeScreen = ({ navigation }) => {
           <Text style={styles.buttonText}>View Map</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('tourist')}>
-          <Text style={styles.buttonText}>Get Started as Tourist</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('driver')}>
-          <Text style={styles.buttonText}>Get Started as Driver</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => handleRoleSelect('owner')}>
-          <Text style={styles.buttonText}>Get Started as Owner</Text>
+          <Text style={styles.buttonText}>Get Started</Text>
         </TouchableOpacity>
       </View>
 
@@ -52,6 +46,10 @@ const WelcomeScreen = ({ navigation }) => {
         <Text style={styles.linkText}>
           Already have an account?{' '}
           <Text style={styles.link} onPress={handleLogin}>Login</Text>
+        </Text>
+        <Text style={styles.linkText}>
+          Business user?{' '}
+          <Text style={styles.link} onPress={() => navigation.navigate(Routes.ROLE_SELECTION)}>Driver/Owner Registration</Text>
         </Text>
       </View>
     </View>

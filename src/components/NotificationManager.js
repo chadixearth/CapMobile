@@ -118,34 +118,160 @@ const NotificationManager = ({ navigation }) => {
     // Mark as shown immediately to prevent duplicate alerts
     saveDismissedNotification(notificationKey);
     
-    if (type === 'booking') {
-      if (user?.role === 'driver' || user?.role === 'driver-owner') {
-        Alert.alert(
-          '🚗 New Booking Available!',
-          message,
-          [
-            { 
-              text: 'View Bookings', 
-              onPress: () => navigation?.navigate('DriverBook')
-            },
-            { text: 'OK' }
-          ]
-        );
-      } else if (user?.role === 'tourist') {
-        Alert.alert(
-          '✅ Booking Update!',
-          message,
-          [
-            { 
-              text: 'View Bookings', 
-              onPress: () => navigation?.navigate('BookingHistory')
-            },
-            { text: 'OK' }
-          ]
-        );
+    // Mark notification as read when modal is shown
+    const markAsReadAndNavigate = async (screenName) => {
+      try {
+        await NotificationService.markAsRead(notification.id);
+        loadNotifications(); // Refresh context
+        if (screenName && navigation) {
+          navigation.navigate(screenName);
+        }
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
       }
-    } else {
-      Alert.alert(title, message, [{ text: 'OK' }]);
+    };
+    
+    // Handle different notification types with specific navigation
+    switch (type) {
+      case 'booking':
+        if (user?.role === 'driver' || user?.role === 'driver-owner') {
+          Alert.alert(
+            '🚗 New Booking Available!',
+            message,
+            [
+              { 
+                text: 'View Bookings', 
+                onPress: () => {
+                  markAsReadAndNavigate();
+                  // Navigate to Main tabs then to Bookings tab
+                  navigation?.navigate('Main', { screen: 'Bookings' });
+                }
+              },
+              { 
+                text: 'OK',
+                onPress: () => markAsReadAndNavigate()
+              }
+            ]
+          );
+        } else if (user?.role === 'tourist') {
+          Alert.alert(
+            '✅ Booking Update!',
+            message,
+            [
+              { 
+                text: 'View Bookings', 
+                onPress: () => markAsReadAndNavigate('BookingHistory')
+              },
+              { 
+                text: 'OK',
+                onPress: () => markAsReadAndNavigate()
+              }
+            ]
+          );
+        }
+        break;
+        
+      case 'payment':
+      case 'pay_receive':
+        Alert.alert(
+          '💰 Payment Update',
+          message,
+          [
+            { 
+              text: 'View Earnings', 
+              onPress: () => {
+                markAsReadAndNavigate();
+                if (user?.role === 'driver') {
+                  navigation?.navigate('Main', { screen: 'Earnings' });
+                } else {
+                  navigation?.navigate('DriverEarnings');
+                }
+              }
+            },
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
+        
+      case 'driver_earnings':
+      case 'earnings':
+        Alert.alert(
+          '📊 Earnings Update',
+          message,
+          [
+            { 
+              text: 'View Earnings', 
+              onPress: () => {
+                markAsReadAndNavigate();
+                if (user?.role === 'driver') {
+                  navigation?.navigate('Main', { screen: 'Earnings' });
+                } else {
+                  navigation?.navigate('DriverEarnings');
+                }
+              }
+            },
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
+        
+      case 'profile':
+      case 'account':
+        Alert.alert(
+          '👤 Profile Update',
+          message,
+          [
+            { 
+              text: 'View Profile', 
+              onPress: () => {
+                markAsReadAndNavigate();
+                navigation?.navigate('Main', { screen: 'Menu' });
+              }
+            },
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
+        
+      case 'review':
+      case 'rating':
+        Alert.alert(
+          '⭐ Review Update',
+          message,
+          [
+            { 
+              text: 'View Reviews', 
+              onPress: () => markAsReadAndNavigate('Reviews')
+            },
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
+        
+      default:
+        Alert.alert(
+          title,
+          message,
+          [
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
     }
   };
 

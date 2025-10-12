@@ -593,7 +593,46 @@ export default function AccountDetailsScreen({ navigation }) {
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        setPasswordMessage(result.error || 'Failed to change password.');
+        // Handle session expiration
+        if (result.session_expired) {
+          Alert.alert(
+            'Session Expired',
+            'Your session has expired. Please log in again to continue.',
+            [{ text: 'OK' }],
+            { cancelable: false }
+          );
+        } else {
+          // Handle incorrect current password with helpful message
+          const errorMsg = result.error || 'Failed to change password.';
+          if (errorMsg.includes('Current password is incorrect') || errorMsg.includes('Invalid password') || errorMsg.includes('wrong password')) {
+            Alert.alert(
+              'Incorrect Password',
+              'The current password you entered is incorrect. If you recently changed your password or forgot it, you can use the "Forgot Password" option on the login screen.',
+              [
+                { text: 'Try Again', style: 'default' },
+                { 
+                  text: 'Forgot Password', 
+                  onPress: () => {
+                    Alert.alert(
+                      'Reset Password',
+                      'To reset your password, please log out and use the "Forgot Password" option on the login screen.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Log Out',
+                          style: 'destructive',
+                          onPress: () => auth.logout()
+                        }
+                      ]
+                    );
+                  }
+                }
+              ]
+            );
+          } else {
+            setPasswordMessage(errorMsg);
+          }
+        }
       }
     } catch (err) {
       setPasswordMessage(err.message || 'Failed to change password.');

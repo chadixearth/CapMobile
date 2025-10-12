@@ -41,7 +41,7 @@ const MapViewScreen = ({ navigation, route }) => {
   const loadTimeoutRef = useRef(null);
 
   useEffect(() => {
-    console.log('MapViewScreen mounted, loading map data with cache...');
+    console.log('MapViewScreen mounted, loading map data with cache...', 'mode:', mode, 'locations:', locations);
     
     // Set a timeout for initial loading
     loadTimeoutRef.current = setTimeout(() => {
@@ -105,7 +105,9 @@ const MapViewScreen = ({ navigation, route }) => {
         console.log('Displaying map data:', {
           points: data.points?.length || 0,
           roads: data.roads?.length || 0,
-          routes: data.routes?.length || 0
+          routes: data.routes?.length || 0,
+          mode: mode,
+          locations: locations
         });
         processMapData(data, routeSummaries);
         hasLoadedCache.current = true;
@@ -238,34 +240,25 @@ const MapViewScreen = ({ navigation, route }) => {
         ];
         setMarkers(routeMarkers);
         
-        // Try to find and show road highlights for this route
-        const pickupPoint = processedMarkers.find(m => 
-          m.pointType === 'pickup' && 
-          Math.abs(m.latitude - parseFloat(locations.pickup.latitude)) < 0.001 &&
-          Math.abs(m.longitude - parseFloat(locations.pickup.longitude)) < 0.001
-        );
+        // Create route data for proper road routing
+        const routeData = {
+          start: {
+            lat: parseFloat(locations.pickup.latitude),
+            lng: parseFloat(locations.pickup.longitude)
+          },
+          end: {
+            lat: parseFloat(locations.destination.latitude),
+            lng: parseFloat(locations.destination.longitude)
+          },
+          color: '#007AFF',
+          weight: 6,
+          opacity: 0.8,
+          name: 'Tour Route'
+        };
+        console.log('Setting route data:', routeData);
+        setRoads([routeData]);
         
-        if (pickupPoint && pickupPoint.id) {
-          // Fetch routes for this pickup point to show road highlights
-          getRoutesByPickup(pickupPoint.id).then(routeResult => {
-            if (routeResult.success && routeResult.data) {
-              const { road_highlights = [], color } = routeResult.data;
-              if (road_highlights.length > 0) {
-                const processedRoads = road_highlights.map(road => ({
-                  id: road.id,
-                  name: road.name || 'Route',
-                  road_coordinates: road.coordinates || road.road_coordinates,
-                  stroke_color: color || road.color || '#007AFF',
-                  stroke_width: road.weight || 4,
-                  stroke_opacity: road.opacity || 0.7
-                }));
-                setRoads(processedRoads);
-              }
-            }
-          }).catch(error => {
-            console.log('Could not load road highlights for tour route:', error);
-          });
-        }
+
       } else if (mode === 'viewLocation' && location) {
         // Show only the specific location marker
         const locationMarker = {
@@ -278,8 +271,13 @@ const MapViewScreen = ({ navigation, route }) => {
           id: 'pickup-location'
         };
         setMarkers([locationMarker]);
+        setRoads([]);
       } else {
-        setMarkers(processedMarkers.filter(m => m.pointType === 'pickup'));
+        // Show all markers (pickup and dropoff) for public map view
+        setMarkers(processedMarkers);
+        if (mode !== 'viewRoute') {
+          setRoads(allRoads);
+        }
       }
     }
     
@@ -324,7 +322,12 @@ const MapViewScreen = ({ navigation, route }) => {
       });
       
       setAllRoads(processedRoads);
-      setRoads([]);
+      // Show all roads by default for public map view
+      if (mode !== 'viewRoute' && mode !== 'viewLocation') {
+        setRoads(processedRoads);
+      } else {
+        setRoads([]);
+      }
     }
     
     // Process routes and zones
@@ -342,8 +345,8 @@ const MapViewScreen = ({ navigation, route }) => {
       const maxLng = Math.max(pickup.longitude, destination.longitude);
       const centerLat = (minLat + maxLat) / 2;
       const centerLng = (minLng + maxLng) / 2;
-      const deltaLat = Math.max((maxLat - minLat) * 1.5, 0.02);
-      const deltaLng = Math.max((maxLng - minLng) * 1.5, 0.02);
+      const deltaLat = Math.max((maxLat - minLat) * 2.0, 0.05);
+      const deltaLng = Math.max((maxLng - minLng) * 2.0, 0.05);
       
       const newRegion = {
         latitude: centerLat,
@@ -351,6 +354,7 @@ const MapViewScreen = ({ navigation, route }) => {
         latitudeDelta: deltaLat,
         longitudeDelta: deltaLng,
       };
+      console.log('Setting region for route view:', newRegion);
       setRegion(newRegion);
     } else if (mode === 'viewLocation' && location) {
       const newRegion = {
@@ -360,14 +364,78 @@ const MapViewScreen = ({ navigation, route }) => {
         longitudeDelta: 0.01,
       };
       setRegion(newRegion);
-    } else if (data.config) {
-      const newRegion = {
-        latitude: parseFloat(data.config.center_latitude || 10.3157),
-        longitude: parseFloat(data.config.center_longitude || 123.8854),
-        latitudeDelta: data.config.zoom_level ? (0.5 / parseFloat(data.config.zoom_level)) : 0.15,
-        longitudeDelta: data.config.zoom_level ? (0.5 / parseFloat(data.config.zoom_level)) : 0.15,
-      };
-      setRegion(newRegion);
+    } else {
+      // Calculate bounds to fit all markers and roads
+      let allPoints = [];
+      
+      // Add all marker coordinates
+      if (data.points && data.points.length > 0) {
+        allPoints = allPoints.concat(data.points.map(p => ({
+          lat: parseFloat(p.latitude || 0),
+          lng: parseFloat(p.longitude || 0)
+        })));
+      }
+      
+      // Add road coordinates
+      if (data.roads && data.roads.length > 0) {
+        data.roads.forEach(road => {
+          if (road.road_coordinates && Array.isArray(road.road_coordinates)) {
+            road.road_coordinates.forEach(coord => {
+              if (coord && coord.length >= 2) {
+                allPoints.push({ lat: coord[0], lng: coord[1] });
+              }
+            });
+          }
+          if (road.start_latitude && road.start_longitude) {
+            allPoints.push({ lat: parseFloat(road.start_latitude), lng: parseFloat(road.start_longitude) });
+          }
+          if (road.end_latitude && road.end_longitude) {
+            allPoints.push({ lat: parseFloat(road.end_latitude), lng: parseFloat(road.end_longitude) });
+          }
+        });
+      }
+      
+      if (allPoints.length > 0) {
+        // Calculate bounds
+        const lats = allPoints.map(p => p.lat).filter(lat => lat && !isNaN(lat));
+        const lngs = allPoints.map(p => p.lng).filter(lng => lng && !isNaN(lng));
+        
+        if (lats.length > 0 && lngs.length > 0) {
+          const minLat = Math.min(...lats);
+          const maxLat = Math.max(...lats);
+          const minLng = Math.min(...lngs);
+          const maxLng = Math.max(...lngs);
+          
+          const centerLat = (minLat + maxLat) / 2;
+          const centerLng = (minLng + maxLng) / 2;
+          const deltaLat = Math.max((maxLat - minLat) * 1.2, 0.01);
+          const deltaLng = Math.max((maxLng - minLng) * 1.2, 0.01);
+          
+          const newRegion = {
+            latitude: centerLat,
+            longitude: centerLng,
+            latitudeDelta: deltaLat,
+            longitudeDelta: deltaLng,
+          };
+          setRegion(newRegion);
+        } else {
+          // Fallback to default region
+          setRegion({
+            latitude: parseFloat(data.config?.center_latitude || 10.3157),
+            longitude: parseFloat(data.config?.center_longitude || 123.8854),
+            latitudeDelta: 0.15,
+            longitudeDelta: 0.15,
+          });
+        }
+      } else {
+        // Fallback to default region
+        setRegion({
+          latitude: parseFloat(data.config?.center_latitude || 10.3157),
+          longitude: parseFloat(data.config?.center_longitude || 123.8854),
+          latitudeDelta: 0.15,
+          longitudeDelta: 0.15,
+        });
+      }
     }
   };
   
@@ -425,6 +493,7 @@ const MapViewScreen = ({ navigation, route }) => {
             text: 'Select',
             onPress: () => {
               onLocationSelect({
+                id: marker.id,
                 name: marker.title,
                 latitude: marker.latitude,
                 longitude: marker.longitude,
@@ -489,8 +558,8 @@ const MapViewScreen = ({ navigation, route }) => {
                 require('react-native').Linking.openURL(url);
               }},
               { text: 'Clear Routes', onPress: () => {
-                setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
-                setRoads([]);
+                setMarkers(allMarkers);
+                setRoads(allRoads);
               }},
               { text: 'OK' }
             ]
@@ -645,8 +714,8 @@ const MapViewScreen = ({ navigation, route }) => {
           <TouchableOpacity 
             style={[styles.floatingButton, styles.clearRoutesButton]}
             onPress={() => {
-              setMarkers(allMarkers.filter(m => m.pointType === 'pickup'));
-              setRoads([]);
+              setMarkers(allMarkers);
+              setRoads(allRoads);
             }}
           >
             <Text style={styles.floatingButtonText}>🗑️</Text>

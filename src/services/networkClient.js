@@ -92,6 +92,25 @@ class NetworkClient {
         } else {
           // Handle error responses
           const errorMessage = data?.error || data?.message || response.statusText || 'Unknown error';
+          
+          // Don't log certain expected business logic errors as network errors
+          const isExpectedBusinessError = response.status === 400 && (
+            errorMessage.includes('active ride request') ||
+            errorMessage.includes('ACTIVE_RIDE_EXISTS') ||
+            errorMessage.includes('Tour package has expired') ||
+            errorMessage.includes('cannot be booked')
+          );
+          
+          if (isExpectedBusinessError) {
+            // Don't retry or log as network error for business logic validation
+            return {
+              success: false,
+              error: errorMessage,
+              status: response.status,
+              data: data
+            };
+          }
+          
           throw new Error(`HTTP ${response.status}: ${errorMessage}`);
         }
 
@@ -182,6 +201,11 @@ class NetworkClient {
     // Don't log timeout errors as errors
     if (lastError && (lastError.name === 'AbortError' || (lastError.message && lastError.message.includes('Aborted')))) {
       throw new Error('Request timeout');
+    }
+    
+    // Don't log expected business errors
+    if (lastError && lastError.message && lastError.message.includes('active ride request')) {
+      throw lastError;
     }
     
     console.error(`API call failed after ${retries} retries:`, lastError);

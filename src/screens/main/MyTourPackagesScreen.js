@@ -65,7 +65,12 @@ export default function MyTourPackagesScreen({ navigation }) {
   };
 
   const renderPackage = (pkg, index) => (
-    <View key={index} style={styles.packageCard}>
+    <TouchableOpacity 
+      key={index} 
+      style={styles.packageCard}
+      onPress={() => navigation.navigate('PackageDetails', { package: pkg })}
+      activeOpacity={0.7}
+    >
       {pkg.photos && pkg.photos.length > 0 && (
         <Image source={{ uri: pkg.photos[0].url }} style={styles.packageImage} />
       )}
@@ -75,10 +80,12 @@ export default function MyTourPackagesScreen({ navigation }) {
           <Text style={styles.packageName} numberOfLines={2}>
             {pkg.package_name}
           </Text>
-          <View style={[styles.statusBadge, pkg.is_active ? styles.activeBadge : styles.inactiveBadge]}>
-            <Text style={[styles.statusText, pkg.is_active ? styles.activeText : styles.inactiveText]}>
-              {pkg.is_active ? 'Active' : 'Inactive'}
-            </Text>
+          <View style={styles.badgeContainer}>
+            <View style={[styles.statusBadge, pkg.is_active ? styles.activeBadge : styles.inactiveBadge]}>
+              <Text style={[styles.statusText, pkg.is_active ? styles.activeText : styles.inactiveText]}>
+                {pkg.is_active ? 'Active' : 'Inactive'}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -157,9 +164,21 @@ export default function MyTourPackagesScreen({ navigation }) {
               {pkg.is_active ? 'Deactivate' : 'Activate'}
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('PackageDetails', { package: pkg })}
+          >
+            <Ionicons name="eye-outline" size={18} color={MAROON} />
+            <Text style={styles.actionText}>View Details</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.tapHint}>
+          <Text style={styles.tapHintText}>Tap to view bookings and reviews</Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -282,6 +301,9 @@ const styles = StyleSheet.create({
     color: '#333',
     flex: 1,
     marginRight: 12,
+  },
+  badgeContainer: {
+    alignItems: 'flex-end',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -408,5 +430,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
     flex: 1,
+  },
+  tapHint: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    alignItems: 'center',
+  },
+  tapHintText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
   },
 });

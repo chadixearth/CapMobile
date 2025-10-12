@@ -91,7 +91,7 @@ export default function App() {
             global.navigationRef = navRef.current;
             
             // Set up JWT expiry callback
-            setSessionExpiredCallback(() => {
+            const handleSessionExpiry = () => {
               console.log('[App] JWT expired, logging out user');
               Alert.alert(
                 'Session Expired',
@@ -111,7 +111,13 @@ export default function App() {
                   }
                 ]
               );
-            });
+            };
+            
+            setSessionExpiredCallback(handleSessionExpiry);
+            
+            // Also set up API client session expiry callback
+            const { apiClient } = require('./services/improvedApiClient');
+            apiClient.setSessionExpiredCallback(handleSessionExpiry);
           }}
         >
             <NetworkStatus />

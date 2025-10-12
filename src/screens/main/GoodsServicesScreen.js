@@ -17,10 +17,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import Button from '../../components/Button';
 import LoadingScreen from '../../components/LoadingScreen';
 import { useAuth } from '../../hooks/useAuth';
-import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost } from '../../services/goodsServices';
+import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost, uploadGoodsServicesMedia } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
 import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
@@ -41,6 +42,7 @@ export default function GoodsServicesScreen() {
   const [userProfile, setUserProfile] = useState(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editDescription, setEditDescription] = useState('');
+  const [selectedImages, setSelectedImages] = useState([]);
   const [saving, setSaving] = useState(false);
   
   const isDriverOrOwner = auth.user?.role === 'driver' || auth.user?.role === 'owner';
@@ -62,6 +64,8 @@ export default function GoodsServicesScreen() {
       if (result.success) {
         setUserProfile(result.data);
         setEditDescription(result.data?.description || '');
+        // Reset selected images when fetching profile
+        setSelectedImages([]);
       }
     } catch (e) {
       console.error('Failed to fetch user profile:', e);
@@ -172,10 +176,34 @@ export default function GoodsServicesScreen() {
     if (!auth.user?.id) return;
     setSaving(true);
     try {
-      const result = await upsertGoodsServicesProfile(auth.user.id, editDescription.trim());
+      // Get existing media URLs
+      let existingMedia = [];
+      if (userProfile?.media && Array.isArray(userProfile.media)) {
+        existingMedia = userProfile.media.map(m => 
+          typeof m === 'string' ? m : (m?.url || '')
+        ).filter(Boolean);
+      }
+      
+      let newMediaUrls = [];
+      
+      // Upload new images if any selected
+      if (selectedImages.length > 0) {
+        const uploadResult = await uploadGoodsServicesMedia(auth.user.id, selectedImages);
+        if (uploadResult.success) {
+          newMediaUrls = uploadResult.urls;
+        } else {
+          Alert.alert('Warning', 'Some images failed to upload, but profile will be saved.');
+        }
+      }
+      
+      // Combine existing and new media
+      const allMediaUrls = [...existingMedia, ...newMediaUrls];
+      
+      const result = await upsertGoodsServicesProfile(auth.user.id, editDescription.trim(), allMediaUrls);
       if (result.success) {
         setUserProfile(result.data);
         setEditModalVisible(false);
+        setSelectedImages([]);
         Alert.alert('Success', 'Your goods & services profile has been updated.');
         fetchPosts(); // Refresh to show updated post
       } else {
@@ -205,6 +233,7 @@ export default function GoodsServicesScreen() {
               if (result.success) {
                 setUserProfile(null);
                 setEditDescription('');
+                setSelectedImages([]);
                 setEditModalVisible(false);
                 Alert.alert('Success', 'Your goods & services profile has been removed.');
                 fetchPosts(); // Refresh to remove from list
@@ -222,12 +251,47 @@ export default function GoodsServicesScreen() {
     );
   };
 
+  const pickImages = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        aspect: [1, 1],
+      });
+
+      if (!result.canceled && result.assets) {
+        const newImages = result.assets.map(asset => ({
+          uri: asset.uri,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+          type: asset.type || 'image/jpeg'
+        }));
+        setSelectedImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick images');
+    }
+  };
+
+  const removeImage = (index) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   const renderMediaGrid = (mediaArr) => {
     if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
     
+    // Handle both object format {url: "..."} and string format "..."
     const images = mediaArr
-      .filter((m) => m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '')
-      .map((m) => ({ ...m, url: m.url.replace(/\?$/, '') }))
+      .map((m) => {
+        if (typeof m === 'string' && m.trim() !== '') {
+          return { url: m.trim().replace(/\?$/, '') };
+        }
+        if (m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '') {
+          return { ...m, url: m.url.trim().replace(/\?$/, '') };
+        }
+        return null;
+      })
+      .filter(Boolean)
       .slice(0, 5);
     
     if (images.length === 0) return null;
@@ -267,29 +331,59 @@ export default function GoodsServicesScreen() {
     // Get media from multiple possible sources
     let mediaArray = [];
     
-    // Handle the media field which might be an array of objects or just [Array] placeholder
+    // Helper function to normalize URL
+    const normalizeUrl = (url) => {
+      if (!url || typeof url !== 'string') return null;
+      const cleanUrl = url.trim();
+      if (!cleanUrl) return null;
+      // Don't modify URLs that already have the correct bucket
+      if (cleanUrl.includes('goods-storage')) return cleanUrl;
+      // Fix URLs that need bucket correction
+      return cleanUrl.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/');
+    };
+    
+    // Try media field first
     if (item.media && Array.isArray(item.media) && item.media.length > 0) {
-      // Check if it's actual media objects or just placeholder
-      const firstItem = item.media[0];
-      if (firstItem && typeof firstItem === 'object' && firstItem.url) {
-        // Ensure URLs point to goods-storage bucket
-        mediaArray = item.media.map(media => ({
-          ...media,
-          url: media.url.includes('goods-storage') ? media.url : media.url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/')
-        }));
+      const validMedia = item.media
+        .map(m => {
+          if (typeof m === 'string') {
+            const url = normalizeUrl(m);
+            return url ? { url } : null;
+          }
+          if (m && typeof m === 'object' && m.url) {
+            const url = normalizeUrl(m.url);
+            return url ? { ...m, url } : null;
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      if (validMedia.length > 0) {
+        mediaArray = validMedia;
       }
     }
     
     // Fallback to other possible fields
     if (mediaArray.length === 0) {
-      if (Array.isArray(item.photos) && item.photos.length > 0) {
-        mediaArray = item.photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
-      } else if (Array.isArray(item.images) && item.images.length > 0) {
-        mediaArray = item.images.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
-      } else if (Array.isArray(item.profile_photos) && item.profile_photos.length > 0) {
-        mediaArray = item.profile_photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
-      } else if (Array.isArray(authorFromMap.profile_photos) && authorFromMap.profile_photos.length > 0) {
-        mediaArray = authorFromMap.profile_photos.map(url => ({ url: url.includes('goods-storage') ? url : url.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/') }));
+      const fallbackFields = [
+        item.photos,
+        item.images, 
+        item.profile_photos,
+        authorFromMap.profile_photos
+      ];
+      
+      for (const field of fallbackFields) {
+        if (Array.isArray(field) && field.length > 0) {
+          const validUrls = field
+            .map(url => normalizeUrl(url))
+            .filter(Boolean)
+            .map(url => ({ url }));
+          
+          if (validUrls.length > 0) {
+            mediaArray = validUrls;
+            break;
+          }
+        }
       }
     }
     
@@ -472,7 +566,10 @@ export default function GoodsServicesScreen() {
             </View>
             <TouchableOpacity 
               style={styles.editProfileButton}
-              onPress={() => setEditModalVisible(true)}
+              onPress={() => {
+                setEditModalVisible(true);
+                setSelectedImages([]);
+              }}
             >
               <Ionicons name={userProfile ? "create-outline" : "add-outline"} size={18} color={COLORS.primary} />
             </TouchableOpacity>
@@ -573,6 +670,34 @@ export default function GoodsServicesScreen() {
                     <Text style={styles.charCount}>{editDescription.length} characters</Text>
                   </View>
                 </View>
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <Ionicons name="images-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.inputLabel}>Photos ({selectedImages.length}/5)</Text>
+                </View>
+                
+                <TouchableOpacity style={styles.addPhotoButton} onPress={pickImages}>
+                  <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
+                  <Text style={styles.addPhotoText}>Add Photos</Text>
+                </TouchableOpacity>
+                
+                {selectedImages.length > 0 && (
+                  <View style={styles.selectedImagesContainer}>
+                    {selectedImages.map((image, index) => (
+                      <View key={index} style={styles.selectedImageWrapper}>
+                        <Image source={{ uri: image.uri }} style={styles.selectedImage} />
+                        <TouchableOpacity 
+                          style={styles.removeImageButton}
+                          onPress={() => removeImage(index)}
+                        >
+                          <Ionicons name="close" size={16} color={COLORS.white} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
               
               <View style={styles.actionButtons}>
@@ -874,6 +999,52 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  addPhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.secondary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderWidth: 2,
+    borderColor: COLORS.line,
+    borderStyle: 'dashed',
+    gap: 8,
+    marginBottom: 16,
+  },
+  addPhotoText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  selectedImagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  selectedImageWrapper: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  selectedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
     alignItems: 'center',

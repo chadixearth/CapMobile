@@ -83,28 +83,24 @@ export async function requestRide({ pickup, destination, userId }) {
 // Tartanilla Carriage API functions
 export async function getCarriagesByDriver(driverId) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    console.log(`[getCarriagesByDriver] Fetching carriages for driver: ${driverId}`);
     
-    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`, {
-      signal: controller.signal,
-      headers: {
-        'Connection': 'close',
-        'Cache-Control': 'no-cache',
-      },
-      cache: 'no-store',
-    });
+    const { apiClient } = await import('./improvedApiClient');
+    const result = await apiClient.get(`/tartanilla-carriages/get_by_driver/?driver_id=${driverId}`);
     
-    clearTimeout(timeoutId);
-    if (!response.ok) {
-      throw new Error('Failed to fetch carriages');
+    console.log(`[getCarriagesByDriver] API result:`, result);
+    
+    if (result.success) {
+      const carriages = result.data?.data || result.data || [];
+      console.log(`[getCarriagesByDriver] Found ${carriages.length} carriages for driver ${driverId}`);
+      return { success: true, data: carriages };
+    } else {
+      console.log(`[getCarriagesByDriver] API failed:`, result.error);
+      return { success: false, error: result.error || 'Failed to fetch carriages', data: [] };
     }
-    return await response.json();
   } catch (error) {
-    if (error.message?.includes('ConnectionTerminated')) {
-      throw new Error('Connection lost. Please check your network and try again.');
-    }
-    throw error;
+    console.error(`[getCarriagesByDriver] Error:`, error);
+    return { success: false, error: error.message || 'Network error', data: [] };
   }
 }
 

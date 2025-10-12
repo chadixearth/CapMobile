@@ -162,6 +162,13 @@ export async function createBooking(bookingData) {
       const isSocketError = /WinError 10035|EWOULDBLOCK|EAGAIN|socket operation could not be completed/i.test(err?.message || '');
       const isStatusCheck = /23514|status_check|bookings_status_check/i.test(err?.message || '');
       const isUserNotFound = /Tourist.*does not exist|Customer.*does not exist/i.test(err?.message || '');
+      const isExpiredPackage = /Tour package has expired|cannot be booked/i.test(err?.message || '');
+      
+      // Don't retry expired package errors - they're business logic
+      if (isExpiredPackage) {
+        console.log('Booking prevented - package expired');
+        throw err;
+      }
       
       if (isStatusCheck && currentPayload.status === 'pending') {
         // If backend rejects pending status, try with waiting_for_driver as fallback

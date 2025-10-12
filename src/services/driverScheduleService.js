@@ -1,9 +1,15 @@
-import apiClient from './apiClient';
+import { apiClient } from './improvedApiClient';
 
 export const driverScheduleService = {
   // Check if driver is available for specific date/time
   async checkAvailability(driverId, bookingDate, bookingTime) {
     try {
+      // Validate required parameters
+      if (!driverId || !bookingDate || !bookingTime) {
+        console.warn('[driverScheduleService] Missing required parameters:', { driverId, bookingDate, bookingTime });
+        return { available: true, conflict_reason: null }; // Default to available if params missing
+      }
+      
       const result = await apiClient.post('/driver-schedule/check-availability/', {
         driver_id: driverId,
         booking_date: bookingDate,
@@ -11,6 +17,7 @@ export const driverScheduleService = {
       });
       return result.data;
     } catch (error) {
+      console.warn('[driverScheduleService] checkAvailability error:', error.message);
       return { available: true, conflict_reason: null }; // Default to available if check fails
     }
   },

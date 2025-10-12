@@ -124,6 +124,7 @@ export async function createRideBooking(bookingData) {
     const validation = await validateRideAction(bookingData.customer_id, 'customer', 'create');
     
     if (!validation.canProceed) {
+      console.log('Ride booking prevented - user has active ride:', validation.reason);
       return {
         success: false,
         error: validation.reason,
@@ -141,16 +142,44 @@ export async function createRideBooking(bookingData) {
         bookingData.pickup_longitude = location.longitude;
       } catch (locationError) {
         console.warn('Could not get current location:', locationError);
+        // Continue without coordinates - they're optional
       }
     }
     
+    // Remove undefined coordinate fields to avoid backend errors
+    const cleanedData = { ...bookingData };
+    if (!cleanedData.pickup_latitude) delete cleanedData.pickup_latitude;
+    if (!cleanedData.pickup_longitude) delete cleanedData.pickup_longitude;
+    if (!cleanedData.dropoff_latitude) delete cleanedData.dropoff_latitude;
+    if (!cleanedData.dropoff_longitude) delete cleanedData.dropoff_longitude;
+    
     const result = await apiCall('/ride-hailing/', {
       method: 'POST',
-      body: bookingData
+      body: cleanedData
     });
+    
+    // Handle business logic errors that come back as success=false
+    if (!result.success && result.error && result.error.includes('active ride request')) {
+      console.log('Ride booking prevented - active ride exists');
+      return {
+        success: false,
+        error: result.error,
+        error_code: 'ACTIVE_RIDE_EXISTS'
+      };
+    }
     
     return result;
   } catch (error) {
+    // Handle active ride error specifically (don't log as error)
+    if (error.message && error.message.includes('active ride request')) {
+      console.log('Ride booking prevented - active ride exists (from backend)');
+      return {
+        success: false,
+        error: 'You already have an active ride request. Please wait for it to complete or cancel it first.',
+        error_code: 'ACTIVE_RIDE_EXISTS'
+      };
+    }
+    
     console.error('Error creating ride booking:', error);
     throw error;
   }
@@ -277,23 +306,39 @@ export async function getRoutesByPickup(pickupId) {
     const result = await apiCall(`/ride-hailing/routes-by-pickup/${pickupId}/`);
     console.log(`[getRoutesByPickup] API response:`, result);
     
-    // Handle nested response structure
-    if (result && result.data && result.data.data) {
+    // Handle different response structures
+    if (result && result.success) {
+      const data = result.data?.data || result.data || {};
       return {
         success: true,
-        data: result.data.data
-      };
-    } else if (result && result.data) {
-      return {
-        success: true,
-        data: result.data
+        data: {
+          available_destinations: data.available_destinations || [],
+          road_highlights: data.road_highlights || [],
+          color: data.color || '#007AFF'
+        }
       };
     }
     
-    return result;
+    // Return empty data structure if API call fails
+    return {
+      success: true,
+      data: {
+        available_destinations: [],
+        road_highlights: [],
+        color: '#007AFF'
+      }
+    };
   } catch (error) {
     console.error('Error fetching routes by pickup:', error);
-    return { success: false, error: error.message };
+    return {
+      success: true,
+      data: {
+        available_destinations: [],
+        road_highlights: [],
+        color: '#007AFF'
+      },
+      error: error.message
+    };
   }
 }
 

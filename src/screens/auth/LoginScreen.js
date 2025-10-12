@@ -112,7 +112,24 @@ export default function LoginScreen({ navigation }) {
       
       if (!result.success && !result.scheduled_for_deletion) {
         console.log('[LoginScreen] Login failed:', result.error);
-        setError(result.error || 'Login failed.');
+        const errorMsg = result.error || 'Login failed.';
+        
+        // Handle incorrect password with helpful guidance
+        if (errorMsg.includes('Invalid email or password') || errorMsg.includes('credentials')) {
+          Alert.alert(
+            'Login Failed',
+            'The email or password you entered is incorrect.\n\nIf you recently changed your password or can\'t remember it, you can reset it using the "Forgot Password" option.',
+            [
+              { text: 'Try Again', style: 'default' },
+              { 
+                text: 'Reset Password', 
+                onPress: () => navigation.navigate(Routes.FORGOT_PASSWORD)
+              }
+            ]
+          );
+        } else {
+          setError(errorMsg);
+        }
       }
     } catch (e) {
       console.error('[LoginScreen] Login error:', e);
@@ -190,7 +207,7 @@ export default function LoginScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.forgotWrap}
-            onPress={() => navigation.navigate(Routes.FORGOT_PASSWORD || 'ForgotPassword')}
+            onPress={() => navigation.navigate(Routes.FORGOT_PASSWORD)}
             activeOpacity={0.8}
           >
             <Text style={styles.forgotText}>Forgot Password ?</Text>

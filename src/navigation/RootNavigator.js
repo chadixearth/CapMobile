@@ -4,8 +4,10 @@ import { View, ActivityIndicator } from 'react-native';
 import { setNavigationRef } from '../services/apiClient';
 import SplashScreen from '../screens/splash/SplashScreen';
 import WelcomeScreen from '../screens/welcome/WelcomeScreen';
+import RoleSelectionScreen from '../screens/welcome/RoleSelectionScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegistrationScreen from '../screens/auth/RegistrationScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import MapViewScreen from '../screens/map/MapViewScreen';
 import AccountDetailsScreen from '../screens/main/AccountDetailsScreen';
 import TartanillaCarriagesScreen from '../screens/main/TartanillaCarriagesScreen';
@@ -19,6 +21,7 @@ import BookingConfirmationScreen from '../screens/main/BookingConfirmationScreen
 import ReviewsScreen from '../screens/main/ReviewsScreen';
 import MyTourPackagesScreen from '../screens/main/MyTourPackagesScreen';
 import CreateTourPackageScreen from '../screens/main/CreateTourPackageScreen';
+import PackageDetailsScreen from '../screens/main/PackageDetailsScreen';
 import CompletionPhotoScreen from '../screens/main/CompletionPhotoScreen';
 import PaymentReceiptScreen from '../screens/main/PaymentReceiptScreen';
 import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
@@ -88,6 +91,8 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.WELCOME} component={WelcomeScreen} />
           <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
           <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
+          <Stack.Screen name={Routes.FORGOT_PASSWORD} component={ForgotPasswordScreen} />
+          <Stack.Screen name={Routes.ROLE_SELECTION} component={RoleSelectionScreen} />
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
         </>
       ) : (
@@ -109,6 +114,7 @@ export default function RootNavigator() {
           <Stack.Screen name="MyTourPackages" component={MyTourPackagesScreen} />
           <Stack.Screen name="CreateTourPackage" component={CreateTourPackageScreen} />
           <Stack.Screen name="EditTourPackage" component={CreateTourPackageScreen} />
+          <Stack.Screen name="PackageDetails" component={PackageDetailsScreen} />
           <Stack.Screen name="MyCarriages" component={MyCarriagesScreen} />
           <Stack.Screen name="CompletionPhoto" component={CompletionPhotoScreen} />
           <Stack.Screen name="CompletionPhotoScreen" component={CompletionPhotoScreen} />

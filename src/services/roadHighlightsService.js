@@ -4,14 +4,21 @@ export async function getRoadHighlights() {
   try {
     const result = await apiRequest('/map/road-highlights/');
     
-    if (result.success && result.data.success) {
-      return result.data.data.roads || [];
+    // Handle different response structures
+    if (result.success) {
+      // Direct success response
+      return result.data?.roads || [];
+    } else if (result.data?.success) {
+      // Nested success response
+      return result.data.data?.roads || [];
     } else {
-      throw new Error(result.data?.error || result.error || 'Failed to fetch road highlights');
+      console.warn('Road highlights API returned no data, using empty array');
+      return [];
     }
   } catch (error) {
     console.error('Error fetching road highlights:', error);
-    throw error;
+    // Return empty array instead of throwing to prevent app crashes
+    return [];
   }
 }
 

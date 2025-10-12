@@ -26,6 +26,31 @@ export default function BookingHistoryScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reviewStatus, setReviewStatus] = useState({});
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const categories = [
+    { id: 'all', label: 'All', icon: 'list' },
+    { id: 'tour', label: 'Tour Package', icon: 'map' },
+    { id: 'custom', label: 'Custom', icon: 'settings' },
+    { id: 'special', label: 'Special Event', icon: 'star' }
+  ];
+
+  const categorizeBooking = (booking) => {
+    const packageName = booking.package_data?.package_name?.toLowerCase() || '';
+    const bookingType = booking.booking_type?.toLowerCase() || '';
+    
+    if (packageName.includes('custom') || bookingType.includes('custom')) {
+      return 'custom';
+    }
+    if (packageName.includes('special') || packageName.includes('event') || bookingType.includes('special')) {
+      return 'special';
+    }
+    return 'tour';
+  };
+
+  const filteredBookings = selectedCategory === 'all' 
+    ? bookings 
+    : bookings.filter(b => categorizeBooking(b) === selectedCategory);
 
   const fetchBookings = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -103,6 +128,33 @@ export default function BookingHistoryScreen({ navigation }) {
     }
   };
 
+  const getCategoryColor = (category) => {
+    switch (category) {
+      case 'tour': return '#FF9800';
+      case 'custom': return '#9C27B0';
+      case 'special': return '#E91E63';
+      default: return MAROON;
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch (category) {
+      case 'tour': return 'map';
+      case 'custom': return 'settings';
+      case 'special': return 'star';
+      default: return 'list';
+    }
+  };
+
+  const getCategoryLabel = (category) => {
+    switch (category) {
+      case 'tour': return 'Tour';
+      case 'custom': return 'Custom';
+      case 'special': return 'Special';
+      default: return 'General';
+    }
+  };
+
   const handleReviewPress = async (booking) => {
     try {
       // Get user's anonymous preference
@@ -154,9 +206,21 @@ export default function BookingHistoryScreen({ navigation }) {
       <View key={booking.id} style={styles.bookingCard}>
         <View style={styles.bookingHeader}>
           <View style={styles.bookingInfo}>
-            <Text style={styles.bookingTitle} numberOfLines={2}>
-              {booking.package_data?.package_name || 'Tour Package'}
-            </Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.bookingTitle} numberOfLines={2}>
+                {booking.package_data?.package_name || 'Tour Package'}
+              </Text>
+              <View style={[styles.categoryTag, { backgroundColor: getCategoryColor(categorizeBooking(booking)) + '20' }]}>
+                <Ionicons 
+                  name={getCategoryIcon(categorizeBooking(booking))} 
+                  size={12} 
+                  color={getCategoryColor(categorizeBooking(booking))} 
+                />
+                <Text style={[styles.categoryTagText, { color: getCategoryColor(categorizeBooking(booking)) }]}>
+                  {getCategoryLabel(categorizeBooking(booking))}
+                </Text>
+              </View>
+            </View>
             <Text style={styles.bookingDate}>
               {new Date(booking.created_at).toLocaleDateString()}
             </Text>
@@ -264,6 +328,51 @@ export default function BookingHistoryScreen({ navigation }) {
         <Text style={styles.headerTitle}>My Bookings</Text>
       </View>
 
+      {/* Categories */}
+      <View style={styles.categoriesContainer}>
+        {categories.map((category) => {
+          const categoryCount = category.id === 'all' 
+            ? bookings.length 
+            : bookings.filter(b => categorizeBooking(b) === category.id).length;
+          
+          return (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryBtn,
+                selectedCategory === category.id && styles.categoryBtnActive
+              ]}
+              onPress={() => setSelectedCategory(category.id)}
+            >
+              <Ionicons 
+                name={category.icon} 
+                size={16} 
+                color={selectedCategory === category.id ? '#fff' : MAROON} 
+              />
+              <Text style={[
+                styles.categoryText,
+                selectedCategory === category.id && styles.categoryTextActive
+              ]}>
+                {category.label}
+              </Text>
+              {categoryCount > 0 && (
+                <View style={[
+                  styles.categoryBadge,
+                  selectedCategory === category.id && styles.categoryBadgeActive
+                ]}>
+                  <Text style={[
+                    styles.categoryBadgeText,
+                    selectedCategory === category.id && styles.categoryBadgeTextActive
+                  ]}>
+                    {categoryCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* Content */}
       <ScrollView
         style={styles.content}
@@ -279,14 +388,19 @@ export default function BookingHistoryScreen({ navigation }) {
         ) : bookings.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="calendar-outline" size={64} color="#DDD" />
-            <Text style={styles.emptyTitle}>No Bookings Yet</Text>
+            <Text style={styles.emptyTitle}>
+              {selectedCategory === 'all' ? 'No Bookings Yet' : `No ${categories.find(c => c.id === selectedCategory)?.label} Bookings`}
+            </Text>
             <Text style={styles.emptyText}>
-              Your booking history will appear here once you make your first reservation.
+              {selectedCategory === 'all' 
+                ? 'Your booking history will appear here once you make your first reservation.'
+                : `You haven't made any ${categories.find(c => c.id === selectedCategory)?.label.toLowerCase()} bookings yet.`
+              }
             </Text>
           </View>
         ) : (
           <View style={styles.bookingsList}>
-            {bookings.map(renderBooking)}
+            {filteredBookings.map(renderBooking)}
           </View>
         )}
       </ScrollView>
@@ -314,6 +428,58 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: '700',
+  },
+  categoriesContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  categoryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: MAROON,
+    backgroundColor: '#fff',
+    gap: 4,
+  },
+  categoryBtnActive: {
+    backgroundColor: MAROON,
+  },
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: MAROON,
+  },
+  categoryTextActive: {
+    color: '#fff',
+  },
+  categoryBadge: {
+    backgroundColor: MAROON,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryBadgeActive: {
+    backgroundColor: '#fff',
+  },
+  categoryBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  categoryBadgeTextActive: {
+    color: MAROON,
   },
   content: {
     flex: 1,
@@ -372,11 +538,30 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   bookingTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
+  },
+  categoryTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  categoryTagText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   bookingDate: {
     fontSize: 12,

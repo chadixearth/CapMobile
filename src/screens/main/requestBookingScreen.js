@@ -214,15 +214,18 @@ const RequestBookingScreen = ({ route, navigation }) => {
       return false;
     }
 
-    const timeOk =
-      typeof formData.pickup_time === 'string' &&
-      /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
-    if (!timeOk) {
-      showError('Pickup time must be in HH:MM format', {
-        title: 'Invalid Time Format',
-        type: 'warning',
-      });
-      return false;
+    // Only validate pickup time if package doesn't have start_time set
+    if (!selectedPackage?.start_time) {
+      const timeOk =
+        typeof formData.pickup_time === 'string' &&
+        /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.test(formData.pickup_time.trim());
+      if (!timeOk) {
+        showError('Pickup time must be in HH:MM format', {
+          title: 'Invalid Time Format',
+          type: 'warning',
+        });
+        return false;
+      }
     }
 
     const selectedPackageForValidation =
@@ -317,7 +320,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
         package_id: formData.package_id,
         customer_id: userId,
         booking_date: formData.booking_date.toISOString().split('T')[0],
-        pickup_time: sanitizeTime(formData.pickup_time),
+        pickup_time: selectedPackage?.start_time ? sanitizeTime(selectedPackage.start_time) : sanitizeTime(formData.pickup_time),
         number_of_pax: Number(formData.number_of_pax) || 1,
         total_amount: Number(formData.total_amount) || 0,
         special_requests: formData.special_requests || '',
@@ -337,14 +340,24 @@ const RequestBookingScreen = ({ route, navigation }) => {
       
       setLoading(false);
     } catch (error) {
-      console.error('Error preparing booking:', error);
       setLoading(false);
 
       const errorMessage = error.message || 'Failed to prepare booking';
-      showError(errorMessage, {
-        title: 'Booking Error',
-        type: 'error',
-      });
+      
+      // Handle expired package error gracefully
+      if (errorMessage.includes('Tour package has expired') || errorMessage.includes('cannot be booked')) {
+        console.log('Booking prevented - package expired');
+        showError('This tour package has expired and is no longer available for booking. Please select a different package.', {
+          title: 'Package Expired',
+          type: 'warning',
+        });
+      } else {
+        console.error('Error preparing booking:', error);
+        showError(errorMessage, {
+          title: 'Booking Error',
+          type: 'error',
+        });
+      }
     }
   };
 
@@ -489,7 +502,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
             {/* Date & Time row */}
             <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: selectedPackage?.start_time ? 0 : 8 }]}>
                 <Text style={styles.label}>Booking Date *</Text>
                 <TouchableOpacity
                   style={[styles.input, styles.inputButton]}
@@ -506,23 +519,38 @@ const RequestBookingScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={styles.label}>Pickup Time</Text>
-                <TouchableOpacity
-                  style={[styles.input, styles.inputButton]}
-                  onPress={() => setShowTimePicker(true)}
-                  onLayout={registerField('pickup_time')}
-                  onFocus={() => focusField('pickup_time')}
-                >
-                  <View style={styles.inputButtonContent}>
-                    <Ionicons name="time-outline" size={16} color={MAROON} />
-                    <Text style={styles.inputButtonText}>
-                      {formData.pickup_time}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+              {!selectedPackage?.start_time && (
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.label}>Pickup Time</Text>
+                  <TouchableOpacity
+                    style={[styles.input, styles.inputButton]}
+                    onPress={() => setShowTimePicker(true)}
+                    onLayout={registerField('pickup_time')}
+                    onFocus={() => focusField('pickup_time')}
+                  >
+                    <View style={styles.inputButtonContent}>
+                      <Ionicons name="time-outline" size={16} color={MAROON} />
+                      <Text style={styles.inputButtonText}>
+                        {formData.pickup_time}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
+
+            {/* Show package start time if set */}
+            {selectedPackage?.start_time && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Package Start Time</Text>
+                <View style={styles.readonlyField}>
+                  <Ionicons name="time-outline" size={16} color={MAROON} style={{ marginRight: 8 }} />
+                  <Text style={styles.readonlyText}>
+                    {selectedPackage.start_time}
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {showDatePicker && (
               <DateTimePicker

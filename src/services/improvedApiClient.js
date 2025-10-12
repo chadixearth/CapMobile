@@ -1,4 +1,4 @@
-import { getAccessToken, refreshAccessToken, refreshTokenIfNeeded } from './authService';
+import { getAccessToken, refreshAccessToken, refreshTokenIfNeeded, clearLocalSession, setSessionExpiredCallback } from './authService';
 import { apiBaseUrl } from './networkConfig';
 
 const DEBUG_API = __DEV__;
@@ -9,6 +9,20 @@ class ImprovedApiClient {
     this.baseURL = apiBaseUrl();
     this.maxRetries = 3;
     this.retryDelay = 1000; // 1 second base delay
+    this.sessionExpiredCallback = null;
+  }
+
+  setSessionExpiredCallback(callback) {
+    this.sessionExpiredCallback = callback;
+    setSessionExpiredCallback(callback);
+  }
+
+  async handleSessionExpiry() {
+    log('Session expired - clearing local session');
+    await clearLocalSession();
+    if (this.sessionExpiredCallback) {
+      this.sessionExpiredCallback();
+    }
   }
 
   /**
@@ -86,35 +100,35 @@ class ImprovedApiClient {
 
         // Handle specific error cases
         if (response.status === 401) {
-          log('❌ Unauthorized - attempting token refresh');
+          log('❌ Unauthorized - session expired');
           
-          // Try to refresh token and retry once more
-          if (attempt === 1 && !skipAuth) {
-            const refreshResult = await refreshAccessToken();
-            if (refreshResult.success) {
-              log('Token refreshed, retrying request');
-              continue; // Retry with refreshed token
-            } else {
-              log('Token refresh failed');
-            }
-          }
+          // Don't try to refresh, just handle session expiry
+          await this.handleSessionExpiry();
+          return {
+            success: false,
+            error: 'Session expired. Please log in again.',
+            status: 401,
+            sessionExpired: true
+          };
         }
 
         // Handle JWT expired errors specifically
         if (data && (
           (typeof data === 'object' && data.message && data.message.includes('JWT expired')) ||
           (typeof data === 'object' && data.error && data.error.includes('JWT expired')) ||
-          (typeof data === 'string' && data.includes('JWT expired'))
+          (typeof data === 'string' && data.includes('JWT expired')) ||
+          (typeof data === 'object' && data.error && data.error.includes('PGRST301'))
         )) {
           log('JWT expired error detected');
           
-          if (attempt === 1 && !skipAuth) {
-            const refreshResult = await refreshAccessToken();
-            if (refreshResult.success) {
-              log('Token refreshed after JWT expired, retrying');
-              continue;
-            }
-          }
+          // Don't retry, just handle session expiry immediately
+          await this.handleSessionExpiry();
+          return {
+            success: false,
+            error: 'Session expired. Please log in again.',
+            status: 401,
+            sessionExpired: true
+          };
         }
 
         // Retry on server errors

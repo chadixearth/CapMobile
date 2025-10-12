@@ -86,35 +86,20 @@ export async function apiRequest(endpoint, options = {}) {
         (data.error && data.error.includes('JWT expired')) ||
         (data.error && data.error.includes('PGRST301')) ||
         (data.message && data.message.includes('JWT expired')))) {
-      console.log('[authService] JWT expired, attempting refresh');
+      console.log('[authService] JWT expired, clearing session instead of refresh');
       
-      // Try to refresh token first
-      const refreshResult = await refreshAccessToken();
-      if (refreshResult.success) {
-        console.log('[authService] Token refreshed, retrying request');
-        // Retry the original request with new token
-        const newToken = await getAccessToken();
-        if (newToken && !isAuthEndpoint) {
-          headers.Authorization = `Bearer ${newToken}`;
-          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
-            ...options,
-            headers,
-            signal: controller.signal,
-          });
-          const retryData = await retryResponse.json();
-          return {
-            success: retryResponse.ok,
-            data: retryData,
-            status: retryResponse.status,
-          };
-        }
-      } else {
-        console.log('[authService] Token refresh failed, clearing session');
-        await clearStoredSession();
-        if (sessionExpiredCallback) {
-          sessionExpiredCallback();
-        }
+      // Instead of trying to refresh (which is failing), just clear the session
+      // This will force the user to log in again with fresh credentials
+      await clearStoredSession();
+      if (sessionExpiredCallback) {
+        sessionExpiredCallback();
       }
+      
+      return {
+        success: false,
+        data: { error: 'Session expired. Please log in again.' },
+        status: 401,
+      };
     }
     
     console.log(`API response status: ${response.status}`);
@@ -570,7 +555,19 @@ export async function refreshAccessToken() {
       }),
     });
 
-    const data = await response.json();
+    let data;
+    try {
+      const text = await response.text();
+      if (text.trim().startsWith('<')) {
+        // HTML response (likely 404 or error page)
+        console.warn('[refreshAccessToken] Received HTML response instead of JSON');
+        return { success: false, error: 'Token refresh endpoint not available' };
+      }
+      data = JSON.parse(text);
+    } catch (parseError) {
+      console.error('[refreshAccessToken] JSON parse error:', parseError.message);
+      return { success: false, error: 'Invalid response from refresh endpoint' };
+    }
 
     if (response.ok && data.success) {
       // Store new tokens
@@ -891,6 +888,20 @@ export async function changePassword(currentPassword, newPassword) {
     });
     
     console.log('[authService] Change password result:', result);
+    
+    // Handle "User not found" error - indicates invalid session
+    if (!result.success && result.data?.error === 'User not found.') {
+      console.log('[authService] User not found - clearing session and triggering re-login');
+      await clearStoredSession();
+      if (sessionExpiredCallback) {
+        sessionExpiredCallback();
+      }
+      return {
+        success: false,
+        error: 'Your session has expired. Please log in again.',
+        session_expired: true
+      };
+    }
     
     if (result.success && result.data && result.data.success) {
       return {
