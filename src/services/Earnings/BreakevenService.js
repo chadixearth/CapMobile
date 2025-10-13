@@ -306,3 +306,119 @@ export async function upsertBreakevenHistoryFromSummary({
     return { success: false, error: e?.message || 'unexpected error' };
   }
 }
+
+/**
+ * Get owner breakeven history from Supabase
+ */
+export async function getOwnerBreakevenHistory({
+  driverId,
+  periodType = 'daily',
+  limit = 30,
+  offset = 0,
+  excludeCurrent = false,
+}) {
+  try {
+    if (!driverId) return { success: false, error: 'driverId required' };
+    
+    let query = supabase
+      .from('breakeven_history')
+      .select('*')
+      .eq('driver_id', driverId)
+      .eq('period_type', periodType)
+      .eq('role', 'owner');
+    
+    if (excludeCurrent) {
+      const now = new Date();
+      const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      
+      if (periodType === 'daily') {
+        const todayPH = phTime.toISOString().split('T')[0];
+        const todayStartPH = `${todayPH}T00:00:00+08:00`;
+        query = query.lt('period_start', todayStartPH);
+      } else if (periodType === 'weekly') {
+        // Exclude current week
+        const currentWeekStart = new Date(phTime);
+        const dayOfWeek = currentWeekStart.getDay();
+        const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
+        currentWeekStart.setHours(0, 0, 0, 0);
+        const currentWeekStartUTC = new Date(currentWeekStart.getTime() - (8 * 60 * 60 * 1000));
+        query = query.lt('period_start', currentWeekStartUTC.toISOString());
+      } else if (periodType === 'monthly') {
+        // Exclude current month
+        const currentMonthStart = new Date(phTime.getFullYear(), phTime.getMonth(), 1);
+        const currentMonthStartUTC = new Date(currentMonthStart.getTime() - (8 * 60 * 60 * 1000));
+        query = query.lt('period_start', currentMonthStartUTC.toISOString());
+      }
+    }
+    
+    const { data, error } = await query
+      .order('period_start', { ascending: false })
+      .range(offset, offset + limit - 1);
+      
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: { items: data || [] } };
+  } catch (e) {
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
+
+/**
+ * Save owner breakeven history based on manual inputs and selected period
+ */
+export async function saveOwnerBreakevenHistory({
+  driverId,
+  periodType,
+  periodStart,
+  periodEnd,
+  expenses = 0,
+  revenue = 0,
+  ridesNeeded = 0,
+  ridesDone = 0,
+  breakdown = {},
+}) {
+  try {
+    if (!driverId || !periodType || !periodStart || !periodEnd) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    const exps = Number(expenses || 0);
+    const rev = Number(revenue || 0);
+    const profit = Number((rev - exps).toFixed(2));
+
+    const row = {
+      driver_id: driverId,
+      period_type: periodType,
+      period_start: periodStart,
+      period_end: periodEnd,
+      expenses: exps,
+      revenue_driver: rev,
+      profit,
+      rides_needed: Number(ridesNeeded || 0),
+      rides_done: Number(ridesDone || 0),
+      breakeven_hit: profit >= 0,
+      profitable: profit > 0,
+      breakdown: breakdown || {},
+      snapshot_at: new Date().toISOString(),
+      bucket_tz: 'ph',
+      day_cutoff_hour: null,
+      role: 'owner',
+    };
+
+    const { data, error } = await supabase
+      .from('breakeven_history')
+      .upsert(row, { onConflict: 'driver_id,role,period_type,period_start' })
+      .select();
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return { success: false, error: error.message || 'supabase error' };
+    }
+    
+    console.log('Owner breakeven history saved:', data);
+    return { success: true, data };
+  } catch (e) {
+    console.error('Save error:', e);
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
