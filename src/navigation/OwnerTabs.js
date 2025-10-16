@@ -48,7 +48,7 @@ export default function OwnerTabs({ setRole }) {
         },
         tabBarActiveTintColor: '#6B2E2B',
         tabBarInactiveTintColor: '#aaa',
-        tabBarShowLabel: true,
+        tabBarShowLabel: false,
         headerShown: true,
       })}
     >

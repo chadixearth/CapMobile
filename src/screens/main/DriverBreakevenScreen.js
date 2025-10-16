@@ -1,6 +1,3 @@
-// BREAKEVEN SCREEN DRIVER
-
-
 // screens/DriverBreakevenScreen.js
 import React, { useMemo, useState, useLayoutEffect, useEffect, useCallback, useRef } from 'react';
 import {
@@ -751,11 +748,15 @@ export default function EarningsScreen({ navigation, route }) {
         await setBreakevenExpenseCache(driverId, 0);
         console.log('[Breakeven] Daily cache reset → 0');
 
-        // 2) Hard-clear today's breakeven_history EXPENSES row (PH calendar day)
+        // 2) Hard-clear today's breakeven_history EXPENSES, PROFIT, and RIDES_NEEDED (PH calendar day)
         const [gteISO, ltISO] = getPhTodayUtcWindow(); // already defined above
         const { error } = await supabase
           .from('breakeven_history')
-          .update({ expenses: 0 })
+          .update({ 
+            expenses: 0,
+            profit: 0,
+            rides_needed: 0
+          })
           .eq('driver_id', driverId)
           .eq('period_type', 'daily')
           .gte('period_start', gteISO)
@@ -764,7 +765,7 @@ export default function EarningsScreen({ navigation, route }) {
         if (error) {
           console.log('[Breakeven] history reset error:', error.message || error);
         } else {
-          console.log('[Breakeven] breakeven_history.expenses set to 0 for today');
+          console.log('[Breakeven] breakeven_history expenses, profit, and rides_needed reset to 0 for today');
         }
       }
     } catch (e) {
@@ -941,8 +942,6 @@ export default function EarningsScreen({ navigation, route }) {
             <Text style={styles.sectionTitle}>Break Even Calculator</Text>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <BreakevenNotificationBadge driverId={driverId} />
           <View style={styles.dropdownWrap}>
             <TouchableOpacity
               style={styles.frequencyBtn}
@@ -994,6 +993,10 @@ export default function EarningsScreen({ navigation, route }) {
             )}
           </View>
         </View>
+        
+        {/* Breakeven notification badge below dropdown */}
+        <View style={styles.notificationRow}>
+          <BreakevenNotificationBadge driverId={driverId} />
         </View>
 
         {/* Inputs Card */}
@@ -1418,6 +1421,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
     flexWrap: 'wrap',
+  },
+  notificationRow: {
+    paddingHorizontal: 22,
+    marginBottom: 5,
+    alignItems: 'flex-end',
   },
   dropdownWrap: { position: 'relative' },
   frequencyBtn: {

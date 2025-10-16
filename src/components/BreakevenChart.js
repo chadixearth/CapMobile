@@ -32,8 +32,17 @@ function formatPeriodLabel(item, timeZone = TIME_ZONE) {
     return start.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
   }
   if (item.period_type === 'weekly') {
-    const s = start.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
-    const e = end ? end.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone }) : '';
+    // Ensure week starts Monday and ends Sunday
+    const monday = new Date(start);
+    const dayOfWeek = monday.getDay();
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    monday.setDate(monday.getDate() + daysToMonday);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    
+    const s = monday.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
+    const e = sunday.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
     return `${s}–${e}`;
   }
   if (item.period_type === 'monthly') {
@@ -200,11 +209,37 @@ export default function BreakevenChart({ data = [], currentData = null, timeZone
             <View style={[styles.xLabelsStrip, { width: finalPlotW, height: X_LABEL_H }]}>
               {series.map((item, idx) => {
                 const isCurrent = currentData && idx === series.length - 1;
+                const isCurrentPeriod = (() => {
+                  if (!item.period_start) return false;
+                  const now = new Date();
+                  const itemStart = new Date(item.period_start);
+                  
+                  if (item.period_type === 'monthly') {
+                    return now.getFullYear() === itemStart.getFullYear() && now.getMonth() === itemStart.getMonth();
+                  }
+                  if (item.period_type === 'weekly') {
+                    const currentWeekStart = new Date(now);
+                    const dayOfWeek = currentWeekStart.getDay();
+                    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                    currentWeekStart.setDate(currentWeekStart.getDate() + daysToMonday);
+                    currentWeekStart.setHours(0, 0, 0, 0);
+                    
+                    const itemWeekStart = new Date(itemStart);
+                    const itemDayOfWeek = itemWeekStart.getDay();
+                    const itemDaysToMonday = itemDayOfWeek === 0 ? -6 : 1 - itemDayOfWeek;
+                    itemWeekStart.setDate(itemWeekStart.getDate() + itemDaysToMonday);
+                    itemWeekStart.setHours(0, 0, 0, 0);
+                    
+                    return currentWeekStart.getTime() === itemWeekStart.getTime();
+                  }
+                  return false;
+                })();
+                
                 return (
                   <View key={`xlabel-${idx}`} style={[styles.xLabelCell, { width: groupWidth }]}>
-                    <Text style={[styles.xAxisLabel, isCurrent && styles.currentLabel]} numberOfLines={2}>
+                    <Text style={[styles.xAxisLabel, (isCurrent || isCurrentPeriod) && styles.currentLabel]} numberOfLines={2}>
                       {formatPeriodLabel(item, timeZone)}
-                      {isCurrent ? ' (Current)' : ''}
+                      {isCurrentPeriod ? ' (Current)' : ''}
                     </Text>
                   </View>
                 );

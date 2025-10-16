@@ -32,8 +32,36 @@ function toShortDate(iso, timeZone = 'Asia/Manila') {
   });
 }
 
-function periodLabel(startIso, endIso, timeZone = 'Asia/Manila') {
+function periodLabel(startIso, endIso, timeZone = 'Asia/Manila', periodType = null) {
   if (!startIso && !endIso) return '—';
+  
+  // For weekly periods, ensure we show Monday to Sunday
+  if (periodType === 'weekly') {
+    const start = new Date(startIso);
+    const monday = new Date(start);
+    const dayOfWeek = monday.getDay();
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    monday.setDate(monday.getDate() + daysToMonday);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    
+    const s = monday.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
+    const e = sunday.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
+    return `${s} — ${e}`;
+  }
+  
+  // For monthly periods, ensure we show 1st to last day of month
+  if (periodType === 'monthly') {
+    const start = new Date(startIso);
+    const firstDay = new Date(start.getFullYear(), start.getMonth(), 1);
+    const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    
+    const s = firstDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
+    const e = lastDay.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone });
+    return `${s} — ${e}`;
+  }
+  
   const s = toShortDate(startIso, timeZone);
   const e = toShortDate(endIso, timeZone);
   return s === e ? s : `${s} — ${e}`;
@@ -128,7 +156,7 @@ export default function HistoryModal({
         </View>
 
         {historyMode === 'list' && (
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={true}>
             {historyLoading && historyItems.length === 0 ? (
               <View style={styles.historyLoadingContainer}>
                 <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
@@ -162,7 +190,7 @@ export default function HistoryModal({
                       activeOpacity={0.85}
                     >
                       <View style={styles.historyLeft}>
-                        <Text style={styles.historyTitle}>{periodLabel(h.period_start, h.period_end)}</Text>
+                        <Text style={styles.historyTitle}>{periodLabel(h.period_start, h.period_end, 'Asia/Manila', h.period_type)}</Text>
                         <Text style={styles.historySub}>
                           Revenue ₱{formatPeso(h.revenue_driver)} • Expenses ₱{formatPeso(h.expenses)} • Profit ₱{formatPeso(h.profit)}
                         </Text>
@@ -178,7 +206,7 @@ export default function HistoryModal({
                   );
                 })}
 
-                {hasMoreHistory && historyItems.length > 5 && (
+                {hasMoreHistory && (
                   <TouchableOpacity
                     onPress={onLoadMore}
                     style={styles.loadMoreBtn}
@@ -207,14 +235,14 @@ export default function HistoryModal({
         )}
 
         {historyMode === 'detail' && selectedHistory && (
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={true}>
             {/* Header / Period */}
             <View style={styles.detailHeaderBlock}>
               <View style={styles.detailHeaderRow}>
                 <View style={styles.dateBadge}>
                   <Ionicons name="calendar-outline" size={14} color={colors.primary} />
                   <Text style={styles.detailDate}>
-                    {periodLabel(selectedHistory.period_start, selectedHistory.period_end)}
+                    {periodLabel(selectedHistory.period_start, selectedHistory.period_end, 'Asia/Manila', selectedHistory.period_type)}
                   </Text>
                 </View>
 
