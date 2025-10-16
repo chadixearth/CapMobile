@@ -38,11 +38,22 @@ async function apiCall(endpoint, options = {}) {
     
     return result;
   } catch (error) {
+    // Handle database schema errors specifically
+    if (error.message && error.message.includes('ride_type') && error.message.includes('schema cache')) {
+      console.error(`Database schema error for ${endpoint}:`, error.message);
+      return { 
+        success: false, 
+        error: 'Database schema error - ride_type column missing', 
+        error_code: 'DATABASE_SCHEMA_ERROR'
+      };
+    }
+    
     // Handle HTTP 405 errors specifically
     if (error.message && error.message.includes('405')) {
       console.warn(`Method not allowed for ${endpoint}:`, error.message);
       return { success: false, error: 'Method not allowed', data: [] };
     }
+    
     console.error('API call failed:', error);
     throw error;
   }
@@ -117,9 +128,27 @@ export async function validateRideAction(userId, userType, action = 'create') {
   }
 }
 
-// Create ride hailing booking with location
+// Create ride hailing booking with passenger count and location
 export async function createRideBooking(bookingData) {
   try {
+    // Validate required fields
+    const required = ['customer_id', 'pickup_address', 'dropoff_address'];
+    const missing = required.filter(field => !bookingData[field]);
+    if (missing.length > 0) {
+      return {
+        success: false,
+        error: `Missing required fields: ${missing.join(', ')}`
+      };
+    }
+
+    // Validate passenger count
+    const passengerCount = parseInt(bookingData.passenger_count || 1);
+    if (passengerCount <= 0 || passengerCount > 4) {
+      bookingData.passenger_count = 1;
+    } else {
+      bookingData.passenger_count = passengerCount;
+    }
+    
     // Validate user can create ride
     const validation = await validateRideAction(bookingData.customer_id, 'customer', 'create');
     
@@ -153,6 +182,9 @@ export async function createRideBooking(bookingData) {
     if (!cleanedData.dropoff_latitude) delete cleanedData.dropoff_latitude;
     if (!cleanedData.dropoff_longitude) delete cleanedData.dropoff_longitude;
     
+    // Add ride_type field with default value
+    cleanedData.ride_type = bookingData.ride_type || 'standard';
+    
     const result = await apiCall('/ride-hailing/', {
       method: 'POST',
       body: cleanedData
@@ -170,6 +202,16 @@ export async function createRideBooking(bookingData) {
     
     return result;
   } catch (error) {
+    // Handle database schema errors specifically
+    if (error.message && error.message.includes('ride_type') && error.message.includes('schema cache')) {
+      console.error('Database schema error - ride_type column missing:', error.message);
+      return {
+        success: false,
+        error: 'Service temporarily unavailable. Please try again later.',
+        error_code: 'DATABASE_SCHEMA_ERROR'
+      };
+    }
+    
     // Handle active ride error specifically (don't log as error)
     if (error.message && error.message.includes('active ride request')) {
       console.log('Ride booking prevented - active ride exists (from backend)');
@@ -177,6 +219,15 @@ export async function createRideBooking(bookingData) {
         success: false,
         error: 'You already have an active ride request. Please wait for it to complete or cancel it first.',
         error_code: 'ACTIVE_RIDE_EXISTS'
+      };
+    }
+    
+    // Don't throw error for database schema issues - return graceful error instead
+    if (error.message && error.message.includes('ride_type') && error.message.includes('schema cache')) {
+      return {
+        success: false,
+        error: 'Service temporarily unavailable. Please try again later.',
+        error_code: 'DATABASE_SCHEMA_ERROR'
       };
     }
     
@@ -188,11 +239,43 @@ export async function createRideBooking(bookingData) {
 // Get available ride bookings for drivers
 export async function getAvailableRideBookings() {
   try {
-    const result = await apiCall('/ride-hailing/available-for-drivers/');
-    return result;
+    console.log('[getAvailableRideBookings] Fetching all ride bookings...');
+    const result = await apiCall('/ride-hailing/');
+    console.log('[getAvailableRideBookings] Raw result:', result);
+    
+    if (!result.success) {
+      console.log('[getAvailableRideBookings] API call failed:', result.error);
+      return { success: false, error: result.error, data: [] };
+    }
+    
+    // Extract rides array from different possible response structures
+    let ridesArray = [];
+    if (result.data?.data && Array.isArray(result.data.data)) {
+      ridesArray = result.data.data;
+    } else if (result.data && Array.isArray(result.data)) {
+      ridesArray = result.data;
+    } else if (Array.isArray(result)) {
+      ridesArray = result;
+    }
+    
+    console.log('[getAvailableRideBookings] Total rides found:', ridesArray.length);
+    
+    // Filter for available rides (no driver assigned and waiting status)
+    const availableRides = ridesArray.filter(ride => 
+      ride && 
+      (ride.status === 'waiting_for_driver' || ride.status === 'pending') && 
+      !ride.driver_id
+    );
+    
+    console.log('[getAvailableRideBookings] Available rides after filtering:', availableRides.length);
+    
+    return {
+      success: true,
+      data: availableRides
+    };
   } catch (error) {
     console.error('Error fetching available ride bookings:', error);
-    throw error;
+    return { success: false, error: error.message, data: [] };
   }
 }
 
@@ -342,6 +425,12 @@ export async function getRoutesByPickup(pickupId) {
   }
 }
 
+
+
+
+
+
+
 // Get user's active ride bookings for tracking
 export async function getMyActiveRides(customerId) {
   try {
@@ -355,10 +444,23 @@ export async function getMyActiveRides(customerId) {
     }
     
     if (ridesArray.length >= 0) {
-      const activeRides = ridesArray.filter(ride => 
-        ride && ride.customer_id === customerId && 
-        ['waiting_for_driver', 'driver_assigned', 'in_progress'].includes(ride.status)
-      );
+      const activeRides = ridesArray.filter(ride => {
+        if (!ride) return false;
+        
+        // Check if user is primary customer
+        if (ride.customer_id === customerId) {
+          return ['waiting_for_driver', 'driver_assigned', 'in_progress'].includes(ride.status);
+        }
+        
+        // Check if user is in passengers array
+        const passengers = ride.passengers || [];
+        const isPassenger = passengers.some(p => p.customer_id === customerId);
+        if (isPassenger) {
+          return ['waiting_for_driver', 'driver_assigned', 'in_progress'].includes(ride.status);
+        }
+        
+        return false;
+      });
       return { success: true, data: activeRides };
     }
     return { success: false, error: 'No valid ride data received' };

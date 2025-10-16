@@ -816,6 +816,8 @@ export default function DriverHomeScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      
+
     </View>
   );
 }
@@ -1201,4 +1203,6 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontWeight: '600',
   },
+  
+
 });

@@ -438,48 +438,36 @@ export default function DriverBookScreen({ navigation }) {
   const fetchAvailableRideBookings = async () => {
     try {
       const rideData = await getAvailableRideBookings();
-      if (rideData?.success && rideData?.data?.data && Array.isArray(rideData.data.data)) {
-        const processedRides = rideData.data.data.map(ride => ({
-          id: ride.id,
-          package_name: 'Ride Hailing',
-          booking_date: ride.created_at,
-          pickup_time: 'ASAP',
-          number_of_pax: 1,
-          pickup_address: ride.pickup_address,
-          dropoff_address: ride.dropoff_address,
-          contact_number: 'N/A',
-          total_amount: null,
-          status: ride.status,
-          request_type: 'ride_hailing',
-          booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
-          customer_id: ride.customer_id,
-          notes: ride.notes
-        }));
-        setAvailableRideBookings(processedRides);
-      } else {
-        if (rideData?.success && rideData?.data && Array.isArray(rideData.data)) {
-          const processedRides = rideData.data.map(ride => ({
-            id: ride.id,
-            package_name: 'Ride Hailing',
-            booking_date: ride.created_at,
-            pickup_time: 'ASAP',
-            number_of_pax: 1,
-            pickup_address: ride.pickup_address,
-            dropoff_address: ride.dropoff_address,
-            contact_number: 'N/A',
-            total_amount: null,
-            status: ride.status,
-            request_type: 'ride_hailing',
-            booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
-            customer_id: ride.customer_id,
-            notes: ride.notes
-          }));
-          setAvailableRideBookings(processedRides);
-        } else {
-          console.log('No valid available ride data received:', rideData);
-          setAvailableRideBookings([]);
-        }
+      console.log('[DriverBookScreen] Ride data received:', rideData);
+      
+      if (!rideData.success) {
+        console.log('[DriverBookScreen] Ride service failed:', rideData.error);
+        setAvailableRideBookings([]);
+        return;
       }
+      
+      const ridesArray = rideData.data || [];
+      console.log('[DriverBookScreen] Available rides from service:', ridesArray.length);
+      
+      const processedRides = ridesArray.map(ride => ({
+        id: ride.id,
+        package_name: 'Ride Hailing',
+        booking_date: ride.created_at,
+        pickup_time: 'ASAP',
+        number_of_pax: ride.passenger_count || 1,
+        pickup_address: ride.pickup_address,
+        dropoff_address: ride.dropoff_address,
+        contact_number: 'N/A',
+        total_amount: ride.total_fare || (ride.passenger_count || 1) * 10,
+        status: ride.status,
+        request_type: 'ride_hailing',
+        booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
+        customer_id: ride.customer_id,
+        notes: ride.notes
+      }));
+      
+      console.log('[DriverBookScreen] Processed rides:', processedRides.length);
+      setAvailableRideBookings(processedRides);
     } catch (error) {
       console.error('Error fetching available ride bookings:', error);
       setAvailableRideBookings([]);

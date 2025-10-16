@@ -83,6 +83,8 @@ export default function TouristHomeScreen({ navigation }) {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [passengerCount, setPassengerCount] = useState(1);
+  const [rideType, setRideType] = useState('instant'); // 'instant' or 'shared'
 
   useEffect(() => {
     Animated.timing(sheetY, {
@@ -397,7 +399,7 @@ export default function TouristHomeScreen({ navigation }) {
             console.error('Error loading routes:', error);
           }
         }
-      } else if (activePicker === 'destination' && nearestMarker.pointType === 'dropoff') {
+      } else if (activePicker === 'destination') {
         setDestination(point);
       }
     } else {
@@ -477,31 +479,35 @@ export default function TouristHomeScreen({ navigation }) {
   };
 
   const handleMarkerPress = async (marker) => {
-    if (activePicker === 'pickup' && marker.pointType === 'pickup' && marker.id) {
+    if (activePicker === 'pickup') {
       if (destination && destination.id === marker.id) {
         Alert.alert('Invalid Selection', 'Pickup and destination cannot be the same point.');
         return;
       }
       const point = { name: marker.title, latitude: marker.latitude, longitude: marker.longitude, id: marker.id };
       setPickup(point);
-      setDestination(null);
-      const routeSummary = routeSummaries.find(r => r.pickup_point_id == marker.id);
-      if (routeSummary) {
-        setShowingRoutes(true);
-        let dropoffIds = routeSummary.dropoff_point_ids;
-        if (typeof dropoffIds === 'string') {
-          dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      
+      // If selecting a pickup point, show available routes
+      if (marker.pointType === 'pickup' && marker.id) {
+        setDestination(null);
+        const routeSummary = routeSummaries.find(r => r.pickup_point_id == marker.id);
+        if (routeSummary) {
+          setShowingRoutes(true);
+          let dropoffIds = routeSummary.dropoff_point_ids;
+          if (typeof dropoffIds === 'string') {
+            dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+          }
+          let roadIds = routeSummary.road_highlight_ids;
+          if (typeof roadIds === 'string') {
+            roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+          }
+          const connectedDropoffs = allMarkers.filter(m => m.pointType === 'dropoff' && dropoffIds.includes(parseInt(m.id)));
+          const connectedRoads = allRoads.filter(r => roadIds.includes(parseInt(r.id)));
+          setMarkers([marker, ...connectedDropoffs]);
+          setRoads(connectedRoads);
         }
-        let roadIds = routeSummary.road_highlight_ids;
-        if (typeof roadIds === 'string') {
-          roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-        }
-        const connectedDropoffs = allMarkers.filter(m => m.pointType === 'dropoff' && dropoffIds.includes(parseInt(m.id)));
-        const connectedRoads = allRoads.filter(r => roadIds.includes(parseInt(r.id)));
-        setMarkers([marker, ...connectedDropoffs]);
-        setRoads(connectedRoads);
       }
-    } else if (activePicker === 'destination' && marker.pointType === 'dropoff') {
+    } else if (activePicker === 'destination') {
       if (pickup && pickup.id === marker.id) {
         Alert.alert('Invalid Selection', 'Pickup and destination cannot be the same point.');
         return;
@@ -522,14 +528,24 @@ export default function TouristHomeScreen({ navigation }) {
       if (!user || !user.id) {
         throw new Error('User not authenticated');
       }
+      const totalFare = rideType === 'instant' ? 40 : (passengerCount * 10);
       const result = await createRideBooking({
         customer_id: user.id,
         pickup_address: pickup.name || `${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)}`,
         dropoff_address: destination.name || `${destination.latitude.toFixed(4)}, ${destination.longitude.toFixed(4)}`,
-        notes: `Pickup: ${pickup.latitude}, ${pickup.longitude}. Dropoff: ${destination.latitude}, ${destination.longitude}`
+        passenger_count: passengerCount,
+        ride_type: rideType,
+        total_fare: totalFare,
+        notes: `${rideType === 'instant' ? 'Instant booking' : 'Shared ride'} - Pickup: ${pickup.latitude}, ${pickup.longitude}. Dropoff: ${destination.latitude}, ${destination.longitude}`
       });
       if (result.success) {
         setSheetVisible(false);
+        // Reset form
+        setPickup(null);
+        setDestination(null);
+        setPassengerCount(1);
+        setRideType('instant');
+        
         Alert.alert(
           'Ride Requested!',
           'Your ride request has been sent to drivers. You will be notified when a driver accepts. Payment is cash only upon arrival.',
@@ -544,7 +560,13 @@ export default function TouristHomeScreen({ navigation }) {
           'Active Ride Found',
           'You already have an active ride request. Please wait for it to complete or cancel it first.',
           [
-            { text: 'Track My Rides', onPress: () => navigation.navigate('Terminals') },
+            { text: 'Track My Rides', onPress: () => {
+              navigation.navigate('Terminals');
+              // Switch to rides tab
+              setTimeout(() => {
+                navigation.setParams({ showRides: true });
+              }, 100);
+            }},
             { text: 'OK' }
           ]
         );
@@ -560,7 +582,13 @@ export default function TouristHomeScreen({ navigation }) {
           'Active Ride Found',
           'You already have an active ride request. Please wait for it to complete or cancel it first.',
           [
-            { text: 'Track My Rides', onPress: () => navigation.navigate('Terminals') },
+            { text: 'Track My Rides', onPress: () => {
+              navigation.navigate('Terminals');
+              // Switch to rides tab
+              setTimeout(() => {
+                navigation.setParams({ showRides: true });
+              }, 100);
+            }},
             { text: 'OK' }
           ]
         );
@@ -812,10 +840,13 @@ export default function TouristHomeScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Floating + button -> opens BOTTOM sheet */}
-      <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
-        <Ionicons name="add" size={26} color="#fff" />
-      </TouchableOpacity>
+      {/* Floating action buttons */}
+      <View style={styles.fabContainer}>
+
+        <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
+          <Ionicons name="car" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
       {/* ========= Bottom Sheet Modal ========= */}
       <Modal visible={sheetVisible} transparent animationType="none" onRequestClose={() => setSheetVisible(false)}>
@@ -839,6 +870,12 @@ export default function TouristHomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
+
+          <ScrollView 
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            showsVerticalScrollIndicator={false}
+          >
 
           {/* Picker toggles */}
           <View style={styles.toggleRow}>
@@ -893,6 +930,63 @@ export default function TouristHomeScreen({ navigation }) {
                 <Ionicons name="close-circle" size={18} color="#999" />
               </TouchableOpacity>
             )}
+          </View>
+
+          {/* Ride Type Selection */}
+          <View style={styles.rowField}>
+            <Ionicons name="car" size={16} color="#6B2E2B" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Ride Type</Text>
+              <View style={styles.rideTypeContainer}>
+                <TouchableOpacity 
+                  style={[styles.rideTypeBtn, rideType === 'instant' && styles.rideTypeBtnActive]}
+                  onPress={() => setRideType('instant')}
+                >
+                  <Text style={[styles.rideTypeText, rideType === 'instant' && styles.rideTypeTextActive]}>Instant (₱40)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.rideTypeBtn, rideType === 'shared' && styles.rideTypeBtnActive]}
+                  onPress={() => setRideType('shared')}
+                >
+                  <Text style={[styles.rideTypeText, rideType === 'shared' && styles.rideTypeTextActive]}>Shared (₱10/person)</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Passenger count */}
+          <View style={styles.rowField}>
+            <Ionicons name="people" size={16} color="#6B2E2B" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Passengers</Text>
+              <Text style={styles.fieldValue}>{passengerCount} passenger{passengerCount > 1 ? 's' : ''}</Text>
+            </View>
+            <View style={styles.passengerControls}>
+              <TouchableOpacity 
+                style={styles.passengerBtn}
+                onPress={() => setPassengerCount(Math.max(1, passengerCount - 1))}
+              >
+                <Ionicons name="remove" size={14} color="#6B2E2B" />
+              </TouchableOpacity>
+              <Text style={styles.passengerCountText}>{passengerCount}</Text>
+              <TouchableOpacity 
+                style={styles.passengerBtn}
+                onPress={() => setPassengerCount(Math.min(4, passengerCount + 1))}
+              >
+                <Ionicons name="add" size={14} color="#6B2E2B" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Fare Display */}
+          <View style={styles.fareDisplay}>
+            <Ionicons name="cash" size={16} color="#6B2E2B" />
+            <Text style={styles.fareText}>
+              Total Fare: ₱{rideType === 'instant' ? '40' : (passengerCount * 10)}
+            </Text>
+            <Text style={styles.fareNote}>
+              {rideType === 'instant' ? 'No waiting, immediate pickup' : 'May wait for other passengers'}
+            </Text>
           </View>
 
           {/* Quick actions */}
@@ -1002,6 +1096,7 @@ export default function TouristHomeScreen({ navigation }) {
               </>
             )}
           </TouchableOpacity>
+          </ScrollView>
         </Animated.View>
       </Modal>
 
@@ -1195,23 +1290,32 @@ const styles = StyleSheet.create({
   },
   bookBtnText: { color: '#fff', fontWeight: '800', fontSize: 11 },
 
-  /* FAB */
-  fab: {
+  /* FAB Container */
+  fabContainer: {
     position: 'absolute',
     right: 18,
     bottom: 18,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  
+  /* FAB */
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#6B2E2B',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
+    elevation: 8,
     shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    zIndex: 1001,
   },
+  
+
 
   /* --------- Bottom Sheet Styles --------- */
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
@@ -1306,5 +1410,78 @@ const styles = StyleSheet.create({
     width: 20, height: 20, borderRadius: 10, backgroundColor: '#ff4444',
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff',
+  },
+
+  passengerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passengerBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passengerCountText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6B2E2B',
+    minWidth: 16,
+    textAlign: 'center',
+  },
+
+  rideTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  rideTypeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    backgroundColor: '#F5E9E2',
+    alignItems: 'center',
+  },
+  rideTypeBtnActive: {
+    backgroundColor: '#6B2E2B',
+    borderColor: '#6B2E2B',
+  },
+  rideTypeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B2E2B',
+  },
+  rideTypeTextActive: {
+    color: '#fff',
+  },
+
+  fareDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F8FF',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 14,
+    marginTop: 8,
+    gap: 8,
+  },
+  fareText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6B2E2B',
+    flex: 1,
+  },
+  fareNote: {
+    fontSize: 11,
+    color: '#666',
+    fontStyle: 'italic',
   },
 });

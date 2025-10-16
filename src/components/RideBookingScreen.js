@@ -8,6 +8,7 @@ import { getSession } from '../services/authService';
 const RideBookingScreen = () => {
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
+  const [passengerCount, setPassengerCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [activeRide, setActiveRide] = useState(null);
   const [user, setUser] = useState(null);
@@ -58,7 +59,8 @@ const RideBookingScreen = () => {
         customer_id: user.id,
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
-        notes: 'Ride hailing booking',
+        passenger_count: passengerCount,
+        notes: `Ride hailing booking for ${passengerCount} passenger${passengerCount > 1 ? 's' : ''}`,
       };
 
       // Add location if available
@@ -74,11 +76,39 @@ const RideBookingScreen = () => {
         setActiveRide(result.data);
         setPickupAddress('');
         setDropoffAddress('');
+        setPassengerCount(1);
       } else {
-        Alert.alert('Error', result.error || 'Failed to book ride');
+        // Handle specific error types
+        if (result.error_code === 'DATABASE_SCHEMA_ERROR') {
+          Alert.alert(
+            'Service Unavailable', 
+            'The ride booking service is temporarily unavailable. Please try again in a few minutes.',
+            [{ text: 'OK' }]
+          );
+        } else if (result.error_code === 'ACTIVE_RIDE_EXISTS') {
+          Alert.alert(
+            'Active Ride Found', 
+            result.error,
+            [
+              { text: 'OK' },
+              { text: 'Refresh', onPress: loadUserAndActiveRides }
+            ]
+          );
+        } else {
+          Alert.alert('Error', result.error || 'Failed to book ride');
+        }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to book ride. Please try again.');
+      // Handle database schema errors gracefully
+      if (error.message && error.message.includes('ride_type') && error.message.includes('schema cache')) {
+        Alert.alert(
+          'Service Unavailable', 
+          'The ride booking service is temporarily unavailable due to a system update. Please try again in a few minutes.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to book ride. Please try again.');
+      }
       console.error('Booking error:', error);
     } finally {
       setLoading(false);
@@ -102,6 +132,8 @@ const RideBookingScreen = () => {
         <View style={styles.rideDetails}>
           <Text style={styles.detailText}>From: {activeRide.pickup_address}</Text>
           <Text style={styles.detailText}>To: {activeRide.dropoff_address}</Text>
+          <Text style={styles.detailText}>Passengers: {activeRide.passenger_count || 1}</Text>
+          <Text style={styles.detailText}>Total Fare: ₱{activeRide.total_fare || (activeRide.passenger_count || 1) * 10}</Text>
           <Text style={styles.statusText}>Status: {activeRide.status}</Text>
           
           {activeRide.driver_name && (
@@ -114,6 +146,7 @@ const RideBookingScreen = () => {
           customerId={user?.id}
           onRideUpdate={handleRideUpdate}
           onCancel={handleRideCancel}
+          createdAt={activeRide.created_at}
         />
 
         <TouchableOpacity
@@ -146,6 +179,30 @@ const RideBookingScreen = () => {
           onChangeText={setDropoffAddress}
           multiline
         />
+
+        <View style={styles.passengerSection}>
+          <Text style={styles.passengerLabel}>Number of Passengers:</Text>
+          <View style={styles.passengerControls}>
+            <TouchableOpacity
+              style={[styles.passengerButton, passengerCount <= 1 && styles.passengerButtonDisabled]}
+              onPress={() => setPassengerCount(Math.max(1, passengerCount - 1))}
+              disabled={passengerCount <= 1}
+            >
+              <Text style={styles.passengerButtonText}>-</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.passengerCount}>{passengerCount}</Text>
+            
+            <TouchableOpacity
+              style={[styles.passengerButton, passengerCount >= 4 && styles.passengerButtonDisabled]}
+              onPress={() => setPassengerCount(Math.min(4, passengerCount + 1))}
+              disabled={passengerCount >= 4}
+            >
+              <Text style={styles.passengerButtonText}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.fareText}>Fare: ₱{(passengerCount * 10).toFixed(2)} (₱10 per person)</Text>
+        </View>
 
         <TouchableOpacity
           style={[styles.bookButton, loading && styles.bookButtonDisabled]}
@@ -240,6 +297,53 @@ const styles = StyleSheet.create({
   refreshButtonText: {
     color: 'white',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  passengerSection: {
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
+  passengerLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  passengerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  passengerButton: {
+    backgroundColor: '#007bff',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+  },
+  passengerButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  passengerButtonText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  passengerCount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  fareText: {
+    fontSize: 14,
+    color: '#28a745',
+    textAlign: 'center',
     fontWeight: '600',
   },
 });

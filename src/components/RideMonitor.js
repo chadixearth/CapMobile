@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { checkRideWaitTime, cancelRideBooking } from '../services/rideHailingService';
 
-const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel }) => {
+const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel, createdAt }) => {
   const [waitInfo, setWaitInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [localWaitTime, setLocalWaitTime] = useState('0:00');
 
   useEffect(() => {
     if (!bookingId) return;
@@ -31,6 +32,24 @@ const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel }) => {
 
     return () => clearInterval(interval);
   }, [bookingId, onRideUpdate]);
+
+  // Local timer for waiting time
+  useEffect(() => {
+    const startTime = createdAt ? new Date(createdAt) : new Date();
+    
+    const updateTimer = () => {
+      const now = new Date();
+      const diffMs = now - startTime;
+      const minutes = Math.floor(diffMs / 60000);
+      const seconds = Math.floor((diffMs % 60000) / 1000);
+      setLocalWaitTime(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    };
+
+    updateTimer();
+    const timerInterval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, [createdAt]);
 
   const handleCancelRide = () => {
     Alert.alert(
@@ -68,18 +87,14 @@ const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel }) => {
     );
   };
 
-  if (!waitInfo || !waitInfo.waiting) {
-    return null;
-  }
-
   return (
     <View style={styles.container}>
       <View style={styles.waitInfo}>
         <Text style={styles.waitText}>
-          Waiting for driver: {waitInfo.wait_minutes} minutes
+          Waiting for driver: {localWaitTime}
         </Text>
         
-        {waitInfo.suggest_cancel && (
+        {(waitInfo?.suggest_cancel || localWaitTime.split(':')[0] >= 5) && (
           <View style={styles.suggestionContainer}>
             <Text style={styles.suggestionText}>
               🕐 It's been over 5 minutes. Consider cancelling and trying again.

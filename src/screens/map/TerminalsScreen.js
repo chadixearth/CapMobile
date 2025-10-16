@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LeafletMapView from '../../components/LeafletMapView';
 import BackButton from '../../components/BackButton';
@@ -68,9 +68,15 @@ const TerminalsScreen = ({ navigation, route }) => {
   };
 
   const handleRideRefresh = (updatedRide) => {
-    setActiveRides(prev => 
-      prev.map(ride => ride.id === updatedRide.id ? updatedRide : ride)
-    );
+    if (updatedRide.status === 'cancelled' || updatedRide.status === 'completed') {
+      // Remove cancelled or completed rides from the list
+      setActiveRides(prev => prev.filter(ride => ride.id !== updatedRide.id));
+    } else {
+      // Update existing ride
+      setActiveRides(prev => 
+        prev.map(ride => ride.id === updatedRide.id ? updatedRide : ride)
+      );
+    }
   };
 
   const handleMarkerPress = (terminal) => {
@@ -105,27 +111,62 @@ const TerminalsScreen = ({ navigation, route }) => {
       </View>
 
       {showRides ? (
-        <ScrollView style={styles.ridesContainer}>
+        <View style={styles.ridesContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading rides...</Text>
+              <ActivityIndicator size="large" color="#6B2E2B" />
+              <Text style={styles.loadingText}>Loading your ride...</Text>
             </View>
           ) : activeRides.length > 0 ? (
-            activeRides.map(ride => (
-              <RideStatusCard 
-                key={ride.id} 
-                ride={ride} 
-                onRefresh={handleRideRefresh}
-              />
-            ))
+            <ScrollView 
+              style={styles.ridesList}
+              contentContainerStyle={styles.ridesContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {activeRides.map(ride => (
+                <RideStatusCard 
+                  key={ride.id} 
+                  ride={ride} 
+                  onRefresh={handleRideRefresh}
+                />
+              ))}
+              
+              <View style={styles.rideInfoCard}>
+                <View style={styles.infoHeader}>
+                  <Ionicons name="information-circle" size={24} color="#6B2E2B" />
+                  <Text style={styles.infoTitle}>Ride Information</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Ionicons name="cash" size={16} color="#6B2E2B" />
+                  <Text style={styles.infoText}>Payment: Cash only upon arrival</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Ionicons name="time" size={16} color="#6B2E2B" />
+                  <Text style={styles.infoText}>Average wait time: 3-8 minutes</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Ionicons name="person" size={16} color="#6B2E2B" />
+                  <Text style={styles.infoText}>One booking at a time allowed</Text>
+                </View>
+              </View>
+            </ScrollView>
           ) : (
             <View style={styles.emptyContainer}>
-              <Ionicons name="car-outline" size={48} color="#8E8E93" />
-              <Text style={styles.emptyText}>No active rides</Text>
-              <Text style={styles.emptySubtext}>Book a ride from the Home screen</Text>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="car-outline" size={64} color="#6B2E2B" />
+              </View>
+              <Text style={styles.emptyText}>No Active Rides</Text>
+              <Text style={styles.emptySubtext}>Book your first ride from the Home screen</Text>
+              <TouchableOpacity 
+                style={styles.bookRideButton}
+                onPress={() => navigation.navigate('Home')}
+              >
+                <Ionicons name="add-circle" size={20} color="#fff" />
+                <Text style={styles.bookRideButtonText}>Book a Ride</Text>
+              </TouchableOpacity>
             </View>
           )}
-        </ScrollView>
+        </View>
       ) : (
         <View style={styles.mapContainer}>
           <LeafletMapView
@@ -205,33 +246,104 @@ const styles = StyleSheet.create({
   },
   ridesContainer: {
     flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  ridesList: {
+    flex: 1,
+  },
+  ridesContent: {
+    paddingBottom: 20,
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 100,
+    paddingHorizontal: 40,
   },
   loadingText: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#6B2E2B',
+    marginTop: 16,
+    fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 100,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#F5E9E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#8E8E93',
-    marginTop: 16,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#333',
+    marginBottom: 8,
   },
   emptySubtext: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  bookRideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 8,
+  },
+  bookRideButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  rideInfoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
+    shadowColor: '#6B2E2B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  infoText: {
     fontSize: 14,
-    color: '#8E8E93',
-    marginTop: 8,
+    color: '#666',
+    fontWeight: '500',
+    flex: 1,
   },
   mapContainer: {
     flex: 1,

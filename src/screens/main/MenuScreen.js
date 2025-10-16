@@ -22,6 +22,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { requestAccountDeletion } from '../../services/accountDeletionService';
 import { useAuthData } from '../../hooks/useAuthData';
+import { getMyActiveRides } from '../../services/rideHailingService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -92,6 +93,22 @@ export default function MenuScreen({ navigation }) {
   const doLogout = async () => {
     setLoggingOut(true);
     try {
+      // Check for active rides before logout
+      const currentUser = await getCurrentUser();
+      if (currentUser?.id) {
+        const activeRidesResult = await getMyActiveRides(currentUser.id);
+        if (activeRidesResult.success && activeRidesResult.data && activeRidesResult.data.length > 0) {
+          Alert.alert(
+            'Active Ride Found',
+            'You have an active ride booking. Please complete or cancel your ride before logging out.',
+            [{ text: 'OK' }]
+          );
+          setLoggingOut(false);
+          setLogoutVisible(false);
+          return;
+        }
+      }
+      
       await auth.logout();
     } catch (e) {
       console.error('Logout error:', e);

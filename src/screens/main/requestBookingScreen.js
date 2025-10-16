@@ -351,7 +351,29 @@ const RequestBookingScreen = ({ route, navigation }) => {
           title: 'Package Expired',
           type: 'warning',
         });
-      } else {
+      }
+      // Handle driver availability errors with helpful guidance
+      else if (errorMessage.includes('not available on') || 
+               errorMessage.includes('driver not available') || 
+               errorMessage.includes('schedule not set') ||
+               errorMessage.includes('Driver is not available')) {
+        console.log('Booking prevented - driver availability issue');
+        const dayName = formData.booking_date.toLocaleDateString('en-US', { weekday: 'long' });
+        showError(`The driver is not available on ${dayName}, ${formatDate(formData.booking_date)}. Please try a different date or contact the driver to check their availability.`, {
+          title: 'Driver Not Available',
+          type: 'warning',
+        });
+      }
+      // Handle general availability errors
+      else if (errorMessage.includes('Tour package is not available')) {
+        console.log('Booking prevented - package not available on selected date');
+        const dayName = formData.booking_date.toLocaleDateString('en-US', { weekday: 'long' });
+        showError(`This tour package is not available on ${dayName}, ${formatDate(formData.booking_date)}. The driver may not have set their schedule for this date. Please choose a different date or contact the driver.`, {
+          title: 'Package Not Available',
+          type: 'warning',
+        });
+      }
+      else {
         console.error('Error preparing booking:', error);
         showError(errorMessage, {
           title: 'Booking Error',
@@ -517,6 +539,9 @@ const RequestBookingScreen = ({ route, navigation }) => {
                     </Text>
                   </View>
                 </TouchableOpacity>
+                <Text style={styles.helperText}>
+                  💡 If booking fails, the driver may not be available on this date
+                </Text>
               </View>
 
               {!selectedPackage?.start_time && (
@@ -823,6 +848,12 @@ const styles = StyleSheet.create({
     color: TEXT,
     flex: 1,
     fontWeight: '600',
+  },
+  helperText: {
+    fontSize: 11,
+    color: MUTED,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 
   metaPill: {

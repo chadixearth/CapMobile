@@ -81,15 +81,68 @@ export async function apiRequest(endpoint, options = {}) {
       data = { error: 'Invalid JSON response' };
     }
     
-    // Check for JWT expiry
+    // Check for JWT expiry and attempt refresh
     if (!response.ok && (response.status === 401 || 
         (data.error && data.error.includes('JWT expired')) ||
         (data.error && data.error.includes('PGRST301')) ||
         (data.message && data.message.includes('JWT expired')))) {
-      console.log('[authService] JWT expired, clearing session instead of refresh');
+      console.log('[authService] JWT expired, attempting token refresh');
       
-      // Instead of trying to refresh (which is failing), just clear the session
-      // This will force the user to log in again with fresh credentials
+      // Try to refresh the token first
+      const refreshResult = await refreshAccessToken();
+      if (refreshResult.success) {
+        console.log('[authService] Token refreshed successfully, retrying request');
+        
+        // Retry the original request with new token
+        const newToken = await getAccessToken();
+        if (newToken) {
+          const retryHeaders = {
+            ...options.headers,
+            'Authorization': `Bearer ${newToken}`,
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+            'Cache-Control': 'no-cache',
+          };
+          
+          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers: retryHeaders,
+            cache: 'no-store',
+          });
+          
+          let retryData;
+          try {
+            const retryText = await retryResponse.text();
+            retryData = JSON.parse(retryText);
+          } catch (parseError) {
+            retryData = { error: 'Invalid JSON response on retry' };
+          }
+          
+          return {
+            success: retryResponse.ok,
+            data: retryData,
+            status: retryResponse.status,
+          };
+        }
+      } else {
+        console.log('[authService] Token refresh failed:', refreshResult.error);
+        
+        // If refresh failed due to endpoint not available, handle gracefully
+        if (refreshResult.error?.includes('endpoint not available') || 
+            refreshResult.error?.includes('Network error')) {
+          console.log('[authService] Refresh endpoint unavailable, keeping session but showing warning');
+          // Don't clear session immediately - let user continue but show warning
+          return {
+            success: false,
+            data: { error: 'Session may be expired. Some features may not work properly. Please try logging out and back in.' },
+            status: 401,
+            warning: true,
+          };
+        }
+      }
+      
+      // If refresh failed, clear session and notify
+      console.log('[authService] Token refresh failed, clearing session');
       await clearStoredSession();
       if (sessionExpiredCallback) {
         sessionExpiredCallback();
@@ -542,25 +595,36 @@ export async function refreshAccessToken() {
   try {
     const session = await getStoredSession();
     if (!session.refreshToken) {
+      console.log('[refreshAccessToken] No refresh token available');
       return { success: false, error: 'No refresh token available' };
     }
 
+    console.log('[refreshAccessToken] Attempting to refresh token');
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const response = await fetch(`${API_BASE_URL}/auth/refresh/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
       },
       body: JSON.stringify({
         refresh_token: session.refreshToken,
       }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     let data;
     try {
       const text = await response.text();
       if (text.trim().startsWith('<')) {
         // HTML response (likely 404 or error page)
-        console.warn('[refreshAccessToken] Received HTML response instead of JSON');
+        console.warn('[refreshAccessToken] Received HTML response - endpoint may not exist');
         return { success: false, error: 'Token refresh endpoint not available' };
       }
       data = JSON.parse(text);
@@ -569,7 +633,10 @@ export async function refreshAccessToken() {
       return { success: false, error: 'Invalid response from refresh endpoint' };
     }
 
+    console.log('[refreshAccessToken] Response status:', response.status);
+    
     if (response.ok && data.success) {
+      console.log('[refreshAccessToken] Token refreshed successfully');
       // Store new tokens
       await storeSession({
         access_token: data.access_token,
@@ -579,10 +646,22 @@ export async function refreshAccessToken() {
       return { success: true };
     }
 
+    console.log('[refreshAccessToken] Refresh failed:', data.error || 'Unknown error');
     return { success: false, error: data.error || 'Token refresh failed' };
   } catch (error) {
-    console.error('Token refresh error:', error);
-    return { success: false, error: error.message };
+    console.error('[refreshAccessToken] Error:', error.message);
+    
+    // Handle specific error cases
+    if (error.name === 'AbortError') {
+      return { success: false, error: 'Token refresh timeout' };
+    }
+    
+    if (error.message?.includes('Network request failed') || 
+        error.message?.includes('getaddrinfo failed')) {
+      return { success: false, error: 'Network error during token refresh' };
+    }
+    
+    return { success: false, error: error.message || 'Token refresh failed' };
   }
 }
 

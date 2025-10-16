@@ -35,6 +35,8 @@ export default function DriverScheduleScreen({ navigation }) {
   const [availabilityMode, setAvailabilityMode] = useState('range'); // 'range' or 'custom'
   const [availableFromTime, setAvailableFromTime] = useState('08:00');
   const [availableToTime, setAvailableToTime] = useState('18:00');
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
 
   const loadCalendar = async () => {
@@ -62,7 +64,8 @@ export default function DriverScheduleScreen({ navigation }) {
         Alert.alert('Error', 'Failed to load schedule data');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error loading schedule');
+      console.error('Error loading calendar:', error);
+      Alert.alert('Error', 'Network error loading schedule. Please check your connection and try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -173,9 +176,15 @@ export default function DriverScheduleScreen({ navigation }) {
     const bookings = getBookingsForDate(day);
     const availability = getAvailabilityForDate(day);
     const isPastDate = selectedDateObj < today;
+    const dateStatus = getDateStatus(day);
+    
+    // Don't allow interaction with past dates that have no bookings
+    if (dateStatus === 'past') {
+      return; // Silent return for better UX
+    }
     
     // Allow viewing past dates if they have bookings (completed trips)
-    if (isPastDate && bookings.length === 0) {
+    if (isPastDate && bookings.length === 0 && dateStatus !== 'pastWithBooking') {
       Alert.alert('Past Date', 'No bookings to view for this past date.');
       return;
     }
@@ -252,6 +261,9 @@ export default function DriverScheduleScreen({ navigation }) {
               return (
                 <TouchableOpacity
                   key={index}
+                  onPress={() => handleDatePress(day)}
+                  disabled={!day || dateStatus === 'past'}
+                  activeOpacity={dateStatus === 'past' ? 1 : 0.7}
                   style={[
                     styles.dayCell,
                     dateStatus === 'booked' && styles.dayWithBooking,
@@ -261,11 +273,9 @@ export default function DriverScheduleScreen({ navigation }) {
                     dateStatus === 'unset' && styles.dayUnset,
                     dateStatus === 'past' && styles.dayPast,
                     dateStatus === 'pastWithBooking' && styles.dayPastWithBooking,
-                    isToday && styles.todayCell
+                    isToday && styles.todayCell,
+                    (dateStatus === 'past') && styles.disabledCell
                   ]}
-                  onPress={() => handleDatePress(day)}
-                  disabled={!day || dateStatus === 'past'}
-                  activeOpacity={dateStatus === 'past' ? 1 : 0.7}
                 >
                   {day && (
                     <>
@@ -337,14 +347,24 @@ export default function DriverScheduleScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Set Availability Button */}
-        <TouchableOpacity 
-          style={styles.availabilityBtn}
-          onPress={() => navigation.navigate('SetAvailability')}
-        >
-          <Ionicons name="calendar" size={20} color="#fff" />
-          <Text style={styles.availabilityBtnText}>Set Availability</Text>
-        </TouchableOpacity>
+        {/* Quick Actions */}
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity 
+            style={[styles.quickActionBtn, styles.scheduleBtn]}
+            onPress={() => navigation.navigate('DriverSchedule')}
+          >
+            <Ionicons name="calendar-outline" size={20} color={MAROON} />
+            <Text style={styles.quickActionBtnText}>My Schedule</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.quickActionBtn, styles.availabilityBtn]}
+            onPress={() => navigation.navigate('SetAvailability')}
+          >
+            <Ionicons name="time-outline" size={20} color="#fff" />
+            <Text style={styles.availabilityBtnText}>Set Availability</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Booking Details Modal */}
@@ -426,7 +446,7 @@ export default function DriverScheduleScreen({ navigation }) {
                   // No availability set - show quick options
                   <>
                     <TouchableOpacity 
-                      style={[styles.quickActionBtn, styles.availableBtn]}
+                      style={[styles.modalActionBtn, styles.availableBtn]}
                       onPress={() => {
                         // Reset modal states
                         setAvailabilityMode('range');
@@ -437,11 +457,11 @@ export default function DriverScheduleScreen({ navigation }) {
                       }}
                     >
                       <Ionicons name="checkmark-circle-outline" size={16} color="#4CAF50" />
-                      <Text style={[styles.quickActionText, { color: '#4CAF50' }]}>Set Available Hours</Text>
+                      <Text style={[styles.modalActionText, { color: '#4CAF50' }]}>Set Available Hours</Text>
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
-                      style={[styles.quickActionBtn, styles.unavailableBtn]}
+                      style={[styles.modalActionBtn, styles.unavailableBtn]}
                       onPress={async () => {
                         try {
                           await driverScheduleService.setAvailability(
@@ -459,20 +479,20 @@ export default function DriverScheduleScreen({ navigation }) {
                       }}
                     >
                       <Ionicons name="close-circle-outline" size={16} color="#d32f2f" />
-                      <Text style={[styles.quickActionText, { color: '#d32f2f' }]}>Mark Unavailable</Text>
+                      <Text style={[styles.modalActionText, { color: '#d32f2f' }]}>Mark Unavailable</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   // Availability already set - show edit option
                   <TouchableOpacity 
-                    style={styles.quickActionBtn}
+                    style={styles.modalActionBtn}
                     onPress={() => {
                       setShowModal(false);
                       navigation.navigate('SetAvailability', { selectedDate: selectedDate.dateStr });
                     }}
                   >
                     <Ionicons name="calendar-outline" size={16} color={MAROON} />
-                    <Text style={styles.quickActionText}>Edit Availability</Text>
+                    <Text style={styles.modalActionText}>Edit Availability</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -587,15 +607,23 @@ export default function DriverScheduleScreen({ navigation }) {
                   <View style={styles.timeRow}>
                     <View style={styles.timeInputContainer}>
                       <Text style={styles.timeLabel}>From:</Text>
-                      <TouchableOpacity style={styles.timeInput}>
+                      <TouchableOpacity 
+                        style={styles.timeInput}
+                        onPress={() => setShowFromPicker(true)}
+                      >
                         <Text style={styles.timeInputText}>{formatTime(availableFromTime)}</Text>
+                        <Ionicons name="chevron-down" size={16} color={MAROON} />
                       </TouchableOpacity>
                     </View>
                     
                     <View style={styles.timeInputContainer}>
                       <Text style={styles.timeLabel}>To:</Text>
-                      <TouchableOpacity style={styles.timeInput}>
+                      <TouchableOpacity 
+                        style={styles.timeInput}
+                        onPress={() => setShowToPicker(true)}
+                      >
                         <Text style={styles.timeInputText}>{formatTime(availableToTime)}</Text>
+                        <Ionicons name="chevron-down" size={16} color={MAROON} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -751,6 +779,71 @@ export default function DriverScheduleScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* From Time Picker */}
+      <Modal visible={showFromPicker} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.timePickerModal}>
+            <View style={styles.timePickerHeader}>
+              <Text style={styles.timePickerTitle}>Select Start Time</Text>
+              <TouchableOpacity onPress={() => setShowFromPicker(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.timePickerList}>
+              {['00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00'].map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={[styles.timePickerItem, availableFromTime === time && styles.timePickerItemSelected]}
+                  onPress={() => {
+                    setAvailableFromTime(time);
+                    const fromHour = parseInt(time.split(':')[0]);
+                    const pmHour = fromHour === 0 ? 12 : fromHour + 12;
+                    setAvailableToTime(`${pmHour.toString().padStart(2, '0')}:00`);
+                    setShowFromPicker(false);
+                  }}
+                >
+                  <Text style={[styles.timePickerItemText, availableFromTime === time && styles.timePickerItemTextSelected]}>
+                    {formatTime(time)}
+                  </Text>
+                  {availableFromTime === time && <Ionicons name="checkmark" size={20} color={MAROON} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* To Time Picker */}
+      <Modal visible={showToPicker} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.timePickerModal}>
+            <View style={styles.timePickerHeader}>
+              <Text style={styles.timePickerTitle}>Select End Time</Text>
+              <TouchableOpacity onPress={() => setShowToPicker(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.timePickerList}>
+              {['12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'].map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={[styles.timePickerItem, availableToTime === time && styles.timePickerItemSelected]}
+                  onPress={() => {
+                    setAvailableToTime(time);
+                    setShowToPicker(false);
+                  }}
+                >
+                  <Text style={[styles.timePickerItemText, availableToTime === time && styles.timePickerItemTextSelected]}>
+                    {formatTime(time)}
+                  </Text>
+                  {availableToTime === time && <Ionicons name="checkmark" size={20} color={MAROON} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -882,6 +975,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#e0e0e0',
     borderRadius: 12,
     opacity: 0.5
+  },
+  disabledCell: {
+    opacity: 0.3,
+    backgroundColor: '#f5f5f5'
   },
   dayPastWithBooking: {
     backgroundColor: '#8d6e63',
@@ -1104,25 +1201,43 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginRight: 4
   },
-  availabilityBtn: {
-    backgroundColor: MAROON,
+  quickActionsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 40
+  },
+  quickActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
+    paddingVertical: 16,
     borderRadius: 16,
-    marginTop: 8,
-    marginBottom: 40,
-    elevation: 3,
-    shadowColor: MAROON,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 }
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  scheduleBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: MAROON
+  },
+  availabilityBtn: {
+    backgroundColor: MAROON
+  },
+  quickActionBtnText: {
+    color: MAROON,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8
   },
   availabilityBtnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginLeft: 8
   },
   quickActions: {
@@ -1133,7 +1248,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
     gap: 12
   },
-  quickActionBtn: {
+  modalActionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1145,6 +1260,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e9ecef'
   },
+  modalActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: MAROON,
+    marginLeft: 6
+  },
   unavailableBtn: {
     backgroundColor: '#ffeaea',
     borderColor: '#ffcdd2'
@@ -1152,12 +1273,6 @@ const styles = StyleSheet.create({
   availableBtn: {
     backgroundColor: '#e8f5e8',
     borderColor: '#c8e6c9'
-  },
-  quickActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: MAROON,
-    marginLeft: 6
   },
   noBookingsContainer: {
     alignItems: 'center',
@@ -1322,7 +1437,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef'
+    borderColor: '#e9ecef',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
   },
   timeInputText: {
     fontSize: 16,
@@ -1485,5 +1603,48 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 20
+  },
+  timePickerModal: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%'
+  },
+  timePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  timePickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333'
+  },
+  timePickerList: {
+    maxHeight: 300
+  },
+  timePickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5'
+  },
+  timePickerItemSelected: {
+    backgroundColor: '#f8f9fa'
+  },
+  timePickerItemText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500'
+  },
+  timePickerItemTextSelected: {
+    color: MAROON,
+    fontWeight: '600'
   }
 });

@@ -29,7 +29,14 @@ export default function MyTourPackagesScreen({ navigation }) {
     try {
       const result = await getMyTourPackages();
       if (result.success) {
-        setPackages(result.data || []);
+        const packages = result.data || [];
+        // Debug: Log photos data
+        packages.forEach(pkg => {
+          if (pkg.photos) {
+            console.log(`Package ${pkg.package_name} photos:`, pkg.photos);
+          }
+        });
+        setPackages(packages);
       }
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -57,7 +64,15 @@ export default function MyTourPackagesScreen({ navigation }) {
         );
         fetchPackages();
       } else {
-        Alert.alert('Error', result.error || 'Failed to update package status');
+        if (result.code === 'CONFLICT') {
+          Alert.alert(
+            currentStatus ? 'Cannot Deactivate' : 'Cannot Activate',
+            result.error,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', result.error || 'Failed to update package status');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to update package status');
@@ -71,8 +86,25 @@ export default function MyTourPackagesScreen({ navigation }) {
       onPress={() => navigation.navigate('PackageDetails', { package: pkg })}
       activeOpacity={0.7}
     >
-      {pkg.photos && pkg.photos.length > 0 && (
-        <Image source={{ uri: pkg.photos[0].url }} style={styles.packageImage} />
+      {pkg.photos && Array.isArray(pkg.photos) && pkg.photos.length > 0 ? (
+        <View style={styles.imageContainer}>
+          <Image 
+            source={{ uri: pkg.photos[0].url }} 
+            style={styles.packageImage}
+            onError={() => console.log('Image load error:', pkg.photos[0].url)}
+          />
+          {pkg.photos.length > 1 && (
+            <View style={styles.imageCountBadge}>
+              <Ionicons name="images-outline" size={12} color="#fff" />
+              <Text style={styles.imageCountText}>{pkg.photos.length}</Text>
+            </View>
+          )}
+        </View>
+      ) : (
+        <View style={styles.placeholderImage}>
+          <Ionicons name="image-outline" size={32} color="#CCC" />
+          <Text style={styles.placeholderText}>No Image</Text>
+        </View>
       )}
       
       <View style={styles.packageContent}>
@@ -95,7 +127,22 @@ export default function MyTourPackagesScreen({ navigation }) {
 
         <View style={styles.packageDetails}>
           <Text style={styles.price}>₱{pkg.price}</Text>
-          <Text style={styles.duration}>{pkg.duration_hours}h • {pkg.max_pax} pax</Text>
+          <View style={styles.detailsRow}>
+            <View style={styles.detailItem}>
+              <Ionicons name="time-outline" size={14} color="#666" />
+              <Text style={styles.detailText}>{pkg.duration_hours}h</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="people-outline" size={14} color="#666" />
+              <Text style={styles.detailText}>{pkg.max_pax} pax</Text>
+            </View>
+            {pkg.unfinished_bookings_count > 0 && (
+              <View style={styles.detailItem}>
+                <Ionicons name="hourglass-outline" size={14} color="#FF6B35" />
+                <Text style={[styles.detailText, { color: '#FF6B35' }]}>{pkg.unfinished_bookings_count} pending</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Locations */}
@@ -118,37 +165,52 @@ export default function MyTourPackagesScreen({ navigation }) {
 
         {/* Schedule Info */}
         <View style={styles.scheduleSection}>
-          {pkg.available_days_data && pkg.available_days_data.length > 0 && (
+          {(pkg.available_days || pkg.available_days_data) && (
             <View style={styles.scheduleRow}>
               <Ionicons name="calendar-outline" size={16} color="#666" />
               <Text style={styles.scheduleText}>
-                Available: {pkg.available_days_data.map(day => day.substring(0, 3)).join(', ')}
+                Available: {(pkg.available_days || pkg.available_days_data || []).map(day => day.substring(0, 3)).join(', ') || 'Not specified'}
               </Text>
             </View>
           )}
-          {pkg.start_time && (
-            <View style={styles.scheduleRow}>
-              <Ionicons name="time-outline" size={16} color="#666" />
-              <Text style={styles.scheduleText}>Start Time: {pkg.start_time}</Text>
-            </View>
-          )}
-          {pkg.expiration_date_data && (
+          {(pkg.expiration_date || pkg.expiration_date_data) && (
             <View style={styles.scheduleRow}>
               <Ionicons name="hourglass-outline" size={16} color="#666" />
               <Text style={styles.scheduleText}>
-                Expires: {new Date(pkg.expiration_date_data).toLocaleDateString()}
+                Expires: {new Date(pkg.expiration_date || pkg.expiration_date_data).toLocaleDateString()}
               </Text>
             </View>
           )}
+          <View style={styles.scheduleRow}>
+            <Ionicons name="create-outline" size={16} color="#666" />
+            <Text style={styles.scheduleText}>
+              Created: {new Date(pkg.created_at).toLocaleDateString()}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.packageActions}>
           <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => navigation.navigate('EditTourPackage', { package: pkg })}
+            style={[styles.actionButton, !pkg.can_edit && styles.disabledButton]}
+            onPress={() => {
+              if (pkg.can_edit) {
+                navigation.navigate('EditTourPackage', { package: pkg });
+              } else {
+                Alert.alert(
+                  'Cannot Edit Package',
+                  `This package has ${pkg.unfinished_bookings_count} unfinished booking(s). Complete or cancel existing bookings first.`,
+                  [{ text: 'OK' }]
+                );
+              }
+            }}
+            disabled={!pkg.can_edit}
           >
-            <Ionicons name="create-outline" size={18} color={MAROON} />
-            <Text style={styles.actionText}>Edit</Text>
+            <Ionicons 
+              name="create-outline" 
+              size={18} 
+              color={pkg.can_edit ? MAROON : '#CCC'} 
+            />
+            <Text style={[styles.actionText, !pkg.can_edit && styles.disabledText]}>Edit</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -281,10 +343,42 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
+  imageContainer: {
+    position: 'relative',
+  },
   packageImage: {
     width: '100%',
     height: 120,
     backgroundColor: '#F0F0F0',
+  },
+  imageCountBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  imageCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  placeholderImage: {
+    width: '100%',
+    height: 120,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  placeholderText: {
+    color: '#CCC',
+    fontSize: 12,
   },
   packageContent: {
     padding: 16,
@@ -333,10 +427,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   packageDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 16,
+  },
+  detailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 4,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  detailText: {
+    fontSize: 13,
+    color: '#666',
   },
   price: {
     fontSize: 18,
@@ -360,6 +466,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: MAROON,
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  disabledText: {
+    color: '#CCC',
   },
   loadingContainer: {
     flex: 1,

@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  Switch
+  Switch,
+  Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
@@ -36,6 +37,8 @@ export default function SetAvailabilityScreen({ navigation, route }) {
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showFromTimePicker, setShowFromTimePicker] = useState(false);
+  const [showToTimePicker, setShowToTimePicker] = useState(false);
 
   // Load existing availability when date changes
   React.useEffect(() => {
@@ -110,6 +113,33 @@ export default function SetAvailabilityScreen({ navigation, route }) {
         ? prev.filter(t => t !== time)
         : [...prev, time].sort()
     );
+  };
+
+  const timeOptions = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+
+  const handleFromTimeSelect = (time) => {
+    setAvailableFromTime(time);
+    setShowFromTimePicker(false);
+    // Auto-adjust 'to' time if it's not later than 'from' time
+    const fromHour = parseInt(time.split(':')[0]);
+    const toHour = parseInt(availableToTime.split(':')[0]);
+    if (toHour <= fromHour) {
+      const newToHour = Math.min(fromHour + 8, 20); // Default 8-hour shift, max 20:00
+      setAvailableToTime(`${newToHour.toString().padStart(2, '0')}:00`);
+    }
+  };
+
+  const handleToTimeSelect = (time) => {
+    setAvailableToTime(time);
+    setShowToTimePicker(false);
+  };
+
+  const getValidToTimes = () => {
+    const fromHour = parseInt(availableFromTime.split(':')[0]);
+    return timeOptions.filter(time => {
+      const hour = parseInt(time.split(':')[0]);
+      return hour > fromHour;
+    });
   };
 
   const saveAvailability = async () => {
@@ -291,15 +321,25 @@ export default function SetAvailabilityScreen({ navigation, route }) {
                 <View style={styles.timeRow}>
                   <View style={styles.timeInputContainer}>
                     <Text style={styles.timeLabel}>From:</Text>
-                    <TouchableOpacity style={styles.timeInput}>
+                    <TouchableOpacity 
+                      style={styles.timeInput}
+                      onPress={() => setShowFromTimePicker(true)}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.timeInputText}>{formatTime(availableFromTime)}</Text>
+                      <Ionicons name="chevron-down" size={16} color={MAROON} />
                     </TouchableOpacity>
                   </View>
                   
                   <View style={styles.timeInputContainer}>
                     <Text style={styles.timeLabel}>To:</Text>
-                    <TouchableOpacity style={styles.timeInput}>
+                    <TouchableOpacity 
+                      style={styles.timeInput}
+                      onPress={() => setShowToTimePicker(true)}
+                      activeOpacity={0.7}
+                    >
                       <Text style={styles.timeInputText}>{formatTime(availableToTime)}</Text>
+                      <Ionicons name="chevron-down" size={16} color={MAROON} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -396,6 +436,88 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* From Time Picker Modal */}
+      <Modal
+        visible={showFromTimePicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFromTimePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.timePickerModal}>
+            <View style={styles.timePickerHeader}>
+              <Text style={styles.timePickerTitle}>Select Start Time</Text>
+              <TouchableOpacity onPress={() => setShowFromTimePicker(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.timePickerList}>
+              {timeOptions.map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={[
+                    styles.timePickerItem,
+                    availableFromTime === time && styles.timePickerItemSelected
+                  ]}
+                  onPress={() => handleFromTimeSelect(time)}
+                >
+                  <Text style={[
+                    styles.timePickerItemText,
+                    availableFromTime === time && styles.timePickerItemTextSelected
+                  ]}>
+                    {formatTime(time)}
+                  </Text>
+                  {availableFromTime === time && (
+                    <Ionicons name="checkmark" size={20} color={MAROON} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* To Time Picker Modal */}
+      <Modal
+        visible={showToTimePicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowToTimePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.timePickerModal}>
+            <View style={styles.timePickerHeader}>
+              <Text style={styles.timePickerTitle}>Select End Time</Text>
+              <TouchableOpacity onPress={() => setShowToTimePicker(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.timePickerList}>
+              {getValidToTimes().map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={[
+                    styles.timePickerItem,
+                    availableToTime === time && styles.timePickerItemSelected
+                  ]}
+                  onPress={() => handleToTimeSelect(time)}
+                >
+                  <Text style={[
+                    styles.timePickerItemText,
+                    availableToTime === time && styles.timePickerItemTextSelected
+                  ]}>
+                    {formatTime(time)}
+                  </Text>
+                  {availableToTime === time && (
+                    <Ionicons name="checkmark" size={20} color={MAROON} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -577,7 +699,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef'
+    borderColor: '#e9ecef',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
   },
   timeInputText: {
     fontSize: 16,
@@ -637,5 +762,53 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#388e3c',
     lineHeight: 18
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end'
+  },
+  timePickerModal: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '60%'
+  },
+  timePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0'
+  },
+  timePickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333'
+  },
+  timePickerList: {
+    maxHeight: 300
+  },
+  timePickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5'
+  },
+  timePickerItemSelected: {
+    backgroundColor: '#f8f9fa'
+  },
+  timePickerItemText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500'
+  },
+  timePickerItemTextSelected: {
+    color: MAROON,
+    fontWeight: '600'
   }
 });

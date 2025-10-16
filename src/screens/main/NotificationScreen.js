@@ -20,10 +20,10 @@ export default function NotificationScreen({ navigation }) {
   const appState = useRef(AppState.currentState);
 
   const categories = [
-    { id: 'all', label: 'All', icon: 'bell' },
+    { id: 'all', label: 'All', icon: 'notifications' },
     { id: 'tours', label: 'Tours', icon: 'map' },
     { id: 'rides', label: 'Rides', icon: 'car' },
-    { id: 'general', label: 'General', icon: 'information' }
+    { id: 'general', label: 'General', icon: 'information-circle' }
   ];
 
   const categorizeNotification = (notification) => {
@@ -222,16 +222,16 @@ function NotificationItem({ title, message, created_at, read, type, category, on
     }
     
     if (category === 'rides') {
-      if (titleLower.includes('driver')) return 'person';
-      if (titleLower.includes('completed')) return 'checkmark-circle';
+      if (titleLower.includes('driver')) return 'account';
+      if (titleLower.includes('completed')) return 'check-circle';
       if (titleLower.includes('started')) return 'play-circle';
       return 'car';
     }
     
     // General notifications
-    if (titleLower.includes('payment') || titleLower.includes('earning')) return 'card';
-    if (titleLower.includes('account') || titleLower.includes('profile')) return 'person-circle';
-    return 'information-circle';
+    if (titleLower.includes('payment') || titleLower.includes('earning')) return 'credit-card';
+    if (titleLower.includes('account') || titleLower.includes('profile')) return 'account-circle';
+    return 'information';
   };
 
   const getIconColor = () => {

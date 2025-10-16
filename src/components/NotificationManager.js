@@ -45,6 +45,12 @@ const NotificationManager = ({ navigation }) => {
       }
     } catch (error) {
       console.log('Error loading dismissed notifications:', error);
+      // Clear corrupted notification cache
+      try {
+        await AsyncStorage.removeItem('dismissedNotifications');
+      } catch (clearError) {
+        console.log('Error clearing notification cache:', clearError);
+      }
     }
   };
 
@@ -134,6 +140,8 @@ const NotificationManager = ({ navigation }) => {
     // Handle different notification types with specific navigation
     switch (type) {
       case 'booking':
+      case 'booking_request':
+      case 'booking_update':
         if (user?.role === 'driver' || user?.role === 'driver-owner') {
           Alert.alert(
             '🚗 New Booking Available!',
@@ -143,8 +151,19 @@ const NotificationManager = ({ navigation }) => {
                 text: 'View Bookings', 
                 onPress: () => {
                   markAsReadAndNavigate();
-                  // Navigate to Main tabs then to Bookings tab
-                  navigation?.navigate('Main', { screen: 'Bookings' });
+                  try {
+                    if (navigation && navigation.navigate) {
+                      navigation.navigate('Main', { screen: 'Bookings' });
+                    }
+                  } catch (navError) {
+                    console.error('Navigation error to Bookings:', navError);
+                    // Fallback: try direct navigation to Bookings
+                    try {
+                      navigation.navigate('Bookings');
+                    } catch (fallbackError) {
+                      console.error('Fallback navigation failed:', fallbackError);
+                    }
+                  }
                 }
               },
               { 
@@ -198,18 +217,30 @@ const NotificationManager = ({ navigation }) => {
         
       case 'driver_earnings':
       case 'earnings':
+      case 'breakeven':
+      case 'profit_milestone':
         Alert.alert(
-          '📊 Earnings Update',
+          type === 'breakeven' ? '🎯 Breakeven Update' : '📊 Earnings Update',
           message,
           [
             { 
-              text: 'View Earnings', 
+              text: type === 'breakeven' ? 'View Breakeven' : 'View Earnings', 
               onPress: () => {
                 markAsReadAndNavigate();
-                if (user?.role === 'driver') {
-                  navigation?.navigate('Main', { screen: 'Earnings' });
-                } else {
-                  navigation?.navigate('DriverEarnings');
+                try {
+                  if (navigation && navigation.navigate) {
+                    if (user?.role === 'driver' || user?.role === 'driver-owner') {
+                      if (type === 'breakeven') {
+                        navigation.navigate('Main', { screen: 'Breakeven' });
+                      } else {
+                        navigation.navigate('Main', { screen: 'Earnings' });
+                      }
+                    } else {
+                      navigation.navigate('DriverEarnings');
+                    }
+                  }
+                } catch (navError) {
+                  console.error('Navigation error to earnings/breakeven:', navError);
                 }
               }
             },
@@ -260,9 +291,56 @@ const NotificationManager = ({ navigation }) => {
         );
         break;
         
+      case 'schedule':
+      case 'availability':
+        if (user?.role === 'driver' || user?.role === 'driver-owner') {
+          Alert.alert(
+            '📅 Schedule Update',
+            message,
+            [
+              { 
+                text: 'View Schedule', 
+                onPress: () => {
+                  markAsReadAndNavigate();
+                  try {
+                    if (navigation && navigation.navigate) {
+                      navigation.navigate('Main', { screen: 'Schedule' });
+                    }
+                  } catch (navError) {
+                    console.error('Navigation error to Schedule:', navError);
+                  }
+                }
+              },
+              { 
+                text: 'OK',
+                onPress: () => markAsReadAndNavigate()
+              }
+            ]
+          );
+        }
+        break;
+        
+      case 'carriage':
+      case 'assignment':
+        Alert.alert(
+          '🚗 Carriage Update',
+          message,
+          [
+            { 
+              text: 'View Carriages', 
+              onPress: () => markAsReadAndNavigate('MyCarriages')
+            },
+            { 
+              text: 'OK',
+              onPress: () => markAsReadAndNavigate()
+            }
+          ]
+        );
+        break;
+        
       default:
         Alert.alert(
-          title,
+          title || '📢 Notification',
           message,
           [
             { 
