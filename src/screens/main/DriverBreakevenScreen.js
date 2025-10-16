@@ -266,6 +266,9 @@ export default function EarningsScreen({ navigation, route }) {
 
   // Animation for loading states
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(1)).current;
+  const dot2Anim = useRef(new Animated.Value(1)).current;
+  const dot3Anim = useRef(new Animated.Value(1)).current;
 
   // TODAY fallback
   const [incomeToday, setIncomeToday] = useState(0);
@@ -289,10 +292,42 @@ export default function EarningsScreen({ navigation, route }) {
           }),
         ])
       );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+      
+      const dot1Animation = createDotAnimation(dot1Anim, 0);
+      const dot2Animation = createDotAnimation(dot2Anim, 200);
+      const dot3Animation = createDotAnimation(dot3Anim, 400);
+      
       pulse.start();
-      return () => pulse.stop();
+      dot1Animation.start();
+      dot2Animation.start();
+      dot3Animation.start();
+      
+      return () => {
+        pulse.stop();
+        dot1Animation.stop();
+        dot2Animation.stop();
+        dot3Animation.stop();
+      };
     }
-  }, [loading, historyLoading, filterLoading, pulseAnim]);
+  }, [loading, historyLoading, filterLoading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   // --------- Reset helper to avoid stale values across filters ---------
   function resetBreakevenState() {
@@ -1378,7 +1413,12 @@ export default function EarningsScreen({ navigation, route }) {
                   style={styles.loadingLogo}
                   resizeMode="contain"
                 />
-                <Text style={styles.loadingText}>Loading Breakeven Data...</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={[styles.loadingText, { marginRight: 4 }]}>Loading Breakeven</Text>
+                  <Animated.Text style={[styles.loadingText, { opacity: dot1Anim }]}>.</Animated.Text>
+                  <Animated.Text style={[styles.loadingText, { opacity: dot2Anim }]}>.</Animated.Text>
+                  <Animated.Text style={[styles.loadingText, { opacity: dot3Anim }]}>.</Animated.Text>
+                </View>
               </Animated.View>
             </View>
           </View>

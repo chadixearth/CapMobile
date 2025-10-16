@@ -97,6 +97,9 @@ export default function DriverEarningsScreen({ navigation }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showPayoutHistory, setShowPayoutHistory] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     fetchUserAndEarnings();
@@ -122,10 +125,39 @@ export default function DriverEarningsScreen({ navigation }) {
           }),
         ])
       );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.delay(600 - delay),
+          ])
+        );
+      };
+      
       pulse.start();
-      return () => pulse.stop();
+      createDotAnimation(dot1Anim, 0).start();
+      createDotAnimation(dot2Anim, 200).start();
+      createDotAnimation(dot3Anim, 400).start();
+      
+      return () => {
+        pulse.stop();
+        dot1Anim.stopAnimation();
+        dot2Anim.stopAnimation();
+        dot3Anim.stopAnimation();
+      };
     }
-  }, [loading, pulseAnim]);
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const fetchUserAndEarnings = useCallback(async (isInitialLoad = false) => {
     try {
@@ -549,7 +581,12 @@ export default function DriverEarningsScreen({ navigation }) {
             resizeMode="contain"
           />
         </Animated.View>
-        <Text style={styles.loadingText}>Fetching your earnings data...</Text>
+        <View style={styles.loadingTextContainer}>
+          <Text style={styles.loadingTextBase}>Fetching your earnings</Text>
+          <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+          <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+          <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+        </View>
       </View>
     );
   }
@@ -624,13 +661,22 @@ const styles = StyleSheet.create({
     width: 230,
     height: 230,
   },
-  loadingText: {
+  loadingTextContainer: {
     marginTop: -120,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTextBase: {
     fontSize: 16,
     color: '#6B2E2B',
     fontWeight: '600',
-    textAlign: 'center',
     letterSpacing: 0.5,
+  },
+  dot: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

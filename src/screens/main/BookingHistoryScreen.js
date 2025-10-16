@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Animated,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
@@ -27,6 +29,12 @@ export default function BookingHistoryScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reviewStatus, setReviewStatus] = useState({});
   const [selectedCategory, setSelectedCategory] = useState('all');
+  
+  // Animation refs for loading
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(1)).current;
+  const dot2Anim = useRef(new Animated.Value(1)).current;
+  const dot3Anim = useRef(new Animated.Value(1)).current;
 
   const categories = [
     { id: 'all', label: 'All', icon: 'list' },
@@ -103,6 +111,60 @@ export default function BookingHistoryScreen({ navigation }) {
   useEffect(() => {
     fetchBookings();
   }, [user]);
+
+  // Animation effect for loading
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+      
+      const dot1Animation = createDotAnimation(dot1Anim, 0);
+      const dot2Animation = createDotAnimation(dot2Anim, 200);
+      const dot3Animation = createDotAnimation(dot3Anim, 400);
+      
+      pulse.start();
+      dot1Animation.start();
+      dot2Animation.start();
+      dot3Animation.start();
+      
+      return () => {
+        pulse.stop();
+        dot1Animation.stop();
+        dot2Animation.stop();
+        dot3Animation.stop();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const onRefresh = () => {
     fetchBookings(true);
@@ -330,47 +392,53 @@ export default function BookingHistoryScreen({ navigation }) {
 
       {/* Categories */}
       <View style={styles.categoriesContainer}>
-        {categories.map((category) => {
-          const categoryCount = category.id === 'all' 
-            ? bookings.length 
-            : bookings.filter(b => categorizeBooking(b) === category.id).length;
-          
-          return (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryBtn,
-                selectedCategory === category.id && styles.categoryBtnActive
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <Ionicons 
-                name={category.icon} 
-                size={16} 
-                color={selectedCategory === category.id ? '#fff' : MAROON} 
-              />
-              <Text style={[
-                styles.categoryText,
-                selectedCategory === category.id && styles.categoryTextActive
-              ]}>
-                {category.label}
-              </Text>
-              {categoryCount > 0 && (
-                <View style={[
-                  styles.categoryBadge,
-                  selectedCategory === category.id && styles.categoryBadgeActive
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingRight: 16 }}
+        >
+          {categories.map((category) => {
+            const categoryCount = category.id === 'all' 
+              ? bookings.length 
+              : bookings.filter(b => categorizeBooking(b) === category.id).length;
+            
+            return (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.categoryBtn,
+                  selectedCategory === category.id && styles.categoryBtnActive
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <Ionicons 
+                  name={category.icon} 
+                  size={16} 
+                  color={selectedCategory === category.id ? '#fff' : MAROON} 
+                />
+                <Text style={[
+                  styles.categoryText,
+                  selectedCategory === category.id && styles.categoryTextActive
                 ]}>
-                  <Text style={[
-                    styles.categoryBadgeText,
-                    selectedCategory === category.id && styles.categoryBadgeTextActive
+                  {category.label}
+                </Text>
+                {categoryCount > 0 && (
+                  <View style={[
+                    styles.categoryBadge,
+                    selectedCategory === category.id && styles.categoryBadgeActive
                   ]}>
-                    {categoryCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+                    <Text style={[
+                      styles.categoryBadgeText,
+                      selectedCategory === category.id && styles.categoryBadgeTextActive
+                    ]}>
+                      {categoryCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Content */}
@@ -382,8 +450,19 @@ export default function BookingHistoryScreen({ navigation }) {
       >
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={MAROON} />
-            <Text style={styles.loadingText}>Loading bookings...</Text>
+            <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+              <Image 
+                source={require('../../../assets/TarTrack Logo_sakto.png')} 
+                style={styles.loadingLogo}
+                resizeMode="contain"
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={[styles.loadingText, { marginRight: 4 }]}>Loading bookings</Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot1Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot2Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot3Anim }]}>.</Animated.Text>
+              </View>
+            </Animated.View>
           </View>
         ) : bookings.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -430,45 +509,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   categoriesContainer: {
-    flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 8,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
   categoryBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    marginBottom: 8,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: MAROON,
     backgroundColor: '#fff',
-    gap: 4,
+    minWidth: 80,
   },
   categoryBtnActive: {
     backgroundColor: MAROON,
   },
   categoryText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: MAROON,
+    marginLeft: 4,
+    marginRight: 4,
   },
   categoryTextActive: {
     color: '#fff',
   },
   categoryBadge: {
     backgroundColor: MAROON,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 4,
   },
   categoryBadgeActive: {
     backgroundColor: '#fff',
@@ -491,10 +572,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 60,
   },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    // marginTop: 100
+  },
+  loadingLogo: {
+    width: 230,
+    height: 230,
+    marginBottom: -90,
+  },
   loadingText: {
-    marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   emptyContainer: {
     flex: 1,

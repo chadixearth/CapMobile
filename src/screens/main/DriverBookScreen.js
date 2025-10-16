@@ -211,6 +211,7 @@ export default function DriverBookScreen({ navigation }) {
   const [availableRideBookings, setAvailableRideBookings] = useState([]);
   const [driverBookings, setDriverBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -225,6 +226,9 @@ export default function DriverBookScreen({ navigation }) {
   const [showDriverCancelModal, setShowDriverCancelModal] = useState(false);
   const [showRideMapModal, setShowRideMapModal] = useState(false);
   const [selectedRide, setSelectedRide] = useState(null);
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -235,6 +239,56 @@ export default function DriverBookScreen({ navigation }) {
     console.log('[DriverBookScreen] Auto-refreshing due to data changes');
     fetchUserAndBookings();
   }, []));
+
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.delay(600 - delay),
+          ])
+        );
+      };
+      
+      pulse.start();
+      createDotAnimation(dot1Anim, 0).start();
+      createDotAnimation(dot2Anim, 200).start();
+      createDotAnimation(dot3Anim, 400).start();
+      
+      return () => {
+        pulse.stop();
+        dot1Anim.stopAnimation();
+        dot2Anim.stopAnimation();
+        dot3Anim.stopAnimation();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   useEffect(() => {
     fetchUserAndBookings();
@@ -1565,10 +1619,19 @@ const getCustomTitle = (r) => (
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator />
-            <Text style={styles.loadingText}>
-              Loading {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'history'} bookings...
-            </Text>
+            <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+              <Image 
+                source={require('../../../assets/TarTrack Logo_sakto.png')} 
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </Animated.View>
+            <View style={styles.loadingTextContainer}>
+              <Text style={styles.loadingTextBase}>Loading bookings</Text>
+              <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+              <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+              <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+            </View>
           </View>
         ) : (
           <ScrollView
@@ -1953,7 +2016,33 @@ const styles = StyleSheet.create({
 
   /* Loading */
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24 },
-  loadingText: { fontSize: 14, color: '#777' },
+  logoContainer: {
+    marginTop: -200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 30,
+  },
+  logo: {
+    width: 230,
+    height: 230,
+  },
+  loadingTextContainer: {
+    marginTop: -120,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTextBase: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  dot: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+  },
 
   /* Empty */
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 56 },

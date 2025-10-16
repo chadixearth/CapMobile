@@ -31,6 +31,9 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
   const [errorText, setErrorText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible && driverId) {
@@ -54,10 +57,39 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
           }),
         ])
       );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.delay(600 - delay),
+          ])
+        );
+      };
+      
       pulse.start();
-      return () => pulse.stop();
+      createDotAnimation(dot1Anim, 0).start();
+      createDotAnimation(dot2Anim, 200).start();
+      createDotAnimation(dot3Anim, 400).start();
+      
+      return () => {
+        pulse.stop();
+        dot1Anim.stopAnimation();
+        dot2Anim.stopAnimation();
+        dot3Anim.stopAnimation();
+      };
     }
-  }, [loading, pulseAnim]);
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const fetchPayouts = async () => {
     setLoading(true);
@@ -242,6 +274,12 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
                 resizeMode="contain"
               />
             </Animated.View>
+            <View style={styles.loadingTextContainer}>
+              <Text style={styles.loadingTextBase}>Loading payouts</Text>
+              <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+              <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+              <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+            </View>
           </View>
         ) : errorText ? (
           <View style={styles.errorBox}>
@@ -418,7 +456,24 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 20
   },
   logoContainer: { alignItems: 'center', justifyContent: 'center', marginTop: -100 },
-  logo: { width: 200, height: 200 }, 
+  logo: { width: 200, height: 200 },
+  loadingTextContainer: {
+    marginTop: -75,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTextBase: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  dot: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+  }, 
 
   errorBox: {
     margin: 16,

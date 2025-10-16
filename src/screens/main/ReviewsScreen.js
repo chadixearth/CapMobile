@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Animated,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
@@ -23,6 +25,12 @@ export default function ReviewsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState(null);
+  
+  // Animation refs for loading
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(1)).current;
+  const dot2Anim = useRef(new Animated.Value(1)).current;
+  const dot3Anim = useRef(new Animated.Value(1)).current;
 
   const fetchReviews = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -51,6 +59,60 @@ export default function ReviewsScreen({ navigation }) {
   useEffect(() => {
     fetchReviews();
   }, [activeTab, user]);
+
+  // Animation effect for loading
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+      
+      const dot1Animation = createDotAnimation(dot1Anim, 0);
+      const dot2Animation = createDotAnimation(dot2Anim, 200);
+      const dot3Animation = createDotAnimation(dot3Anim, 400);
+      
+      pulse.start();
+      dot1Animation.start();
+      dot2Animation.start();
+      dot3Animation.start();
+      
+      return () => {
+        pulse.stop();
+        dot1Animation.stop();
+        dot2Animation.stop();
+        dot3Animation.stop();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const onRefresh = () => {
     fetchReviews(true);
@@ -165,8 +227,19 @@ export default function ReviewsScreen({ navigation }) {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={MAROON} />
-            <Text style={styles.loadingText}>Loading reviews...</Text>
+            <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+              <Image 
+                source={require('../../../assets/TarTrack Logo_sakto.png')} 
+                style={styles.loadingLogo}
+                resizeMode="contain"
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={[styles.loadingText, { marginRight: 4 }]}>Loading reviews</Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot1Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot2Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.loadingText, { opacity: dot3Anim }]}>.</Animated.Text>
+              </View>
+            </Animated.View>
           </View>
         ) : reviews.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -327,10 +400,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 60,
   },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingLogo: {
+    width: 230,
+    height: 230,
+    marginBottom: -90,
+  },
   loadingText: {
-    marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   emptyContainer: {
     flex: 1,

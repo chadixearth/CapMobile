@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import {
   Alert,
   RefreshControl,
@@ -9,6 +9,8 @@ import {
   View,
   ActivityIndicator,
   Modal,
+  Animated,
+  Image,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -40,6 +42,10 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
   const getOwnerName = (carriage) => {
     const ownerName = carriage.assigned_owner?.name || 
@@ -61,6 +67,56 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   useEffect(() => {
     fetchUserAndCarriages();
   }, []);
+
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.delay(600 - delay),
+          ])
+        );
+      };
+      
+      pulse.start();
+      createDotAnimation(dot1Anim, 0).start();
+      createDotAnimation(dot2Anim, 200).start();
+      createDotAnimation(dot3Anim, 400).start();
+      
+      return () => {
+        pulse.stop();
+        dot1Anim.stopAnimation();
+        dot2Anim.stopAnimation();
+        dot3Anim.stopAnimation();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const fetchUserAndCarriages = async () => {
     try {
@@ -252,7 +308,21 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
             onNotificationPress={() => navigation.navigate('Notification')}
           />
         )}
-        <LoadingScreen message="Loading carriage assignments..." icon="car-outline" />
+        <View style={styles.loadingContainer}>
+          <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+            <Image 
+              source={require('../../../assets/TarTrack Logo_sakto.png')} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          <View style={styles.loadingTextContainer}>
+            <Text style={styles.loadingTextBase}>Loading carriage assignments</Text>
+            <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+          </View>
+        </View>
       </View>
     );
   }
@@ -508,10 +578,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 16,
-    color: MUTED,
+  logoContainer: {
+    marginTop: -100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  logo: {
+    width: 230,
+    height: 230,
+  },
+  loadingTextContainer: {
+    marginTop: -120,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTextBase: {
     fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  dot: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
-  Modal
+  Modal,
+  Animated,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
@@ -38,6 +40,10 @@ export default function DriverScheduleScreen({ navigation }) {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
 
   const loadCalendar = async () => {
     if (!user?.id) return;
@@ -71,6 +77,56 @@ export default function DriverScheduleScreen({ navigation }) {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 300,
+              useNativeDriver: true,
+            }),
+            Animated.delay(600 - delay),
+          ])
+        );
+      };
+      
+      pulse.start();
+      createDotAnimation(dot1Anim, 0).start();
+      createDotAnimation(dot2Anim, 200).start();
+      createDotAnimation(dot3Anim, 400).start();
+      
+      return () => {
+        pulse.stop();
+        dot1Anim.stopAnimation();
+        dot2Anim.stopAnimation();
+        dot3Anim.stopAnimation();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   useEffect(() => {
     loadCalendar();
@@ -201,9 +257,26 @@ export default function DriverScheduleScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={MAROON} />
-        <Text style={styles.loadingText}>Loading your schedule...</Text>
+      <View style={styles.container}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+        <View style={styles.loadingContainer}>
+          <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+            <Image 
+              source={require('../../../assets/TarTrack Logo_sakto.png')} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          <View style={styles.loadingTextContainer}>
+            <Text style={styles.loadingTextBase}>Loading your schedule</Text>
+            <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+          </View>
+        </View>
       </View>
     );
   }
@@ -859,10 +932,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f8f8f8'
   },
-  loadingText: {
-    marginTop: 16,
-    color: '#666',
-    fontSize: 16
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -100,
+    marginBottom: 30,
+  },
+  logo: {
+    width: 230,
+    height: 230,
+  },
+  loadingTextContainer: {
+    marginTop: -120,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingTextBase: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  dot: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
   },
 
   content: {
