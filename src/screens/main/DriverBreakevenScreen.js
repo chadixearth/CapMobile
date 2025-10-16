@@ -428,6 +428,10 @@ export default function EarningsScreen({ navigation, route }) {
             EXPENSES_META_KEY(driverId, 'today'),
             JSON.stringify({ updatedAt: Date.now() })
           );
+          // Clear notification check data for new day
+          await AsyncStorage.removeItem(`last_notification_check_${driverId}`);
+          // Clear dismissed notifications for new day
+          BreakevenNotificationManager.clearBreakevenState(driverId);
         } catch {}
 
         // Refresh tiles/summary with the new daily window
@@ -700,7 +704,7 @@ export default function EarningsScreen({ navigation, route }) {
         );
       }
 
-      // Check for breakeven notifications (only for Daily frequency)
+      // Check for breakeven notifications (only for Daily frequency and significant changes)
       if (frequency === 'Daily' && d && t > 0) {
         try {
           const currentData = {
@@ -710,10 +714,30 @@ export default function EarningsScreen({ navigation, route }) {
             bookings_needed: Number(d.bookings_needed || 0)
           };
           
-          await BreakevenNotificationManager.checkBreakevenMilestones(
-            driverId,
-            currentData
-          );
+          // Only check notifications if there's a significant change (avoid spam)
+          const lastCheck = await AsyncStorage.getItem(`last_notification_check_${driverId}`);
+          const lastCheckData = lastCheck ? JSON.parse(lastCheck) : null;
+          const now = Date.now();
+          
+          // Check if enough time has passed (minimum 30 minutes) or significant data change
+          const timeDiff = lastCheckData ? (now - lastCheckData.timestamp) : Infinity;
+          const significantChange = !lastCheckData || 
+            Math.abs(currentData.expenses - (lastCheckData.expenses || 0)) >= 50 ||
+            Math.abs(currentData.revenue_period - (lastCheckData.revenue_period || 0)) >= 100 ||
+            currentData.total_bookings !== (lastCheckData.total_bookings || 0);
+          
+          if (timeDiff > 30 * 60 * 1000 || significantChange) { // 30 minutes
+            await BreakevenNotificationManager.checkBreakevenMilestones(
+              driverId,
+              currentData
+            );
+            
+            // Store last check data
+            await AsyncStorage.setItem(`last_notification_check_${driverId}`, JSON.stringify({
+              ...currentData,
+              timestamp: now
+            }));
+          }
         } catch (error) {
           console.warn('Breakeven notification check failed:', error);
         }

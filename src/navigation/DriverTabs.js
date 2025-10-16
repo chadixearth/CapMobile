@@ -10,6 +10,7 @@ import DriverScheduleScreen from '../screens/main/DriverScheduleScreen';
 import TerminalsScreen from '../screens/map/TerminalsScreen';
 import TARTRACKHeader from '../components/TARTRACKHeader';
 import GoodsServicesScreen from '../screens/main/GoodsServicesScreen';
+import MyCarriagesScreen from '../screens/main/MyCarriagesScreen';
 import { useAuth } from '../hooks/useAuth';
 import * as Routes from '../constants/routes';
 
@@ -41,6 +42,8 @@ export default function DriverTabs({ setRole }) {
             return <Ionicons name="calendar-outline" size={size} color={color} />;
           } else if (route.name === Routes.GOODS_SERVICES) {
             return <Ionicons name="pricetags-outline" size={size} color={color} />;
+          } else if (route.name === 'Carriage') {
+            return <Ionicons name="car-outline" size={size} color={color} />;
           } else if (route.name === 'Menu') {
             return <Ionicons name="settings-outline" size={size} color={color} />;
           }
@@ -56,7 +59,7 @@ export default function DriverTabs({ setRole }) {
       <Tab.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} options={{ headerShown: false }} />
       <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
       <Tab.Screen name="Schedule" component={DriverScheduleScreen} options={{ headerShown: false }} />
-      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name="Carriage" component={MyCarriagesScreen} options={{ headerShown: false }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>
   );

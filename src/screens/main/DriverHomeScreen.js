@@ -169,7 +169,7 @@ function ActivityMiniChart({
 }
 
 /* ------------------ Modern Location Card ------------------ */
-function LocationCard({ locationStatus }) {
+function LocationCard({ locationStatus, onToggle }) {
   const { isTracking, lastUpdateTime, error } = locationStatus || {};
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -206,7 +206,7 @@ function LocationCard({ locationStatus }) {
     : 'Tracking is off';
 
   return (
-    <View style={styles.locCard}>
+    <TouchableOpacity style={styles.locCard} onPress={onToggle} activeOpacity={0.8}>
       {/* decorative blobs */}
       <View style={styles.locBlobOne} />
       <View style={styles.locBlobTwo} />
@@ -222,6 +222,7 @@ function LocationCard({ locationStatus }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.locTitle}>Live Location</Text>
           <Text style={styles.locSubtitle}>{timeText}</Text>
+          <Text style={styles.locHint}>Tap to {isTracking ? 'stop' : 'start'} receiving bookings</Text>
         </View>
 
         <View style={[styles.locPill, { backgroundColor: pillStyle.bg }]}>
@@ -236,7 +237,7 @@ function LocationCard({ locationStatus }) {
           </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -257,6 +258,7 @@ export default function DriverHomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [locationStatus, setLocationStatus] = useState({ isTracking: false, lastUpdateTime: null, error: null });
+  const [locationToggling, setLocationToggling] = useState(false);
 
   useEffect(() => {
     fetchUserAndEarnings();
@@ -524,6 +526,41 @@ export default function DriverHomeScreen({ navigation }) {
     }
   };
 
+  const handleLocationToggle = async () => {
+    if (locationToggling) return;
+    
+    setLocationToggling(true);
+    try {
+      const LocationService = (await import('../../services/locationService')).default;
+      
+      if (locationStatus.isTracking) {
+        // Stop location tracking
+        LocationService.stopTracking();
+        setLocationStatus({ isTracking: false, lastUpdateTime: null, error: null });
+        Alert.alert('Location Sharing Off', 'You will not receive ride booking notifications.');
+      } else {
+        // Start location tracking
+        if (!user?.id) {
+          Alert.alert('Error', 'Please log in to start location tracking');
+          return;
+        }
+        
+        const success = await LocationService.startDriverLocationTracking(user.id);
+        if (success) {
+          setLocationStatus({ isTracking: true, lastUpdateTime: new Date(), error: null });
+          Alert.alert('Location Sharing On', 'You will now receive ride requests based on your location.');
+        } else {
+          Alert.alert('Error', 'Failed to start location tracking. Please check your location permissions.');
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling location:', error);
+      Alert.alert('Error', 'Failed to toggle location tracking');
+    } finally {
+      setLocationToggling(false);
+    }
+  };
+
   const totalEarnings = earningsData?.total_driver_earnings || 0;
   const todayEarnings = earningsData?.earnings_today || 0;
   const changeData = percentageChange || { percentage_change: 0, is_increase: true };
@@ -548,7 +585,7 @@ export default function DriverHomeScreen({ navigation }) {
       />
 
       {/* Modern Location Card (time updates on each location ping) */}
-      <LocationCard locationStatus={locationStatus} />
+      <LocationCard locationStatus={locationStatus} onToggle={handleLocationToggle} />
 
       <ScrollView
         style={styles.container}
@@ -882,6 +919,7 @@ const styles = StyleSheet.create({
   },
   locTitle: { fontSize: 14, fontWeight: '800', color: TEXT },
   locSubtitle: { fontSize: 12, color: MUTED, marginTop: 2 },
+  locHint: { fontSize: 10, color: MAROON, marginTop: 4, fontWeight: '600' },
   locPill: {
     flexDirection: 'row',
     alignItems: 'center',

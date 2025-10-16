@@ -74,7 +74,8 @@ const BreakevenNotificationBadge = ({ driverId, style }) => {
     return notificationDate.toLocaleDateString();
   };
 
-  if (!driverId || notifications.length === 0) {
+  // Don't show badge if notifications are dismissed for today
+  if (!driverId || notifications.length === 0 || BreakevenNotificationManager.areNotificationsDismissedForToday(driverId)) {
     return null;
   }
 
@@ -172,14 +173,28 @@ const BreakevenNotificationBadge = ({ driverId, style }) => {
             )}
           </ScrollView>
 
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={loadNotifications}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh" size={16} color={colors.primary} />
-            <Text style={styles.refreshText}>Refresh</Text>
-          </TouchableOpacity>
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              style={styles.dismissButton}
+              onPress={() => {
+                BreakevenNotificationManager.dismissNotificationsForToday(driverId);
+                setModalVisible(false);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-done" size={16} color={colors.primary} />
+              <Text style={styles.dismissText}>Dismiss for Today</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={loadNotifications}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh" size={16} color={colors.primary} />
+              <Text style={styles.refreshText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </>
@@ -337,13 +352,32 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginTop: 6,
   },
-  refreshButton: {
+  modalActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  dismissButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderRightWidth: 1,
+    borderRightColor: '#F0F0F0',
+  },
+  dismissText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  refreshButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
   },
   refreshText: {
     color: colors.primary,

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import CustomModalService from '../services/CustomModalService';
 
 class GlobalErrorBoundary extends React.Component {
   constructor(props) {
@@ -29,14 +30,15 @@ class GlobalErrorBoundary extends React.Component {
     if (!isJsonError) {
       // Show user-friendly error message for other errors
       setTimeout(() => {
-        Alert.alert(
-          'Something went wrong',
-          'The app encountered an unexpected error. Please try again.',
-          [
-            { text: 'Restart', onPress: this.handleRestart },
-            { text: 'Continue', onPress: this.handleContinue }
-          ]
-        );
+        CustomModalService.showError({
+          title: 'Something went wrong',
+          message: 'The app encountered an unexpected error. Please try again.',
+          primaryActionText: 'Restart',
+          secondaryActionText: 'Continue',
+          onPrimaryAction: this.handleRestart,
+          onSecondaryAction: this.handleContinue,
+          showSecondaryAction: true
+        });
       }, 100);
     }
   }

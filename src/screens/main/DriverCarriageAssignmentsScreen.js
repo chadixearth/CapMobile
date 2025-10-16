@@ -15,6 +15,7 @@ import TARTRACKHeader from '../../components/TARTRACKHeader';
 import LoadingScreen from '../../components/LoadingScreen';
 import { getCurrentUser } from '../../services/authService';
 import { getCarriagesByDriver, acceptCarriageAssignment, declineCarriageAssignment, updateCarriageStatus } from '../../services/api';
+import { CustomAlert } from '../../utils/customAlert';
 
 const MAROON = '#6B2E2B';
 const MAROON_LIGHT = '#F5E9E2';
@@ -40,6 +41,17 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  const getOwnerName = (carriage) => {
+    const ownerName = carriage.assigned_owner?.name || 
+                     carriage.owner?.name || 
+                     carriage.owner_name || 
+                     carriage.assigned_owner?.email || 
+                     carriage.owner?.email || 
+                     carriage.owner_email;
+    console.log('Owner lookup for', carriage.plate_number, ':', { ownerName, assigned_owner: carriage.assigned_owner });
+    return ownerName || 'Unknown';
+  };
+
   const carriageStatuses = [
     { value: 'available', label: 'Available', icon: 'checkmark-circle', color: SUCCESS },
     { value: 'in_use', label: 'In Use', icon: 'time', color: WARNING },
@@ -55,23 +67,47 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
       setLoading(true);
       const currentUser = await getCurrentUser();
       if (!currentUser) {
-        Alert.alert('Error', 'Please log in to view assignments');
+        CustomAlert.error('Error', 'Please log in to view assignments');
         return;
       }
       setUser(currentUser);
       console.log('Fetching carriages for driver:', currentUser.id);
 
-      const response = await getCarriagesByDriver(currentUser.id);
-      console.log('Carriage response:', response);
+      // Try both API methods to ensure we get carriage data
+      const [apiResponse, serviceResponse] = await Promise.allSettled([
+        getCarriagesByDriver(currentUser.id),
+        import('../../services/tartanillaService').then(service => service.getMyCarriages())
+      ]);
       
-      if (response.success) {
-        const carriageData = response.data || [];
-        console.log('Carriage data received:', carriageData);
-        setCarriages(carriageData);
-      } else {
-        console.error('Failed to fetch carriages:', response.error);
-        setCarriages([]);
+      console.log('API Response:', apiResponse);
+      console.log('Service Response:', serviceResponse);
+      
+      let carriageData = [];
+      
+      // Try API response first
+      if (apiResponse.status === 'fulfilled' && apiResponse.value?.success) {
+        carriageData = apiResponse.value.data || [];
+        console.log('Using API response data:', carriageData);
       }
+      // Fallback to service response
+      else if (serviceResponse.status === 'fulfilled' && serviceResponse.value?.success) {
+        carriageData = serviceResponse.value.data || [];
+        console.log('Using service response data:', carriageData);
+      }
+      
+      console.log('Final carriage data:', carriageData);
+      // Debug owner data structure
+      if (carriageData.length > 0) {
+        console.log('First carriage owner data:', {
+          assigned_owner: carriageData[0].assigned_owner,
+          owner: carriageData[0].owner,
+          assigned_owner_id: carriageData[0].assigned_owner_id,
+          owner_name: carriageData[0].owner_name,
+          owner_email: carriageData[0].owner_email
+        });
+      }
+      setCarriages(carriageData);
+      
     } catch (error) {
       console.error('Error fetching carriages:', error);
       setCarriages([]);
@@ -93,27 +129,24 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
     try {
       const response = await acceptCarriageAssignment(carriageId, user.id);
       if (response.success) {
-        Alert.alert('Success', 'Assignment accepted successfully!');
+        CustomAlert.success('Assignment Accepted!', 'You have successfully accepted this carriage assignment.');
         await fetchUserAndCarriages();
       } else {
-        Alert.alert('Error', response.error || 'Failed to accept assignment');
+        CustomAlert.error('Failed to Accept', response.error || 'Failed to accept assignment');
       }
     } catch (error) {
       console.error('Error accepting assignment:', error);
-      Alert.alert('Error', 'Failed to accept assignment');
+      CustomAlert.error('Error', 'Failed to accept assignment');
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleDeclineAssignment = (carriageId) => {
-    Alert.alert(
+    CustomAlert.confirm(
       'Decline Assignment',
       'Are you sure you want to decline this carriage assignment?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Decline', style: 'destructive', onPress: () => confirmDecline(carriageId) }
-      ]
+      () => confirmDecline(carriageId)
     );
   };
 
@@ -124,14 +157,14 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
     try {
       const response = await declineCarriageAssignment(carriageId, user.id);
       if (response.success) {
-        Alert.alert('Success', 'Assignment declined');
+        CustomAlert.success('Assignment Declined', 'You have declined this carriage assignment.');
         await fetchUserAndCarriages();
       } else {
-        Alert.alert('Error', response.error || 'Failed to decline assignment');
+        CustomAlert.error('Failed to Decline', response.error || 'Failed to decline assignment');
       }
     } catch (error) {
       console.error('Error declining assignment:', error);
-      Alert.alert('Error', 'Failed to decline assignment');
+      CustomAlert.error('Error', 'Failed to decline assignment');
     } finally {
       setProcessingId(null);
     }
@@ -188,22 +221,27 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
     try {
       const response = await updateCarriageStatus(carriageId, newStatus);
       if (response.success) {
-        Alert.alert('Success', 'Status updated successfully!');
+        CustomAlert.success('Status Updated!', 'Carriage status has been updated successfully.');
         setStatusModalVisible(false);
         await fetchUserAndCarriages();
       } else {
-        Alert.alert('Error', response.error || 'Failed to update status');
+        CustomAlert.error('Update Failed', response.error || 'Failed to update status');
       }
     } catch (error) {
       console.error('Error updating status:', error);
-      Alert.alert('Error', 'Failed to update status');
+      CustomAlert.error('Error', 'Failed to update status');
     } finally {
       setUpdatingStatus(false);
     }
   };
 
   const pendingCarriages = carriages.filter(c => c.status === 'waiting_driver_acceptance');
-  const assignedCarriages = carriages.filter(c => c.status === 'driver_assigned' || c.status === 'available');
+  const assignedCarriages = carriages.filter(c => 
+    c.status === 'driver_assigned' || 
+    c.status === 'available' || 
+    c.status === 'in_use' || 
+    c.status === 'maintenance'
+  );
 
   if (loading) {
     return (
@@ -234,17 +272,28 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        {!hideHeader && (
-          <View style={styles.header}>
+        <View style={styles.header}>
+          {!hideHeader && (
             <TouchableOpacity 
               style={styles.backButton} 
               onPress={() => navigation.goBack()}
             >
               <Ionicons name="arrow-back" size={24} color={MAROON} />
             </TouchableOpacity>
-            <Text style={styles.title}>Carriage Assignments</Text>
-          </View>
-        )}
+          )}
+          <Text style={styles.title}>My Carriages</Text>
+          <TouchableOpacity 
+            style={styles.refreshHeaderButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons 
+              name={refreshing ? "refresh" : "refresh-outline"} 
+              size={20} 
+              color={MAROON} 
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Pending Assignments */}
         {pendingCarriages.length > 0 && (
@@ -256,7 +305,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                   <View style={styles.carriageInfo}>
                     <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
                     <Text style={styles.ownerName}>
-                      Owner: {carriage.assigned_owner?.name || 'Unknown'}
+                      Owner: {getOwnerName(carriage)}
                     </Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: getStatusColor(carriage.status) + '20' }]}>
@@ -318,14 +367,15 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         {/* Assigned Carriages */}
         {assignedCarriages.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>My Carriages</Text>
+            <Text style={styles.sectionTitle}>My Carriages ({assignedCarriages.length}/2)</Text>
+            <View style={assignedCarriages.length === 1 ? styles.singleCarriageContainer : styles.carriageGrid}>
             {assignedCarriages.map((carriage) => (
-              <View key={carriage.id} style={styles.carriageCard}>
+              <View key={carriage.id} style={[styles.carriageCard, assignedCarriages.length === 1 ? styles.fullWidthCard : styles.gridCard]}>
                 <View style={styles.carriageHeader}>
                   <View style={styles.carriageInfo}>
                     <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
                     <Text style={styles.ownerName}>
-                      Owner: {carriage.assigned_owner?.name || 'Unknown'}
+                      Owner: {getOwnerName(carriage)}
                     </Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: getStatusColor(carriage.status) + '20' }]}>
@@ -359,6 +409,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                 </View>
               </View>
             ))}
+            </View>
           </>
         )}
 
@@ -370,6 +421,12 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
             <Text style={styles.emptyText}>
               You don't have any carriage assignments yet. Owners will invite you to drive their carriages.
             </Text>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={onRefresh}
+            >
+              <Text style={styles.refreshButtonText}>Refresh</Text>
+            </TouchableOpacity>
             {user && (
               <Text style={styles.debugText}>
                 Debug: Driver ID {user.id}
@@ -399,7 +456,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
             {selectedCarriage && (
               <View style={styles.carriageInfo}>
                 <Text style={styles.modalCarriagePlate}>{selectedCarriage.plate_number}</Text>
-                <Text style={styles.modalCarriageOwner}>Owner: {selectedCarriage.assigned_owner?.name || 'Unknown'}</Text>
+                <Text style={styles.modalCarriageOwner}>Owner: {getOwnerName(selectedCarriage)}</Text>
               </View>
             )}
             
@@ -459,6 +516,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -471,6 +529,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: TEXT,
+    flex: 1,
+  },
+  refreshHeaderButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#F5E9E2',
   },
   sectionTitle: {
     fontSize: 16,
@@ -584,6 +648,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontFamily: 'monospace',
   },
+  refreshButton: {
+    backgroundColor: MAROON,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   statusActions: {
     marginTop: 8,
   },
@@ -677,5 +753,25 @@ const styles = StyleSheet.create({
     color: MAROON,
     fontWeight: '500',
     marginTop: 2,
+  },
+  
+  // Grid layout styles
+  carriageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  singleCarriageContainer: {
+    paddingHorizontal: 16,
+  },
+  gridCard: {
+    width: '48%',
+    marginHorizontal: 0,
+    marginBottom: 16,
+  },
+  fullWidthCard: {
+    marginHorizontal: 0,
+    marginBottom: 16,
   },
 });

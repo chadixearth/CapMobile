@@ -368,10 +368,58 @@ export async function driverStartBooking(bookingId, driverId) {
     return result.data;
   } catch (error) {
     console.error('Error starting booking:', error);
+    
+    // Handle payment validation errors gracefully
+    if (error.message?.includes('Only paid bookings can be started')) {
+      return {
+        success: false,
+        error: 'Payment Required',
+        friendly_message: 'This booking cannot be started until the customer completes payment. Please wait for payment confirmation.',
+        error_code: 'PAYMENT_REQUIRED',
+        payment_status: 'pending',
+        required_payment_status: 'paid'
+      };
+    }
+    
     if (error.message?.includes('timeout')) {
       return { success: false, error: 'Request timeout. Please try again.' };
     }
-    throw error;
+    
+    // Handle other HTTP errors gracefully
+    if (error.message?.includes('HTTP 400')) {
+      try {
+        const errorMatch = error.message.match(/HTTP 400: (.+)/);
+        if (errorMatch) {
+          const errorData = JSON.parse(errorMatch[1]);
+          if (errorData.error?.includes('Only paid bookings')) {
+            return {
+              success: false,
+              error: 'Payment Required',
+              friendly_message: 'This booking cannot be started until the customer completes payment. Please wait for payment confirmation.',
+              error_code: 'PAYMENT_REQUIRED',
+              payment_status: errorData.payment_status || 'pending',
+              required_payment_status: errorData.required_payment_status || 'paid'
+            };
+          }
+          return {
+            success: false,
+            error: errorData.error || 'Cannot start booking',
+            friendly_message: errorData.friendly_message || errorData.error || 'Unable to start this booking at the moment.',
+            error_code: errorData.error_code || 'START_BOOKING_FAILED'
+          };
+        }
+      } catch (parseError) {
+        console.warn('Could not parse start booking error response:', parseError);
+      }
+    }
+    
+    // Return structured error instead of throwing
+    return {
+      success: false,
+      error: 'Unable to start booking',
+      friendly_message: 'Unable to start this booking at the moment. Please try again later.',
+      error_code: 'START_BOOKING_FAILED'
+    };
   }
 }
 

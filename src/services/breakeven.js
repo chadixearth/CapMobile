@@ -9,6 +9,7 @@ class BreakevenNotificationManager {
     profitMilestones: [500, 1000, 2000, 5000], // Notify at these profit levels
     deficitWarningThreshold: 200, // Warn when deficit exceeds this amount
   };
+  static dismissedNotifications = new Set(); // Track dismissed notifications
 
   /**
    * Check if driver has reached breakeven milestones and send notifications
@@ -25,6 +26,13 @@ class BreakevenNotificationManager {
 
       // Skip if no meaningful data
       if (expenses <= 0) return;
+
+      // Check if notifications are dismissed for today
+      const today = new Date().toDateString();
+      const dismissKey = `${driverId}_${today}`;
+      if (this.dismissedNotifications.has(dismissKey)) {
+        return; // Skip if dismissed for today
+      }
 
       // Get previous state from storage if not provided
       if (!previousData) {
@@ -73,19 +81,18 @@ class BreakevenNotificationManager {
         }
       }
 
-      // Check for deficit warning
+      // Check for deficit warning (only once per day)
       if (profit < 0 && ridesCompleted > 0) {
         const deficit = Math.abs(profit);
         if (deficit >= this.notificationThresholds.deficitWarningThreshold) {
-          const shouldWarn = !previousData || 
-            Math.abs(previousProfit) < this.notificationThresholds.deficitWarningThreshold;
-          
-          if (shouldWarn) {
+          const lastDeficitWarning = await AsyncStorage.getItem(`deficit_warning_${driverId}_${today}`);
+          if (!lastDeficitWarning) {
             await this.sendDeficitWarningNotification(driverId, {
               deficit,
               ridesRemaining: Math.max(0, ridesNeeded - ridesCompleted),
               expenses
             });
+            await AsyncStorage.setItem(`deficit_warning_${driverId}_${today}`, Date.now().toString());
           }
         }
       }
@@ -282,9 +289,31 @@ class BreakevenNotificationManager {
   static async clearBreakevenState(driverId) {
     try {
       await AsyncStorage.removeItem(`breakeven_last_${driverId}`);
+      // Clear dismissed notifications for new day
+      const today = new Date().toDateString();
+      const dismissKey = `${driverId}_${today}`;
+      this.dismissedNotifications.delete(dismissKey);
     } catch (error) {
       console.warn('Failed to clear breakeven state:', error);
     }
+  }
+
+  /**
+   * Dismiss notifications for today
+   */
+  static dismissNotificationsForToday(driverId) {
+    const today = new Date().toDateString();
+    const dismissKey = `${driverId}_${today}`;
+    this.dismissedNotifications.add(dismissKey);
+  }
+
+  /**
+   * Check if notifications are dismissed for today
+   */
+  static areNotificationsDismissedForToday(driverId) {
+    const today = new Date().toDateString();
+    const dismissKey = `${driverId}_${today}`;
+    return this.dismissedNotifications.has(dismissKey);
   }
 }
 

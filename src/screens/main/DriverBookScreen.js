@@ -657,15 +657,31 @@ export default function DriverBookScreen({ navigation }) {
         result = await driverStartBooking(booking.id, user.id);
       }
       if (result && result.success !== false) {
-        Alert.alert('Success', 'Trip started. Status set to In Progress.', [
-          { text: 'OK', onPress: () => { fetchUserAndBookings(); } },
-        ]);
+        const { CustomAlert } = require('../../utils/customAlert');
+        CustomAlert.success('Trip Started!', 'Status set to In Progress. You can now begin the tour.', () => {
+          fetchUserAndBookings();
+        });
       } else {
-        Alert.alert('Error', result?.error || 'Failed to start trip');
+        const { CustomAlert } = require('../../utils/customAlert');
+        
+        // Handle payment validation error specifically
+        if (result?.error_code === 'PAYMENT_REQUIRED' || result?.error?.includes('Payment Required')) {
+          CustomAlert.warning(
+            'Payment Required',
+            result?.friendly_message || 'This booking cannot be started until the customer completes payment. Please wait for payment confirmation.',
+            () => {
+              // Optionally refresh to check if payment status changed
+              fetchUserAndBookings();
+            }
+          );
+        } else {
+          CustomAlert.error('Cannot Start Trip', result?.friendly_message || result?.error || 'Failed to start trip');
+        }
       }
     } catch (error) {
       console.error('Error starting trip:', error);
-      Alert.alert('Error', `Failed to start trip: ${error.message}`);
+      const { CustomAlert } = require('../../utils/customAlert');
+      CustomAlert.error('Error', `Failed to start trip: ${error.message}`);
     } finally {
       setAcceptingBooking(false);
     }
@@ -1185,24 +1201,26 @@ const getCustomTitle = (r) => (
           {renderMessageButton(booking)}
         </>
       )}
-      {activeTab === 'ongoing' && (booking.status === 'confirmed' || booking.status === 'driver_assigned') && booking.payment_status !== 'paid' && booking.request_type !== 'ride_hailing' && (
-        <View style={[styles.acceptButton, styles.disabledButton]}>
-          <Ionicons name="card" size={18} color="#999" />
-          <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
-        </View>
-      )}
+
       {activeTab === 'ongoing' && (booking.status === 'driver_assigned' || booking.status === 'accepted') && booking.request_type !== 'ride_hailing' && (
         <>
-          <TouchableOpacity
-            style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
-            onPress={() => canStartToday(booking) && handleStartTrip(booking)}
-            disabled={!canStartToday(booking) || acceptingBooking}
-          >
-            <Ionicons name="play" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>
-              {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
-            </Text>
-          </TouchableOpacity>
+          {booking.payment_status === 'paid' ? (
+            <TouchableOpacity
+              style={[styles.acceptButton, { backgroundColor: canStartToday(booking) ? '#1976D2' : '#9E9E9E' }]}
+              onPress={() => canStartToday(booking) && handleStartTrip(booking)}
+              disabled={!canStartToday(booking) || acceptingBooking}
+            >
+              <Ionicons name="play" size={18} color="#fff" />
+              <Text style={styles.acceptButtonText}>
+                {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.acceptButton, styles.disabledButton]}>
+              <Ionicons name="card" size={18} color="#999" />
+              <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
+            </View>
+          )}
           {renderMessageButton(booking)}
           <TouchableOpacity
             style={[styles.acceptButton, { backgroundColor: '#C62828', marginTop: 8 }]}

@@ -12,6 +12,8 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 import NetworkStatus from './components/NetworkStatus';
 import mobileDiagnostics from './services/mobileDiagnostics';
+import CustomModalProvider from './components/CustomModalProvider';
+import CustomModalService from './services/CustomModalService';
 
 // Suppress location-related console errors
 const originalConsoleError = console.error;
@@ -30,6 +32,7 @@ export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(null);
   const navRef = useRef(createNavigationContainerRef());
+  const modalRef = useRef(null);
 
   useEffect(() => {
     initializeApp();
@@ -93,24 +96,19 @@ export default function App() {
             // Set up JWT expiry callback
             const handleSessionExpiry = () => {
               console.log('[App] JWT expired, logging out user');
-              Alert.alert(
-                'Session Expired',
-                'Your session has expired. Please log in again.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => {
-                      // Navigate to login screen
-                      if (navRef.current) {
-                        navRef.current.reset({
-                          index: 0,
-                          routes: [{ name: 'Auth' }],
-                        });
-                      }
-                    }
+              CustomModalService.showError({
+                title: 'Session Expired',
+                message: 'Your session has expired. Please log in again.',
+                primaryActionText: 'Login',
+                onPrimaryAction: () => {
+                  if (navRef.current) {
+                    navRef.current.reset({
+                      index: 0,
+                      routes: [{ name: 'Login' }],
+                    });
                   }
-                ]
-              );
+                }
+              });
             };
             
             setSessionExpiredCallback(handleSessionExpiry);
@@ -118,10 +116,14 @@ export default function App() {
             // Also set up API client session expiry callback
             const { apiClient } = require('./services/improvedApiClient');
             apiClient.setSessionExpiredCallback(handleSessionExpiry);
+            
+            // Set up custom modal service
+            CustomModalService.setModalRef(modalRef.current);
           }}
         >
             <NetworkStatus />
             <RootNavigator />
+            <CustomModalProvider ref={modalRef} />
           </NavigationContainer>
         </NotificationProvider>
       </ErrorProvider>
