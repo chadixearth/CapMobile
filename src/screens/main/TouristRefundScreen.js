@@ -1,4 +1,4 @@
-// src/screens/main/TouristRefundScreen.js
+// src/screens/main/TouristRefundScreen.js 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { listRefunds } from '../../services/Earnings/RefundService';
+import { useAuth } from '../../hooks/useAuth';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -72,6 +73,7 @@ function mapRefundRow(r) {
 }
 
 export default function TouristRefundScreen({ navigation }) {
+  const { user } = useAuth();
   const [fetching, setFetching] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allRefunds, setAllRefunds] = useState([]);
@@ -79,10 +81,15 @@ export default function TouristRefundScreen({ navigation }) {
   const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     try {
       setFetching(true);
-      // Pull a generous page to fill the screen; adjust if you need true pagination UI.
-      const resp = await listRefunds({ page: 1, pageSize: 100, status: null });
+      const resp = await listRefunds({ 
+        page: 1, 
+        pageSize: 100, 
+        status: null, 
+        currentUserId: user.id 
+      });
       if (!resp.success) {
         Alert.alert('Refunds', resp.error || 'Failed to load refunds.');
         setAllRefunds([]);
@@ -94,7 +101,7 @@ export default function TouristRefundScreen({ navigation }) {
     } finally {
       setFetching(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     load();

@@ -1,6 +1,6 @@
 //GOODS AND SERVICES
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,12 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import Button from '../../components/Button';
-import LoadingScreen from '../../components/LoadingScreen';
 import { useAuth } from '../../hooks/useAuth';
 import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost, uploadGoodsServicesMedia } from '../../services/goodsServices';
 import { listReviews } from '../../services/reviews';
@@ -44,6 +44,12 @@ export default function GoodsServicesScreen() {
   const [editDescription, setEditDescription] = useState('');
   const [selectedImages, setSelectedImages] = useState([]);
   const [saving, setSaving] = useState(false);
+  
+  // Animation refs for loading
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(1)).current;
+  const dot2Anim = useRef(new Animated.Value(1)).current;
+  const dot3Anim = useRef(new Animated.Value(1)).current;
   
   const isDriverOrOwner = auth.user?.role === 'driver' || auth.user?.role === 'owner';
 
@@ -171,6 +177,60 @@ export default function GoodsServicesScreen() {
     await Promise.all([fetchPosts(), fetchRecentReviews(), fetchUserProfile()]);
     setRefreshing(false);
   }, [fetchPosts, fetchRecentReviews, fetchUserProfile]);
+
+  // Animation effect for loading
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+      
+      const dot1Animation = createDotAnimation(dot1Anim, 0);
+      const dot2Animation = createDotAnimation(dot2Anim, 200);
+      const dot3Animation = createDotAnimation(dot3Anim, 400);
+      
+      pulse.start();
+      dot1Animation.start();
+      dot2Animation.start();
+      dot3Animation.start();
+      
+      return () => {
+        pulse.stop();
+        dot1Animation.stop();
+        dot2Animation.stop();
+        dot3Animation.stop();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const handleSaveProfile = async () => {
     if (!auth.user?.id) return;
@@ -531,7 +591,23 @@ export default function GoodsServicesScreen() {
   };
 
   if (loading && posts.length === 0) {
-    return <LoadingScreen message="Loading goods & services..." icon="pricetags-outline" />;
+    return (
+      <View style={styles.loadingContainer}>
+        <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+          <Image 
+            source={require('../../../assets/TarTrack Logo_sakto.png')} 
+            style={styles.loadingLogo}
+            resizeMode="contain"
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.loadingText, { marginRight: 4 }]}>Loading goods & services</Text>
+            <Animated.Text style={[styles.loadingText, { opacity: dot1Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.loadingText, { opacity: dot2Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.loadingText, { opacity: dot3Anim }]}>.</Animated.Text>
+          </View>
+        </Animated.View>
+      </View>
+    );
   }
 
   return (
@@ -762,6 +838,31 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   listContent: { padding: 16, paddingBottom: 100 },
   error: { color: 'red', padding: 16 },
+  
+  // Loading styles
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingLogo: {
+    width: 230,
+    height: 230,
+  },
+  loadingText: {
+    marginTop:-150,
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    marginLeft:2
+  },
   
   // User Profile Section (Facebook-style)
   userProfileCard: {

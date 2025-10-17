@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Platform,
   UIManager,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
@@ -40,6 +41,12 @@ export default function BookScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
+
+  // Animation refs for loading
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1Anim = useRef(new Animated.Value(1)).current;
+  const dot2Anim = useRef(new Animated.Value(1)).current;
+  const dot3Anim = useRef(new Animated.Value(1)).current;
 
   // filters
   const [activeFilter, setActiveFilter] = useState('all'); // all | upcoming | completed | cancelled | pending | confirmed
@@ -84,6 +91,60 @@ export default function BookScreen({ navigation }) {
       navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
     }
   }, [auth.loading, auth.isAuthenticated, navigation]);
+
+  // Animation effect for loading
+  useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      
+      const createDotAnimation = (animValue, delay) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+      
+      const dot1Animation = createDotAnimation(dot1Anim, 0);
+      const dot2Animation = createDotAnimation(dot2Anim, 200);
+      const dot3Animation = createDotAnimation(dot3Anim, 400);
+      
+      pulse.start();
+      dot1Animation.start();
+      dot2Animation.start();
+      dot3Animation.start();
+      
+      return () => {
+        pulse.stop();
+        dot1Animation.stop();
+        dot2Animation.stop();
+        dot3Animation.stop();
+      };
+    }
+  }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   // Auto-refresh when data changes
   useScreenAutoRefresh('BOOK_SCREEN', () => {
@@ -1529,7 +1590,21 @@ export default function BookScreen({ navigation }) {
 
         {/* Lists */}
         {loading ? (
-          <View style={styles.loadingContainer}><Text style={styles.loadingText}>Loading your bookings...</Text></View>
+          <View style={styles.contentLoadingContainer}>
+            <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+              <Image 
+                source={require('../../../assets/TarTrack Logo_sakto.png')} 
+                style={styles.contentLoadingLogo}
+                resizeMode="contain"
+              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={[styles.contentLoadingText, { marginRight: 4 }]}>Loading bookings</Text>
+                <Animated.Text style={[styles.contentLoadingText, { opacity: dot1Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.contentLoadingText, { opacity: dot2Anim }]}>.</Animated.Text>
+                <Animated.Text style={[styles.contentLoadingText, { opacity: dot3Anim }]}>.</Animated.Text>
+              </View>
+            </Animated.View>
+          </View>
         ) : (
           <ScrollView
             style={{ flex: 1 }}
@@ -1740,9 +1815,34 @@ const styles = StyleSheet.create({
 
   refText: { marginTop: 8, fontSize: 12, color: '#9aa0a6', textAlign: 'right' },
 
-  // empty
+  // Loading styles
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 16, color: '#666' },
+  
+  // Content loading styles (animated like GoodsServicesScreen)
+  contentLoadingContainer: {
+    paddingVertical: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    marginTop:50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentLoadingLogo: {
+    width: 200,
+    height: 200,
+  },
+  contentLoadingText: {
+    marginTop: -140,
+    fontSize: 14,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    marginLeft: 2
+  },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 16, marginBottom: 8 },
   emptySub: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },

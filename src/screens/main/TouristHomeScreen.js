@@ -86,6 +86,11 @@ export default function TouristHomeScreen({ navigation }) {
   const [passengerCount, setPassengerCount] = useState(1);
   const [rideType, setRideType] = useState('instant'); // 'instant' or 'shared'
 
+  // Animation refs for loading dots
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     Animated.timing(sheetY, {
       toValue: sheetVisible ? 0 : SHEET_H,
@@ -94,6 +99,43 @@ export default function TouristHomeScreen({ navigation }) {
       useNativeDriver: true,
     }).start();
   }, [sheetVisible, sheetY]);
+
+  // Wave animation for loading dots
+  const createDotAnimation = (animValue, delay = 0) => {
+    return Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(animValue, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animValue, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+  };
+
+  useEffect(() => {
+    if (loadingPackages) {
+      const anim1 = createDotAnimation(dot1Anim, 0);
+      const anim2 = createDotAnimation(dot2Anim, 200);
+      const anim3 = createDotAnimation(dot3Anim, 400);
+      
+      anim1.start();
+      anim2.start();
+      anim3.start();
+      
+      return () => {
+        anim1.stop();
+        anim2.stop();
+        anim3.stop();
+      };
+    }
+  }, [loadingPackages]);
 
   // Recenter to the most relevant point when sheet is shown / fields change
   useEffect(() => {
@@ -703,9 +745,13 @@ export default function TouristHomeScreen({ navigation }) {
 
 
         {loadingPackages ? (
-          <View style={{ alignItems: 'center', marginVertical: 16 }}>
-            <ActivityIndicator size="large" color="#6B2E2B" />
-            <Text style={{ marginTop: 8, color: '#666' }}>Loading packages and reviews...</Text>
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading packages and reviews</Text>
+            <View style={styles.dotsContainer}>
+              <Animated.View style={[styles.dot, { opacity: dot1Anim }]} />
+              <Animated.View style={[styles.dot, { opacity: dot2Anim }]} />
+              <Animated.View style={[styles.dot, { opacity: dot3Anim }]} />
+            </View>
           </View>
         ) : filteredPackages.length === 0 ? (
           <View style={styles.noPackagesContainer}>
@@ -1307,8 +1353,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#6B2E2B',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 8,
-    shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
@@ -1483,5 +1527,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#666',
     fontStyle: 'italic',
+  },
+
+  // Loading styles
+  loadingContainer: {
+    alignItems: 'center',
+    marginVertical: 32,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6B2E2B',
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#6B2E2B',
   },
 });

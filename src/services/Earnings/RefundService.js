@@ -1,4 +1,4 @@
-// services/Earnings/RefundService.js
+// services/Earnings/RefundService.js 
 import { getAccessToken } from '../authService';
 import { apiBaseUrl } from '../networkConfig';
 
@@ -16,17 +16,20 @@ function authHeaders(extra = {}) {
 }
 
 /**
- * List refunds
+ * List refunds for current user
+ * Backend filters by: tourist_id = current_user OR (tourist_id IS NULL AND booking.customer_id = current_user)
  * @param {Object} params
  * @param {number} [params.page=1]
  * @param {number} [params.pageSize=20] - maps to ?page_size=
  * @param {string|null} [params.status] - 'pending' | 'approved' | 'rejected' | 'voided'
+ * @param {string} [params.currentUserId] - current user ID for filtering
  */
-export async function listRefunds({ page = 1, pageSize = 20, status = null } = {}) {
+export async function listRefunds({ page = 1, pageSize = 20, status = null, currentUserId = null } = {}) {
   const qs = new URLSearchParams();
   qs.set('page', String(page));
   qs.set('page_size', String(pageSize));
   if (status) qs.set('status', status);
+  if (currentUserId) qs.set('current_user', currentUserId);
 
   const res = await fetch(`${BASE}/?${qs.toString()}`, {
     method: 'GET',
