@@ -51,6 +51,9 @@ import NotificationService from '../../services/notificationService';
 import NotificationManager from '../../components/NotificationManager';
 import * as Routes from '../../constants/routes';
 import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
+import DriverScheduleModal from '../../components/DriverScheduleModal';
+
+const MAROON = '#6B2E2B';
 
 const RideMap = ({ ride }) => {
   const [mapData, setMapData] = useState(null);
@@ -229,6 +232,9 @@ export default function DriverBookScreen({ navigation }) {
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
   const dot3Anim = useRef(new Animated.Value(0)).current;
+  
+  // Schedule modal state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   // Animations for bottom-sheet modals
   const acceptAnim = useRef(new Animated.Value(0)).current;
@@ -1082,6 +1088,7 @@ export default function DriverBookScreen({ navigation }) {
   };
 
 
+
 const getCustomTitle = (r) => (
   r?.request_type === 'special_event'
     ? (r?.event_type || 'Special Event')
@@ -1897,6 +1904,22 @@ const getCustomTitle = (r) => (
           </View>
         </View>
       </Modal>
+
+      {/* Floating Schedule Button */}
+      <TouchableOpacity
+        style={styles.floatingButton}
+        onPress={() => setShowScheduleModal(true)}
+      >
+        <Ionicons name="calendar" size={24} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Schedule Modal */}
+      <DriverScheduleModal
+        visible={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        user={user}
+        navigation={navigation}
+      />
     </View>
   );
 }
@@ -2062,8 +2085,8 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-    alignItems: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sheet: {
     backgroundColor: '#fff',
@@ -2232,4 +2255,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EDE7E6'
   },
+  
+  /* Floating Button */
+  floatingButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: MAROON,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  
+
 });
