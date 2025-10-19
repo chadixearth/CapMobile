@@ -24,7 +24,7 @@ const PH_TZ = 'Asia/Manila';
 
 const ITEMS_PER_PAGE = 5;
 
-export default function PayoutHistoryModal({ visible, onClose, driverId }) {
+export default function PayoutHistoryModal({ visible, onClose, driverId, preloadedData }) {
   const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,9 +37,13 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
 
   useEffect(() => {
     if (visible && driverId) {
-      fetchPayouts();
+      if (preloadedData) {
+        processPayoutData(preloadedData);
+      } else {
+        fetchPayouts();
+      }
     }
-  }, [visible, driverId]);
+  }, [visible, driverId, preloadedData]);
 
   useEffect(() => {
     if (loading) {
@@ -91,6 +95,21 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
     }
   }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
+  const processPayoutData = (data) => {
+    setLoading(false);
+    setErrorText('');
+    setCurrentPage(1);
+    const rows = Array.isArray(data) ? data : [];
+    // Filter to only show released payouts
+    const releasedPayouts = rows.filter(payout => {
+      const status = (payout?.status || '').toLowerCase();
+      return status === 'completed' || status === 'released';
+    });
+    // newest first
+    releasedPayouts.sort((a, b) => (new Date(b?.payout_date || 0)) - (new Date(a?.payout_date || 0)));
+    setPayouts(releasedPayouts);
+  };
+
   const fetchPayouts = async () => {
     setLoading(true);
     setErrorText('');
@@ -98,23 +117,15 @@ export default function PayoutHistoryModal({ visible, onClose, driverId }) {
     try {
       const result = await getDriverPayoutHistory(driverId);
       if (result.success) {
-        const rows = Array.isArray(result.data) ? result.data : [];
-        // Filter to only show released payouts
-        const releasedPayouts = rows.filter(payout => {
-          const status = (payout?.status || '').toLowerCase();
-          return status === 'completed' || status === 'released';
-        });
-        // newest first
-        releasedPayouts.sort((a, b) => (new Date(b?.payout_date || 0)) - (new Date(a?.payout_date || 0)));
-        setPayouts(releasedPayouts);
+        processPayoutData(result.data);
       } else {
         setPayouts([]);
         setErrorText(result.error || 'Failed to load payouts.');
+        setLoading(false);
       }
     } catch (err) {
       setPayouts([]);
       setErrorText('Failed to load payouts.');
-    } finally {
       setLoading(false);
     }
   };

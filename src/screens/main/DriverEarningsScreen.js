@@ -23,6 +23,7 @@ import {
   formatCurrency,
   formatPercentage,
   getDriverEarnings,
+  getDriverPayoutHistory,
 } from '../../services/Earnings/EarningsService';
 import CalendarModal from '../../components/CalendarModal';
 import YearPicker from '../../components/YearPicker';
@@ -96,6 +97,7 @@ export default function DriverEarningsScreen({ navigation }) {
   const [customDateRange, setCustomDateRange] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showPayoutHistory, setShowPayoutHistory] = useState(false);
+  const [payoutData, setPayoutData] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
@@ -187,7 +189,7 @@ export default function DriverEarningsScreen({ navigation }) {
       }
 
       if (userId) {
-        await Promise.all([fetchEarningsData(userId), fetchDetailedEarnings(userId)]);
+        await Promise.all([fetchEarningsData(userId), fetchDetailedEarnings(userId), fetchPayoutData(userId)]);
         fetchPercentageChange(userId); // can run after
       }
     } catch (error) {
@@ -288,6 +290,19 @@ export default function DriverEarningsScreen({ navigation }) {
       return null;
     }
   }, [selectedPeriod]);
+
+  const fetchPayoutData = useCallback(async (driverId) => {
+    try {
+      const data = await getDriverPayoutHistory(driverId);
+      if (data.success) {
+        setPayoutData(data.data);
+      }
+      return data;
+    } catch (error) {
+      console.error('Error fetching payout data:', error);
+      return null;
+    }
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -571,25 +586,7 @@ export default function DriverEarningsScreen({ navigation }) {
     </View>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
-          <Image 
-            source={require('../../../assets/TarTrack Logo_sakto.png')} 
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </Animated.View>
-        <View style={styles.loadingTextContainer}>
-          <Text style={styles.loadingTextBase}>Fetching your earnings</Text>
-          <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
-          <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
-          <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
-        </View>
-      </View>
-    );
-  }
+
 
   return (
     <View style={styles.container}>
@@ -606,15 +603,33 @@ export default function DriverEarningsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {renderPeriodSelector()}
-        {renderEarningsOverview()}
-        {renderEarningsList()}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
+            <Image 
+              source={require('../../../assets/TarTrack Logo_sakto.png')} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </Animated.View>
+          <View style={styles.loadingTextContainer}>
+            <Text style={styles.loadingTextBase}>Fetching your earnings</Text>
+            <Animated.Text style={[styles.dot, { opacity: dot1Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot2Anim }]}>.</Animated.Text>
+            <Animated.Text style={[styles.dot, { opacity: dot3Anim }]}>.</Animated.Text>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderPeriodSelector()}
+          {renderEarningsOverview()}
+          {renderEarningsList()}
+        </ScrollView>
+      )}
       
       <CalendarModal
         visible={showCalendar}
@@ -644,6 +659,7 @@ export default function DriverEarningsScreen({ navigation }) {
         visible={showPayoutHistory}
         onClose={() => setShowPayoutHistory(false)}
         driverId={user?.id}
+        preloadedData={payoutData}
       />
     </View>
   );
@@ -658,11 +674,12 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logo: {
+    marginTop:190,
     width: 230,
     height: 230,
   },
   loadingTextContainer: {
-    marginTop: -120,
+    marginTop: -110,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

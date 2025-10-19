@@ -1,6 +1,7 @@
 // components/BreakevenChart.js
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../styles/global';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -115,7 +116,12 @@ export default function BreakevenChart({ data = [], currentData = null, timeZone
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Breakeven Report — Earnings vs Expenses</Text>
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>Breakeven Report — Earnings vs Expenses</Text>
+        <TouchableOpacity style={styles.pdfButton}>
+          <Ionicons name="document-text" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
 
       <View style={[styles.chartRow, { height: chartHeight + X_LABEL_H }]}>
         {/* Y Axis */}
@@ -279,12 +285,27 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    position: 'relative',
+  },
   title: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
-    textAlign: 'center',
-    marginBottom: 24,
+    marginRight: 32,
+  },
+  pdfButton: {
+    position: 'absolute',
+    right: 0,
+    top: -2,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 6,
   },
   chartRow: {
     flexDirection: 'row',
