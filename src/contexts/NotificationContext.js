@@ -34,27 +34,27 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const loadNotifications = async () => {
-    if (!user?.id) {
-      console.log('[NotificationContext] No user ID available');
-      return;
-    }
-    
-    console.log(`[NotificationContext] Loading notifications for user: ${user.id} (role: ${user.role})`);
+    if (!user?.id) return;
     
     try {
       const result = await NotificationService.getNotifications(user.id);
       if (result.success) {
-        const rawCount = result.data?.length || 0;
         const filtered = filterTestNotifications(result.data || []);
-        const filteredCount = filtered.length;
+        const newUnreadCount = filtered.filter(n => !n.read).length;
         
-        console.log(`[NotificationContext] Filtered ${rawCount} raw notifications to ${filteredCount} for user ${user.id}`);
+        // Check if there are new notifications
+        const currentIds = notifications.map(n => n.id);
+        const newNotifications = filtered.filter(n => !currentIds.includes(n.id));
+        
+        if (newNotifications.length > 0) {
+          console.log(`[NotificationContext] Found ${newNotifications.length} new notifications`);
+        }
         
         setNotifications(filtered);
-        setUnreadCount(filtered.filter(n => !n.read).length);
+        setUnreadCount(newUnreadCount);
       }
     } catch (error) {
-      console.error('[NotificationContext] Error loading notifications:', error);
+      console.error('Error loading notifications:', error);
     }
   };
 
@@ -72,12 +72,13 @@ export const NotificationProvider = ({ children }) => {
 
   const markAllAsRead = async () => {
     try {
-      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
-      await Promise.all(unreadIds.map(id => NotificationService.markAsRead(id)));
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
+      const result = await NotificationService.markAllAsRead();
+      if (result.success) {
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        setUnreadCount(0);
+      }
     } catch (error) {
-      console.error('[NotificationContext] Error marking all as read:', error);
+      console.error('Error marking all as read:', error);
     }
   };
 

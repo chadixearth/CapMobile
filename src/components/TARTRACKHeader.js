@@ -51,9 +51,10 @@ const TARTRACKHeader = ({
             <TouchableOpacity
               onPress={onMessagePress}
               style={styles.iconBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
               accessibilityLabel="Open messages"
+              activeOpacity={0.7}
             >
               <Ionicons
                 name="chatbubble-ellipses-outline"
@@ -67,9 +68,10 @@ const TARTRACKHeader = ({
             <TouchableOpacity
               onPress={onNotificationPress}
               style={styles.iconBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
               accessibilityLabel="Open notifications"
+              activeOpacity={0.7}
             >
               <View style={styles.notificationContainer}>
                 <Ionicons name="notifications-outline" size={24} color={tint} />
@@ -122,10 +124,12 @@ const styles = StyleSheet.create({
   rightCluster: {
     flexDirection: 'row',
     alignItems: 'center',
+    zIndex: 1000,
   },
   iconBtn: {
     marginLeft: 12,
     padding: 4,
+    zIndex: 1000,
   },
   notificationContainer: {
     position: 'relative',

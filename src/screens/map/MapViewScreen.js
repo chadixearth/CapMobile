@@ -41,12 +41,9 @@ const MapViewScreen = ({ navigation, route }) => {
   const loadTimeoutRef = useRef(null);
 
   useEffect(() => {
-    console.log('MapViewScreen mounted, loading map data with cache...', 'mode:', mode, 'locations:', locations);
-    
     // Set a timeout for initial loading
     loadTimeoutRef.current = setTimeout(() => {
       if (initialLoading) {
-        console.log('Map loading timeout reached, showing fallback');
         setMapLoadTimeout(true);
         setInitialLoading(false);
         setLoading(false);
@@ -64,13 +61,12 @@ const MapViewScreen = ({ navigation, route }) => {
           total_items: {}
         });
       }
-    }, 10000); // 10 second timeout
+    }, 8000); // 8 second timeout
     
     loadMapDataWithCache();
     
     // Set up background update listener
     global.mapUpdateCallback = (newData) => {
-      console.log('Map data updated in background');
       processMapData(newData);
       showUpdateNotification();
     };
@@ -98,21 +94,12 @@ const MapViewScreen = ({ navigation, route }) => {
       
       // Skip route summaries for public map view - use default colors
       let routeSummaries = [];
-      console.log('MapViewScreen: Using default colors (no route summaries for public view)');
       setRouteSummaries([]);
       
       if (data) {
-        console.log('Displaying map data:', {
-          points: data.points?.length || 0,
-          roads: data.roads?.length || 0,
-          routes: data.routes?.length || 0,
-          mode: mode,
-          locations: locations
-        });
         processMapData(data, routeSummaries);
         hasLoadedCache.current = true;
       } else {
-        console.log('No data received, using defaults');
         processMapData({
           points: [],
           roads: [],
@@ -134,7 +121,6 @@ const MapViewScreen = ({ navigation, route }) => {
       setInitialLoading(false);
       setLoading(false);
     } catch (err) {
-      console.error('Error in initial load:', err);
       
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
@@ -255,7 +241,6 @@ const MapViewScreen = ({ navigation, route }) => {
           opacity: 0.8,
           name: 'Tour Route'
         };
-        console.log('Setting route data:', routeData);
         setRoads([routeData]);
         
 
@@ -354,7 +339,6 @@ const MapViewScreen = ({ navigation, route }) => {
         latitudeDelta: deltaLat,
         longitudeDelta: deltaLng,
       };
-      console.log('Setting region for route view:', newRegion);
       setRegion(newRegion);
     } else if (mode === 'viewLocation' && location) {
       const newRegion = {
@@ -440,14 +424,12 @@ const MapViewScreen = ({ navigation, route }) => {
   };
   
   const showUpdateNotification = () => {
-    // You could show a subtle notification that map was updated
-    console.log('Map data refreshed in background');
+    // Subtle notification that map was updated
   };
 
   const onRefresh = useCallback(async () => {
     try {
       setRefreshing(true);
-      console.log('Manual refresh triggered');
       
       // Force refresh from server
       const data = await fetchMapData({ forceRefresh: true });
@@ -462,15 +444,8 @@ const MapViewScreen = ({ navigation, route }) => {
         // Update cache info
         const info = await getMapCacheInfo();
         setCacheInfo(info);
-        
-        Alert.alert(
-          'Success',
-          'Map data refreshed successfully',
-          [{ text: 'OK' }]
-        );
       }
     } catch (err) {
-      console.error('Error refreshing map:', err);
       Alert.alert(
         'Error',
         'Failed to refresh map data',
@@ -482,7 +457,6 @@ const MapViewScreen = ({ navigation, route }) => {
   }, []);
   
   const handleMarkerPress = async (marker) => {
-    console.log('Marker pressed:', marker.title, 'images:', marker.image_urls);
     if (mode === 'selectPickup' && onLocationSelect) {
       Alert.alert(
         'Confirm Selection',
@@ -505,13 +479,10 @@ const MapViewScreen = ({ navigation, route }) => {
         ]
       );
     } else if (marker.pointType === 'pickup') {
-      console.log('Pickup marker clicked:', { id: marker.id, title: marker.title, pointType: marker.pointType });
       // Show pickup point with associated drop-off points
       try {
         setLoading(true);
-        console.log('Fetching routes for pickup ID:', marker.id);
         const routeResult = await getRoutesByPickup(marker.id);
-        console.log('Route result:', routeResult);
         
         if (routeResult.success && routeResult.data) {
           const { available_destinations = [], road_highlights = [], color } = routeResult.data;
@@ -565,7 +536,6 @@ const MapViewScreen = ({ navigation, route }) => {
             ]
           );
         } else {
-          console.log('No route data found:', routeResult);
           Alert.alert(
             marker.title,
             'No routes available from this pickup point.',
@@ -579,10 +549,9 @@ const MapViewScreen = ({ navigation, route }) => {
           );
         }
       } catch (error) {
-        console.error('Error fetching routes:', error);
         Alert.alert(
           'Error',
-          `Failed to load routes: ${error.message}`,
+          'Failed to load routes. Please try again.',
           [{ text: 'OK' }]
         );
       } finally {
@@ -886,30 +855,29 @@ const MapViewScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F8F9FA',
   },
   
   // Header styles
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#6B2E2B',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    elevation: 2,
+    paddingVertical: 16,
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   backButton: {
     padding: 8,
   },
   backButtonText: {
     fontSize: 24,
-    color: '#333',
+    color: '#fff',
+    fontWeight: '600',
   },
   headerContent: {
     flex: 1,
@@ -918,11 +886,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#fff',
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#666',
+    color: '#F5E9E2',
     marginTop: 2,
   },
   headerSpacer: {
@@ -941,26 +909,28 @@ const styles = StyleSheet.create({
   // Floating controls
   floatingControls: {
     position: 'absolute',
-    top: 16,
+    top: 20,
     right: 16,
-    gap: 12,
+    gap: 8,
   },
   floatingButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    marginBottom: 8,
+    elevation: 6,
+    shadowColor: '#6B2E2B',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    borderWidth: 1,
+    borderColor: '#F0E7E3',
   },
   floatingButtonActive: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#6B2E2B',
   },
   floatingButtonText: {
     fontSize: 22,
@@ -969,10 +939,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
   },
   clearRoutesButton: {
-    backgroundColor: '#FF5722',
+    backgroundColor: '#E57373',
   },
   forceRefreshButton: {
-    backgroundColor: '#FF9800',
+    backgroundColor: '#FFB74D',
   },
   
   // Legend overlay
@@ -1048,24 +1018,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 8,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    elevation: 12,
+    shadowColor: '#6B2E2B',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0E7E3',
   },
   dragHandle: {
-    width: 40,
+    width: 48,
     height: 4,
-    backgroundColor: '#ddd',
+    backgroundColor: '#6B2E2B',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    opacity: 0.3,
   },
   statsRow: {
     flexDirection: 'row',
@@ -1077,20 +1050,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#6B2E2B',
   },
   statLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 11,
+    color: '#8D6E63',
     marginTop: 4,
     textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   statDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: '#e0e0e0',
+    height: 44,
+    backgroundColor: '#F0E7E3',
   },
   settingsButton: {
     position: 'absolute',
@@ -1131,19 +1106,20 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#f5f5f5',
+    padding: 32,
+    backgroundColor: '#F8F9FA',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
+    marginTop: 20,
+    fontSize: 18,
+    color: '#6B2E2B',
+    fontWeight: '600',
   },
   loadingSubText: {
-    marginTop: 4,
+    marginTop: 8,
     fontSize: 14,
-    color: '#666',
+    color: '#8D6E63',
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 18,

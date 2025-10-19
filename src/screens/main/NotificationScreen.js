@@ -1,10 +1,12 @@
 // screens/main/NotificationScreen.jsx
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Badge } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Modal, ScrollView } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
+import { useRefresh } from '../../hooks/useRefresh';
 import { useScreenAutoRefresh } from '../../services/dataInvalidationService';
+import NotificationService from '../../services/notificationService';
 import * as Routes from '../../constants/routes';
 
 const MAROON = '#6B2E2B';
@@ -13,11 +15,18 @@ const TEXT = '#222';
 const MUTED = '#777';
 
 export default function NotificationScreen({ navigation }) {
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedNotification, setSelectedNotification] = useState(null);
   const { notifications, unreadCount, loadNotifications, markAsRead, markAllAsRead } = useNotifications();
   const { user } = useAuth();
   const appState = useRef(AppState.currentState);
+  
+  const { refreshing, onRefresh } = useRefresh([
+    loadNotifications
+  ], {
+    showGlobalLoading: false,
+    loadingMessage: 'Refreshing notifications...'
+  });
 
   const categories = [
     { id: 'all', label: 'All', icon: 'notifications' },
@@ -39,9 +48,11 @@ export default function NotificationScreen({ navigation }) {
     return 'general';
   };
 
-  const filteredNotifications = selectedCategory === 'all' 
-    ? notifications 
-    : notifications.filter(n => categorizeNotification(n) === selectedCategory);
+  const filteredNotifications = useMemo(() => {
+    return selectedCategory === 'all' 
+      ? notifications 
+      : notifications.filter(n => categorizeNotification(n) === selectedCategory);
+  }, [notifications, selectedCategory]);
   
   // Auto-refresh when notification data changes
   useScreenAutoRefresh('NOTIFICATIONS', () => {
@@ -50,13 +61,19 @@ export default function NotificationScreen({ navigation }) {
   });
 
   useEffect(() => {
+    // Initialize notification service
+    NotificationService.initialize();
     loadNotifications();
 
-    // Handle app state changes
+    // Handle app state changes - immediate refresh when app becomes active
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // App came to foreground, refresh notifications
+        // App came to foreground, refresh notifications immediately
+        console.log('[NotificationScreen] App active - refreshing notifications');
         loadNotifications();
+        // Also trigger a fresh poll
+        NotificationService.stopPolling();
+        NotificationService.startPolling(user?.id, () => loadNotifications());
       }
       appState.current = nextAppState;
     });
@@ -66,62 +83,51 @@ export default function NotificationScreen({ navigation }) {
     };
   }, []);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadNotifications();
-    setRefreshing(false);
-  };
+  // onRefresh is now handled by useRefresh hook
 
   const handleNotificationPress = (notification) => {
     markAsRead(notification.id);
+    NotificationService.markAsRead(notification.id);
     
     const title = notification.title?.toLowerCase() || '';
     const message = notification.message?.toLowerCase() || '';
     const userRole = user?.role;
     
-    // Only navigate for specific actionable notifications
-    try {
+    // Navigate based on notification type
+    const navigateForNotification = () => {
       if (title.includes('booking') || title.includes('request') || message.includes('booking')) {
-        if (userRole === 'tourist') {
-          navigation.navigate(Routes.BOOK);
-        } else if (userRole === 'driver' || userRole === 'driver-owner') {
-          navigation.navigate(Routes.BOOKINGS);
-        } else if (userRole === 'owner') {
-          navigation.navigate(Routes.BOOKINGS);
-        }
-      } else if (title.includes('payment') || title.includes('earning') || message.includes('payment')) {
-        if (userRole === 'driver' || userRole === 'driver-owner') {
-          navigation.navigate(Routes.BREAKEVEN);
-        } else if (userRole === 'tourist') {
-          navigation.navigate(Routes.BOOK);
-        }
-      } else if (title.includes('ride') || message.includes('ride')) {
-        if (userRole === 'tourist') {
-          navigation.navigate(Routes.BOOK);
-        } else if (userRole === 'driver' || userRole === 'driver-owner') {
-          navigation.navigate(Routes.BOOKINGS);
-        }
+        return userRole === 'tourist' ? Routes.BOOK : Routes.BOOKINGS;
       }
-      // For announcements, updates, or other non-actionable notifications, just mark as read without navigation
-    } catch (error) {
-      console.log('Navigation not available for this notification type');
-      // Silently handle navigation errors - notification is already marked as read
+      if (title.includes('payment') || title.includes('earning') || message.includes('payment')) {
+        return userRole === 'tourist' ? Routes.BOOK : Routes.BREAKEVEN;
+      }
+      if (title.includes('ride') || message.includes('ride')) {
+        return userRole === 'tourist' ? Routes.BOOK : Routes.BOOKINGS;
+      }
+      return null;
+    };
+
+    const route = navigateForNotification();
+    if (route) {
+      try {
+        navigation.navigate(route);
+      } catch (error) {
+        console.log('Navigation failed:', error.message);
+      }
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Back button – matches your provided design */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={22} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Header */}
-      <View style={styles.headerBar}>
-        <Text style={styles.title}>Notifications</Text>
+      {/* Header with back button and title */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Notifications</Text>
         {unreadCount > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{unreadCount}</Text>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{unreadCount}</Text>
           </View>
         )}
       </View>
@@ -189,6 +195,7 @@ export default function NotificationScreen({ navigation }) {
             {...item} 
             category={categorizeNotification(item)}
             onPress={() => handleNotificationPress(item)}
+            onView={() => setSelectedNotification(item)}
           />
         )}
         contentContainerStyle={{ paddingBottom: 16 }}
@@ -205,11 +212,40 @@ export default function NotificationScreen({ navigation }) {
           </View>
         }
       />
+      
+      {/* Notification Detail Modal */}
+      <Modal
+        visible={!!selectedNotification}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedNotification(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Notification</Text>
+              <TouchableOpacity onPress={() => setSelectedNotification(null)}>
+                <Ionicons name="close" size={20} color={MAROON} />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedNotification && (
+              <View style={styles.modalContent}>
+                <Text style={styles.notifTitle}>{selectedNotification.title}</Text>
+                <Text style={styles.notifTime}>
+                  {new Date(selectedNotification.created_at).toLocaleString()}
+                </Text>
+                <Text style={styles.notifMessage}>{selectedNotification.message}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function NotificationItem({ title, message, created_at, read, type, category, onPress }) {
+function NotificationItem({ title, message, created_at, read, type, category, onPress, onView }) {
   const getIcon = () => {
     const titleLower = title?.toLowerCase() || '';
     
@@ -280,7 +316,7 @@ function NotificationItem({ title, message, created_at, read, type, category, on
         <Text style={styles.itemMessage} numberOfLines={2}>{message}</Text>
         {!read && <View style={styles.unreadDot} />}
         <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={onPress}>
+          <TouchableOpacity style={styles.actionButton} onPress={onView}>
             <Text style={styles.actionButtonText}>View</Text>
           </TouchableOpacity>
         </View>
@@ -290,51 +326,42 @@ function NotificationItem({ title, message, created_at, read, type, category, on
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA', paddingTop: 40 },
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
 
-  // Back button (maroon, white arrow)
+  // Header with integrated back button
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 44,
+    paddingHorizontal: 18,
+    paddingBottom: 16,
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
   backBtn: {
     backgroundColor: MAROON,
     borderRadius: 20,
     padding: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    position: 'absolute',
-    top: 44,
-    left: 18,
-    zIndex: 10,
+    marginRight: 16,
   },
-
-  /* Header */
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
     color: TEXT,
-    letterSpacing: 0.3,
+    flex: 1,
   },
-  badge: {
+  headerBadge: {
     backgroundColor: '#ff4444',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
-  badgeText: {
+  headerBadgeText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
@@ -474,5 +501,57 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    maxWidth: '90%',
+    maxHeight: '70%',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: TEXT,
+  },
+  modalContent: {
+    padding: 16,
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: TEXT,
+    marginBottom: 6,
+  },
+  notifTime: {
+    fontSize: 11,
+    color: MUTED,
+    marginBottom: 12,
+  },
+  notifMessage: {
+    fontSize: 13,
+    color: TEXT,
+    lineHeight: 18,
   },
 });

@@ -17,5 +17,8 @@ export function resolveApiHost() {
 }
 
 export function apiBaseUrl() {
-  return `http://${resolveApiHost()}:8000/api`;
+  const host = resolveApiHost();
+  const protocol = __DEV__ ? 'http' : 'https';
+  const port = __DEV__ ? ':8000' : '';
+  return `${protocol}://${host}${port}/api`;
 }

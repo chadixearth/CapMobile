@@ -1,5 +1,6 @@
 import { getAccessToken, refreshAccessToken, refreshTokenIfNeeded, clearLocalSession, setSessionExpiredCallback } from './authService';
 import { apiBaseUrl } from './networkConfig';
+import SecurityService from './securityService';
 
 const DEBUG_API = __DEV__;
 const log = (...args) => DEBUG_API && console.log('[ApiClient]', ...args);
@@ -37,6 +38,17 @@ class ImprovedApiClient {
       skipAuth = false
     } = options;
 
+    // Rate limiting check
+    try {
+      SecurityService.checkRateLimit(endpoint);
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        status: 429
+      };
+    }
+
     log(`${method} ${endpoint}`);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -56,6 +68,7 @@ class ImprovedApiClient {
           'Content-Type': 'application/json',
           'Connection': 'close',
           'Cache-Control': 'no-cache',
+          ...SecurityService.getSecureHeaders(),
           ...headers,
         };
 
@@ -63,10 +76,24 @@ class ImprovedApiClient {
           requestHeaders.Authorization = `Bearer ${token}`;
         }
 
+        // Validate request body if present
+        let validatedBody = body;
+        if (body && typeof body === 'object') {
+          try {
+            validatedBody = this.validateRequestBody(body, endpoint);
+          } catch (validationError) {
+            return {
+              success: false,
+              error: validationError.message,
+              status: 400
+            };
+          }
+        }
+
         const response = await fetch(`${this.baseURL}${endpoint}`, {
           method,
           headers: requestHeaders,
-          body: body ? JSON.stringify(body) : null,
+          body: validatedBody ? JSON.stringify(validatedBody) : null,
           signal: controller.signal,
           cache: 'no-store',
         });
@@ -255,6 +282,34 @@ class ImprovedApiClient {
    */
   delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Validate request body based on endpoint
+   */
+  validateRequestBody(body, endpoint) {
+    if (endpoint.includes('/booking/')) {
+      return SecurityService.validateBookingData(body);
+    }
+    
+    if (endpoint.includes('/auth/register') || endpoint.includes('/auth/login')) {
+      return SecurityService.validateUserData(body, endpoint.includes('/register'));
+    }
+    
+    // Generic validation for other endpoints
+    if (typeof body === 'object') {
+      const validated = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (typeof value === 'string') {
+          validated[key] = SecurityService.validateInput(value, 'string', { fieldName: key });
+        } else {
+          validated[key] = value;
+        }
+      }
+      return validated;
+    }
+    
+    return body;
   }
 
   // Convenience methods

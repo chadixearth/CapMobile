@@ -7,14 +7,7 @@ import { invalidateData } from './dataInvalidationService';
 import networkClient from './networkClient';
 import ResponseHandler from './responseHandler';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// Configure notification behavior (moved to initialize method)
 
 class NotificationService {
   static pollingInterval = null;
@@ -22,6 +15,21 @@ class NotificationService {
   static callbacks = new Set();
   static locationWatcher = null;
   static pushToken = null;
+
+  // Initialize notification service
+  static async initialize() {
+    // Setup notification configuration
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+    
+    // Register for push notifications immediately
+    await this.registerForPushNotifications();
+  }
 
   // Send notification to backend
   static async sendNotification(userIds, title, message, type = 'info', role = 'tourist') {
@@ -82,8 +90,22 @@ class NotificationService {
     try {
       const result = await networkClient.put('/notifications/mark-read/', {
         notification_id: notificationId
+      }, {
+        timeout: 10000
       });
-      return result.data;
+      return result?.data || { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Mark all notifications as read
+  static async markAllAsRead() {
+    try {
+      const result = await networkClient.put('/notifications/mark-all-read/', {}, {
+        timeout: 10000
+      });
+      return result?.data || { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -112,7 +134,7 @@ class NotificationService {
       }
     });
     
-    // Poll every 60 seconds for new notifications (increased to reduce server load)
+    // Poll every 15 seconds for new notifications (faster for better real-time feel)
     this.pollingInterval = setInterval(async () => {
       try {
         const result = await this.getNotifications(userId);
@@ -126,15 +148,13 @@ class NotificationService {
             : result.data.filter(n => !n.read).slice(0, 3); // Limit initial load to 3 most recent
           
           if (newNotifications.length > 0) {
-            // Only send local notifications for truly new ones
+            // Send local notifications for all new notifications
             for (const notif of newNotifications) {
-              if (this.lastNotificationCheck && new Date(notif.created_at) > this.lastNotificationCheck) {
-                await this.sendLocalNotification(
-                  notif.title,
-                  notif.message,
-                  { type: notif.type, id: notif.id }
-                );
-              }
+              await this.sendLocalNotification(
+                notif.title,
+                notif.message,
+                { type: notif.type, id: notif.id, notificationId: notif.id }
+              );
             }
             
             // Emit data change events based on notification types
@@ -186,7 +206,7 @@ class NotificationService {
           console.warn('[NotificationService] Polling error (non-timeout):', error.message);
         }
       }
-    }, 60000);
+    }, 15000);
 
     // Initial load with timeout handling
     this.getNotifications(userId).then(result => {
@@ -578,6 +598,7 @@ class NotificationService {
       }
       
       if (finalStatus !== 'granted') {
+        console.log('[NotificationService] Push notification permission denied');
         return null;
       }
       
@@ -585,12 +606,13 @@ class NotificationService {
         projectId: 'b3c3eee0-8587-45cd-8170-992a4580d305'
       });
       
+      console.log('[NotificationService] Push token registered:', token.data);
       this.pushToken = token.data;
       await this.storePushToken(token.data);
       
       return token.data;
     } catch (error) {
-      // Silently handle push notification errors
+      console.log('[NotificationService] Push notification setup failed:', error.message);
       return null;
     }
   }
@@ -612,22 +634,24 @@ class NotificationService {
     }
   }
 
-  // Send local notification
+  // Send local notification with better formatting
   static async sendLocalNotification(title, message, data = {}) {
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
-          title,
-          body: message,
-          data,
-          sound: true,
+          title: title || 'New Notification',
+          body: message || 'You have a new notification',
+          data: { ...data, timestamp: Date.now() },
+          sound: 'default',
           priority: Notifications.AndroidNotificationPriority.HIGH,
           vibrate: [0, 250, 250, 250],
+          badge: 1,
         },
         trigger: null,
       });
+      console.log('[NotificationService] Local notification sent:', title);
     } catch (error) {
-      // Ignore notification errors
+      console.log('[NotificationService] Local notification failed:', error.message);
     }
   }
 

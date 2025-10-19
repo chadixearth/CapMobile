@@ -40,25 +40,16 @@ export default function App() {
 
   const initializeApp = async () => {
     try {
-      console.log('[App] Starting app initialization...');
-      
       // Initialize mobile diagnostics
       await mobileDiagnostics.initialize();
       
       const result = await AppInitService.initialize();
-      
-      if (result.errors && result.errors.length > 0) {
-        console.warn('[App] Initialization completed with errors:', result.errors);
-      } else {
-        console.log('[App] App initialized successfully');
-      }
       
       // Small delay to show splash screen
       setTimeout(() => {
         setIsInitializing(false);
       }, 500);
     } catch (error) {
-      console.error('[App] Failed to initialize app:', error);
       setInitError(error.message);
       // Still allow app to continue even if initialization fails
       setTimeout(() => {
@@ -95,20 +86,12 @@ export default function App() {
             
             // Set up JWT expiry callback
             const handleSessionExpiry = () => {
-              console.log('[App] JWT expired, logging out user');
-              CustomModalService.showError({
-                title: 'Session Expired',
-                message: 'Your session has expired. Please log in again.',
-                primaryActionText: 'Login',
-                onPrimaryAction: () => {
-                  if (navRef.current) {
-                    navRef.current.reset({
-                      index: 0,
-                      routes: [{ name: 'Login' }],
-                    });
-                  }
-                }
-              });
+              if (navRef.current) {
+                navRef.current.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              }
             };
             
             setSessionExpiredCallback(handleSessionExpiry);

@@ -449,9 +449,20 @@ export async function logoutUser() {
  * @returns {Promise<{ success: boolean, data?: object, error?: string }>}
  */
 export async function getUserProfile(userId) {
-  // Since /auth/profile/ endpoint doesn't exist, return a graceful fallback
-  // Using local session data instead of making a backend call
   try {
+    // First try to get from backend API
+    const result = await apiRequest(`/auth/user/${userId}/`, {
+      method: 'GET',
+    });
+    
+    if (result.success && result.data) {
+      return {
+        success: true,
+        data: result.data,
+      };
+    }
+    
+    // Fallback to local session data if backend call fails
     const session = await getStoredSession();
     
     if (session.user && session.user.id === userId) {
@@ -459,16 +470,17 @@ export async function getUserProfile(userId) {
         success: true,
         data: session.user,
       };
-    } else {
-      return {
-        success: false,
-        error: 'User profile not found in local session',
-      };
     }
-  } catch (error) {
+    
     return {
       success: false,
-      error: 'Failed to get user profile from local session',
+      error: 'User profile not found',
+    };
+  } catch (error) {
+    console.error('getUserProfile error:', error);
+    return {
+      success: false,
+      error: 'Failed to get user profile',
     };
   }
 }

@@ -54,7 +54,10 @@ async function apiCall(endpoint, options = {}) {
       return { success: false, error: 'Method not allowed', data: [] };
     }
     
-    console.error('API call failed:', error);
+    // Don't log JWT expiry errors
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('API call failed:', error);
+    }
     throw error;
   }
 }
@@ -239,12 +242,9 @@ export async function createRideBooking(bookingData) {
 // Get available ride bookings for drivers
 export async function getAvailableRideBookings() {
   try {
-    console.log('[getAvailableRideBookings] Fetching all ride bookings...');
     const result = await apiCall('/ride-hailing/');
-    console.log('[getAvailableRideBookings] Raw result:', result);
     
     if (!result.success) {
-      console.log('[getAvailableRideBookings] API call failed:', result.error);
       return { success: false, error: result.error, data: [] };
     }
     
@@ -258,8 +258,6 @@ export async function getAvailableRideBookings() {
       ridesArray = result;
     }
     
-    console.log('[getAvailableRideBookings] Total rides found:', ridesArray.length);
-    
     // Filter for available rides (no driver assigned and waiting status)
     const availableRides = ridesArray.filter(ride => 
       ride && 
@@ -267,14 +265,14 @@ export async function getAvailableRideBookings() {
       !ride.driver_id
     );
     
-    console.log('[getAvailableRideBookings] Available rides after filtering:', availableRides.length);
-    
     return {
       success: true,
       data: availableRides
     };
   } catch (error) {
-    console.error('Error fetching available ride bookings:', error);
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('Error fetching available ride bookings:', error);
+    }
     return { success: false, error: error.message, data: [] };
   }
 }
@@ -385,9 +383,7 @@ export async function getAllRideBookings() {
 // Get routes by pickup point (for showing road highlights and destinations)
 export async function getRoutesByPickup(pickupId) {
   try {
-    console.log(`[getRoutesByPickup] Calling API for pickup ID: ${pickupId}`);
     const result = await apiCall(`/ride-hailing/routes-by-pickup/${pickupId}/`);
-    console.log(`[getRoutesByPickup] API response:`, result);
     
     // Handle different response structures
     if (result && result.success) {
@@ -412,7 +408,10 @@ export async function getRoutesByPickup(pickupId) {
       }
     };
   } catch (error) {
-    console.error('Error fetching routes by pickup:', error);
+    // Don't log JWT expiry errors
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('Error fetching routes by pickup:', error);
+    }
     return {
       success: true,
       data: {
@@ -465,7 +464,10 @@ export async function getMyActiveRides(customerId) {
     }
     return { success: false, error: 'No valid ride data received' };
   } catch (error) {
-    console.error('Error fetching active rides:', error);
+    // Don't log JWT expiry errors
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('Error fetching active rides:', error);
+    }
     return { success: false, error: error.message };
   }
 }
@@ -473,11 +475,9 @@ export async function getMyActiveRides(customerId) {
 // Get driver location for tracking
 export async function getDriverLocation(driverId) {
   try {
-    console.log(`[getDriverLocation] Fetching location for driver: ${driverId}`);
     const result = await apiCall(`/location/drivers/?driver_id=${driverId}`, {
       method: 'GET'
     });
-    console.log(`[getDriverLocation] API response:`, result);
     
     // Handle nested data structure: result.data.data or result.data
     let locationData = [];
@@ -492,7 +492,6 @@ export async function getDriverLocation(driverId) {
     if (locationData.length > 0) {
       const driverLocation = locationData.find(loc => loc.user_id === driverId);
       if (driverLocation) {
-        console.log(`[getDriverLocation] Found location:`, driverLocation);
         return { 
           success: true, 
           data: {
@@ -504,10 +503,11 @@ export async function getDriverLocation(driverId) {
       }
     }
     
-    console.log(`[getDriverLocation] Driver location not found in data:`, locationData);
     return { success: false, error: 'Driver location not found' };
   } catch (error) {
-    console.error('[getDriverLocation] Error:', error);
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('[getDriverLocation] Error:', error);
+    }
     return { success: false, error: error.message };
   }
 }
@@ -515,7 +515,6 @@ export async function getDriverLocation(driverId) {
 // Update driver location
 export async function updateDriverLocation(userId, latitude, longitude, speed = 0, heading = 0) {
   try {
-    console.log(`[updateDriverLocation] Updating location for ${userId}:`, { latitude, longitude, speed, heading });
     const result = await apiCall('/location/update/', {
       method: 'POST',
       body: {
@@ -526,10 +525,11 @@ export async function updateDriverLocation(userId, latitude, longitude, speed = 
         heading
       }
     });
-    console.log(`[updateDriverLocation] Update result:`, result);
     return result;
   } catch (error) {
-    console.error('[updateDriverLocation] Error:', error);
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('[updateDriverLocation] Error:', error);
+    }
     return { success: false, error: error.message };
   }
 }

@@ -149,13 +149,22 @@ export default function GoodsServicesScreen() {
                   userData.user_metadata?.profile_photo_url ||
                   userData.user_metadata?.profile_photo;
                 
+                // Generate fallback avatar if no photo found
+                const finalPhotoUrl = profilePhotoUrl || getBestAvatarUrl(userData);
+                
+                console.log(`Fetched profile for user ${id}:`, {
+                  name: userData.name || userData.email,
+                  hasPhoto: !!profilePhotoUrl,
+                  photoUrl: finalPhotoUrl
+                });
+                
                 return { 
                   id, 
                   ...standardizedProfile,
                   ...userData, // Include all original user data
                   profile_photos: userData.profile_photos || userData.photos || [],
-                  profile_photo_url: profilePhotoUrl,
-                  avatar_url: profilePhotoUrl
+                  profile_photo_url: finalPhotoUrl,
+                  avatar_url: finalPhotoUrl
                 };
               }
             } catch (error) {
@@ -538,20 +547,34 @@ export default function GoodsServicesScreen() {
     const userRole = item.author_role || authorFromMap?.role || 'user';
     const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
-    // Try multiple sources for profile photo
-    let profilePhoto = authorFromMap?.profile_photo_url || 
-      authorFromMap?.avatar_url || 
-      authorFromMap?.profile_photo ||
-      getBestAvatarUrl(authorFromMap) || 
-      getBestAvatarUrl(item) || 
-      item.author_profile_photo_url || 
-      item.profile_photo_url || 
-      item.avatar_url;
+    // Try multiple sources for profile photo with better fallback handling
+    let profilePhoto = null;
     
-    // Generate avatar URL if no photo found
+    // Priority order: item data first (from backend), then authorFromMap (from separate fetch)
+    const photoSources = [
+      item.author_profile_photo_url,
+      item.profile_photo_url,
+      item.avatar_url,
+      authorFromMap?.profile_photo_url,
+      authorFromMap?.avatar_url,
+      authorFromMap?.profile_photo,
+      getBestAvatarUrl(authorFromMap),
+      getBestAvatarUrl(item)
+    ];
+    
+    for (const source of photoSources) {
+      if (source && typeof source === 'string' && source.trim() && !source.includes('ui-avatars.com')) {
+        profilePhoto = source.trim();
+        break;
+      }
+    }
+    
+    // Generate fallback avatar URL if no photo found
     if (!profilePhoto && displayName) {
       profilePhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6B2E2B&color=fff&size=128`;
     }
+    
+    console.log(`Profile photo for ${displayName}:`, profilePhoto);
 
     return (
       <View style={styles.card}>
