@@ -16,7 +16,9 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses location to provide real-time tracking for bookings.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to provide real-time tracking for bookings."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to provide real-time tracking for bookings.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload images for goods and services.",
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos for goods and services."
       }
     },
     "android": {
@@ -31,7 +33,10 @@
         "ACCESS_COARSE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA"
       ],
       "package": "com.chadigause.tempapp"
     },
@@ -42,6 +47,7 @@
     "plugins": [
       "expo-font",
       "expo-dev-client",
+      "expo-image-picker",
       [
         "expo-notifications",
         {

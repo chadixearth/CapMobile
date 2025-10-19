@@ -27,7 +27,10 @@ export function setSessionExpiredCallback(callback) {
  */
 export async function apiRequest(endpoint, options = {}) {
   try {
-    console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
+    // Only log non-JWT related requests
+    if (!endpoint.includes('JWT') && !data?.message?.includes('JWT expired')) {
+      console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
+    }
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -47,10 +50,10 @@ export async function apiRequest(endpoint, options = {}) {
       const token = await getAccessToken();
       if (token) {
         headers.Authorization = `Bearer ${token}`;
-        console.log(`[authService] Added auth token to request`);
+        // Silent auth token addition
       }
     } else {
-      console.log(`[authService] Skipping auth token for auth endpoint: ${endpoint}`);
+      // Silent auth endpoint handling
     }
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -81,18 +84,15 @@ export async function apiRequest(endpoint, options = {}) {
       data = { error: 'Invalid JSON response' };
     }
     
-    // Check for JWT expiry and attempt refresh
+    // Check for JWT expiry and handle silently
     if (!response.ok && (response.status === 401 || 
         (data.error && data.error.includes('JWT expired')) ||
-        (data.error && data.error.includes('PGRST301')) ||
+        (data.code && data.code.includes('PGRST301')) ||
         (data.message && data.message.includes('JWT expired')))) {
-      console.log('[authService] JWT expired, attempting token refresh');
       
       // Try to refresh the token first
       const refreshResult = await refreshAccessToken();
       if (refreshResult.success) {
-        console.log('[authService] Token refreshed successfully, retrying request');
-        
         // Retry the original request with new token
         const newToken = await getAccessToken();
         if (newToken) {
@@ -125,24 +125,20 @@ export async function apiRequest(endpoint, options = {}) {
           };
         }
       } else {
-        console.log('[authService] Token refresh failed:', refreshResult.error);
-        
         // If refresh failed due to endpoint not available, handle gracefully
         if (refreshResult.error?.includes('endpoint not available') || 
             refreshResult.error?.includes('Network error')) {
-          console.log('[authService] Refresh endpoint unavailable, keeping session but showing warning');
-          // Don't clear session immediately - let user continue but show warning
+          // Don't show error to user - handle silently
           return {
             success: false,
-            data: { error: 'Session may be expired. Some features may not work properly. Please try logging out and back in.' },
+            data: { error: 'silent_session_error' },
             status: 401,
-            warning: true,
+            silent: true,
           };
         }
       }
       
-      // If refresh failed, clear session and notify
-      console.log('[authService] Token refresh failed, clearing session');
+      // If refresh failed, clear session and notify silently
       await clearStoredSession();
       if (sessionExpiredCallback) {
         sessionExpiredCallback();
@@ -150,8 +146,9 @@ export async function apiRequest(endpoint, options = {}) {
       
       return {
         success: false,
-        data: { error: 'Session expired. Please log in again.' },
+        data: { error: 'silent_session_expired' },
         status: 401,
+        silent: true,
       };
     }
     

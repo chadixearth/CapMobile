@@ -18,7 +18,6 @@ class ImprovedApiClient {
   }
 
   async handleSessionExpiry() {
-    log('Session expired - clearing local session');
     await clearLocalSession();
     if (this.sessionExpiredCallback) {
       this.sessionExpiredCallback();
@@ -112,22 +111,21 @@ class ImprovedApiClient {
           };
         }
 
-        // Handle JWT expired errors specifically
+        // Handle JWT expired errors specifically - silently
         if (data && (
           (typeof data === 'object' && data.message && data.message.includes('JWT expired')) ||
           (typeof data === 'object' && data.error && data.error.includes('JWT expired')) ||
           (typeof data === 'string' && data.includes('JWT expired')) ||
-          (typeof data === 'object' && data.error && data.error.includes('PGRST301'))
+          (typeof data === 'object' && data.code && data.code.includes('PGRST301'))
         )) {
-          log('JWT expired error detected');
-          
-          // Don't retry, just handle session expiry immediately
+          // Handle silently - no logs
           await this.handleSessionExpiry();
           return {
             success: false,
-            error: 'Session expired. Please log in again.',
+            error: 'silent_jwt_expired',
             status: 401,
-            sessionExpired: true
+            sessionExpired: true,
+            silent: true
           };
         }
 
@@ -168,13 +166,43 @@ class ImprovedApiClient {
 
         // Network errors that should be retried
         if (this.isRetryableNetworkError(error) && attempt < retries) {
+          // Check if this is a JWT expiry error and handle silently
+        if (error.message && (error.message.includes('JWT expired') || error.message.includes('PGRST301'))) {
+          await this.handleSessionExpiry();
+          return {
+            success: false,
+            error: 'silent_jwt_expired',
+            status: 401,
+            sessionExpired: true,
+            silent: true
+          };
+        }
+        
+        // Don't log JWT errors
+        if (!error.message.includes('JWT expired') && !error.message.includes('PGRST301')) {
           log(`network error on attempt ${attempt}, retrying in ${this.retryDelay * attempt}ms:`, error.message);
+        }
           await this.delay(this.retryDelay * attempt);
           continue;
         }
 
         if (attempt === retries) {
-          log(`❌ API call failed after ${retries} retries:`, error);
+          // Check if this is a JWT expiry error and handle silently
+          if (error.message && (error.message.includes('JWT expired') || error.message.includes('PGRST301'))) {
+            await this.handleSessionExpiry();
+            return {
+              success: false,
+              error: 'silent_jwt_expired',
+              status: 401,
+              sessionExpired: true,
+              silent: true
+            };
+          }
+          
+          // Don't log JWT errors
+          if (!error.message.includes('JWT expired') && !error.message.includes('PGRST301')) {
+            log(`❌ API call failed after ${retries} retries:`, error);
+          }
           return {
             success: false,
             error: error.message || 'Network error',

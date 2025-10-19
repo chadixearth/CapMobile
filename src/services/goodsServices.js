@@ -142,6 +142,8 @@ export async function upsertGoodsServicesProfile(authorId, description, media = 
 // Upload multiple images via the backend and return array of URLs
 export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
   try {
+    console.log('[uploadGoodsServicesMedia] Starting upload for', filesOrUris.length, 'files');
+    
     if (!Array.isArray(filesOrUris) || filesOrUris.length === 0) {
       return { success: true, urls: [] };
     }
@@ -151,14 +153,23 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
     // Upload each file individually to the goods storage endpoint
     for (let i = 0; i < filesOrUris.length; i++) {
       const item = filesOrUris[i];
+      console.log(`[uploadGoodsServicesMedia] Processing file ${i + 1}:`, item);
+      
       if (item && typeof item === 'object' && item.uri) {
         try {
+          console.log(`[uploadGoodsServicesMedia] Converting file ${i + 1} to base64...`);
+          
           // Convert file to base64
           const response = await fetch(item.uri);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch file: ${response.status}`);
+          }
+          
           const blob = await response.blob();
-          const base64 = await new Promise((resolve) => {
+          const base64 = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
           
@@ -168,6 +179,8 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
             user_id: userId,
             category: 'goods_services'
           };
+
+          console.log(`[uploadGoodsServicesMedia] Uploading file ${i + 1} with filename:`, payload.filename);
 
           const uploadRes = await fetch(`${API_BASE_URL}/upload/goods-storage/`, {
             method: 'POST',
@@ -179,22 +192,33 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
 
           const uploadText = await uploadRes.text();
           let uploadData;
-          try { uploadData = JSON.parse(uploadText); } catch { uploadData = { raw: uploadText }; }
+          try { 
+            uploadData = JSON.parse(uploadText); 
+          } catch { 
+            uploadData = { raw: uploadText, success: false, error: 'Invalid JSON response' }; 
+          }
           
-          if (uploadRes.ok && uploadData.success) {
+          console.log(`[uploadGoodsServicesMedia] Upload response for file ${i + 1}:`, uploadData);
+          
+          if (uploadRes.ok && uploadData.success && uploadData.data?.url) {
             urls.push(uploadData.data.url);
+            console.log(`[uploadGoodsServicesMedia] Successfully uploaded file ${i + 1}, URL:`, uploadData.data.url);
           } else {
-            console.error(`Failed to upload file ${i + 1}:`, uploadData.error);
+            console.error(`[uploadGoodsServicesMedia] Failed to upload file ${i + 1}:`, uploadData.error || uploadData.raw || 'Unknown error');
           }
         } catch (err) {
-          console.error('Failed to process file:', err);
+          console.error(`[uploadGoodsServicesMedia] Error processing file ${i + 1}:`, err);
           continue;
         }
+      } else {
+        console.warn(`[uploadGoodsServicesMedia] Invalid file item at index ${i}:`, item);
       }
     }
 
+    console.log('[uploadGoodsServicesMedia] Upload completed. URLs:', urls);
     return { success: urls.length > 0, urls };
   } catch (error) {
+    console.error('[uploadGoodsServicesMedia] Upload failed:', error);
     return { success: false, error: error.message || 'Failed to upload media' };
   }
 }

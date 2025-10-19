@@ -31,3 +31,9 @@ export const EVENTS = 'Events';
 export const MENU = 'Menu';
 export const REVIEWS = 'Reviews';
 export const BREAKEVEN = 'Breakeven';
+
+// Modal screens
+export const ABOUT = 'About';
+export const HELP = 'Help';
+export const TERMS = 'Terms';
+export const PRIVACY = 'Privacy';

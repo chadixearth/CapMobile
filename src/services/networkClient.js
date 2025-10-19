@@ -183,7 +183,10 @@ class NetworkClient {
             Math.min(1000 * Math.pow(2, attempt - 1), 5000);
           
           const errorType = isSocketError ? 'socket' : 'network';
-          console.log(`${errorType} error on attempt ${attempt}, retrying in ${delay}ms:`, error.message);
+          // Don't log JWT expiry errors
+          if (!error.message.includes('JWT expired') && !error.message.includes('PGRST301')) {
+            console.log(`${errorType} error on attempt ${attempt}, retrying in ${delay}ms:`, error.message);
+          }
           
           // Force connection reset for Windows socket errors
           if (isSocketError && attempt > 1) {
@@ -203,8 +206,20 @@ class NetworkClient {
       throw new Error('Request timeout');
     }
     
-    // Don't log expected business errors
-    if (lastError && lastError.message && lastError.message.includes('active ride request')) {
+    // Don't log expected business errors or JWT expiry errors
+    if (lastError && lastError.message && (
+      lastError.message.includes('active ride request') ||
+      lastError.message.includes('JWT expired') ||
+      lastError.message.includes('PGRST301')
+    )) {
+      throw lastError;
+    }
+    
+    // Don't log JWT expiry errors
+    if (lastError && lastError.message && (
+      lastError.message.includes('JWT expired') ||
+      lastError.message.includes('PGRST301')
+    )) {
       throw lastError;
     }
     

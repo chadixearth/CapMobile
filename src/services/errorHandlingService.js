@@ -320,6 +320,14 @@ class ErrorHandlingService {
     // Safely check error string with null/undefined protection
     const safeErrorString = errorString || '';
     
+    // Check for silent errors that should not be shown to user
+    if (safeErrorString.includes('silent_session_error') || 
+        safeErrorString.includes('silent_session_expired') ||
+        safeErrorString.includes('JWT expired')) {
+      console.log('[ErrorHandling] Silent error detected, not showing to user:', safeErrorString);
+      return; // Don't show these errors to the user
+    }
+    
     // Determine error type based on error message/code
     if (safeErrorString.includes('session') || safeErrorString.includes('unauthorized') || safeErrorString.includes('authentication')) {
       this.handleAuthError('session_expired', options);

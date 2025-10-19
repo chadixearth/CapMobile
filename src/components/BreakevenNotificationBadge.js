@@ -175,6 +175,21 @@ const BreakevenNotificationBadge = ({ driverId, style }) => {
 
           <View style={styles.modalActions}>
             <TouchableOpacity
+              style={styles.viewButton}
+              onPress={() => {
+                setModalVisible(false);
+                // Navigate to breakeven screen using global navigation
+                if (global.navigationRef?.current) {
+                  global.navigationRef.current.navigate('Breakeven', { driverId });
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="analytics-outline" size={16} color="#fff" />
+              <Text style={styles.viewText}>View Details</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
               style={styles.dismissButton}
               onPress={() => {
                 BreakevenNotificationManager.dismissNotificationsForToday(driverId);
@@ -183,16 +198,7 @@ const BreakevenNotificationBadge = ({ driverId, style }) => {
               activeOpacity={0.7}
             >
               <Ionicons name="checkmark-done" size={16} color={colors.primary} />
-              <Text style={styles.dismissText}>Dismiss for Today</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.refreshButton}
-              onPress={loadNotifications}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="refresh" size={16} color={colors.primary} />
-              <Text style={styles.refreshText}>Refresh</Text>
+              <Text style={styles.dismissText}>Dismiss</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -356,6 +362,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
+    gap: 8,
+    padding: 12,
+  },
+  viewButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+  },
+  viewText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   dismissButton: {
     flex: 1,
@@ -363,23 +386,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
-    borderRightWidth: 1,
-    borderRightColor: '#F0F0F0',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
   },
   dismissText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-  refreshButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-  },
-  refreshText: {
     color: colors.primary,
     fontSize: 14,
     fontWeight: '700',

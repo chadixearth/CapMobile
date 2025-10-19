@@ -25,6 +25,10 @@ import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsSer
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
 import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
+import { apiBaseUrl } from '../../services/networkConfig';
+import MobilePhotoUpload from '../../services/MobilePhotoUpload';
+
+const API_BASE_URL = apiBaseUrl();
 
 const { width } = Dimensions.get('window');
 
@@ -137,16 +141,27 @@ export default function GoodsServicesScreen() {
               if (res.success && res.data) {
                 const userData = res.data;
                 const standardizedProfile = standardizeUserProfile(userData);
+                
+                // Try multiple profile photo fields
+                const profilePhotoUrl = userData.profile_photo_url || 
+                  userData.profile_photo || 
+                  userData.avatar_url ||
+                  userData.user_metadata?.profile_photo_url ||
+                  userData.user_metadata?.profile_photo;
+                
                 return { 
                   id, 
                   ...standardizedProfile,
-                  profile_photos: userData.profile_photos || userData.photos || []
+                  ...userData, // Include all original user data
+                  profile_photos: userData.profile_photos || userData.photos || [],
+                  profile_photo_url: profilePhotoUrl,
+                  avatar_url: profilePhotoUrl
                 };
               }
             } catch (error) {
               console.warn('Failed to fetch profile for user:', id, error.message);
             }
-            return { id, name: '', email: '', role: 'user', phone: '' };
+            return { id, name: '', email: '', role: 'user', phone: '', profile_photo_url: null };
           })
         );
 
@@ -248,11 +263,16 @@ export default function GoodsServicesScreen() {
       
       // Upload new images if any selected
       if (selectedImages.length > 0) {
-        const uploadResult = await uploadGoodsServicesMedia(auth.user.id, selectedImages);
-        if (uploadResult.success) {
-          newMediaUrls = uploadResult.urls;
-        } else {
-          Alert.alert('Warning', 'Some images failed to upload, but profile will be saved.');
+        try {
+          const uploadRes = await uploadGoodsServicesMedia(auth.user.id, selectedImages);
+          if (!uploadRes.success) {
+            Alert.alert('Warning', 'Some images failed to upload, but profile will be saved.');
+            return;
+          }
+          newMediaUrls = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
+        } catch {
+          Alert.alert('Warning', 'Failed to upload photos. Please try again.');
+          return;
         }
       }
       
@@ -265,7 +285,8 @@ export default function GoodsServicesScreen() {
         setEditModalVisible(false);
         setSelectedImages([]);
         Alert.alert('Success', 'Your goods & services profile has been updated.');
-        fetchPosts(); // Refresh to show updated post
+        fetchPosts();
+        fetchUserProfile();
       } else {
         Alert.alert('Error', result.error || 'Failed to save profile');
       }
@@ -313,23 +334,21 @@ export default function GoodsServicesScreen() {
 
   const pickImages = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        aspect: [1, 1],
-      });
-
-      if (!result.canceled && result.assets) {
-        const newImages = result.assets.map(asset => ({
-          uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
-          type: asset.type || 'image/jpeg'
-        }));
-        setSelectedImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+      const capacity = Math.max(0, 5 - selectedImages.length);
+      if (capacity <= 0) {
+        Alert.alert('Limit Reached', 'You can only add up to 5 photos.');
+        return;
+      }
+      
+      const photoService = new MobilePhotoUpload();
+      const images = await photoService.pickMultipleImages(capacity);
+      
+      if (images && images.length > 0) {
+        setSelectedImages(prev => [...prev, ...images]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick images');
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to select images. Please try again.');
     }
   };
 
@@ -343,25 +362,49 @@ export default function GoodsServicesScreen() {
     // Handle both object format {url: "..."} and string format "..."
     const images = mediaArr
       .map((m) => {
+        let url = null;
         if (typeof m === 'string' && m.trim() !== '') {
-          return { url: m.trim().replace(/\?$/, '') };
+          url = m.trim().replace(/\?$/, '');
+        } else if (m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '') {
+          url = m.url.trim().replace(/\?$/, '');
         }
-        if (m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim() !== '') {
-          return { ...m, url: m.url.trim().replace(/\?$/, '') };
+        
+        if (!url) return null;
+        
+        // Ensure URL is properly formatted for Supabase storage
+        if (!url.startsWith('http') && !url.startsWith('data:')) {
+          // If it's a relative path, make it absolute
+          if (url.startsWith('/')) {
+            url = `${API_BASE_URL}${url}`;
+          }
         }
-        return null;
+        
+        return { url };
       })
       .filter(Boolean)
       .slice(0, 5);
     
     if (images.length === 0) return null;
     
+    console.log('Rendering media grid with images:', images);
+    
     return (
       <View style={styles.mediaContainer}>
         <View style={styles.mediaGrid}>
           {images.slice(0, 4).map((m, idx) => (
             <TouchableOpacity key={idx} style={styles.imageWrapper}>
-              <Image source={{ uri: m.url }} style={styles.gridImage} resizeMode="cover" />
+              <Image 
+                source={{ uri: m.url }} 
+                style={styles.gridImage} 
+                resizeMode="cover"
+                onError={(error) => {
+                  console.error('Image load error:', error.nativeEvent.error, 'URL:', m.url);
+                }}
+                onLoad={() => {
+                  console.log('Image loaded successfully:', m.url);
+                }}
+                defaultSource={require('../../../assets/icon.png')}
+              />
               {idx === 3 && images.length > 4 && (
                 <View style={styles.moreOverlay}>
                   <Text style={styles.moreText}>+{images.length - 4}</Text>
@@ -396,28 +439,47 @@ export default function GoodsServicesScreen() {
       if (!url || typeof url !== 'string') return null;
       const cleanUrl = url.trim();
       if (!cleanUrl) return null;
-      // Don't modify URLs that already have the correct bucket
-      if (cleanUrl.includes('goods-storage')) return cleanUrl;
-      // Fix URLs that need bucket correction
-      return cleanUrl.replace('/storage/v1/object/public/', '/storage/v1/object/public/goods-storage/');
+      
+      // If it's already a complete URL, return as is
+      if (cleanUrl.startsWith('http') || cleanUrl.startsWith('data:')) {
+        return cleanUrl;
+      }
+      
+      // If it's a relative path, make it absolute
+      if (cleanUrl.startsWith('/')) {
+        return `${API_BASE_URL}${cleanUrl}`;
+      }
+      
+      return cleanUrl;
     };
     
-    // Try media field first
+    // Try media field first - handle both string URLs and objects with url property
     if (item.media && Array.isArray(item.media) && item.media.length > 0) {
+      console.log('Processing media array:', item.media);
       const validMedia = item.media
         .map(m => {
-          if (typeof m === 'string') {
-            const url = normalizeUrl(m);
-            return url ? { url } : null;
+          let url = null;
+          if (typeof m === 'string' && m.trim()) {
+            url = m.trim();
+          } else if (m && typeof m === 'object' && m.url && typeof m.url === 'string' && m.url.trim()) {
+            url = m.url.trim();
           }
-          if (m && typeof m === 'object' && m.url) {
-            const url = normalizeUrl(m.url);
-            return url ? { ...m, url } : null;
+          
+          if (!url) return null;
+          
+          // Ensure URL is properly formatted
+          if (!url.startsWith('http') && !url.startsWith('data:')) {
+            if (url.startsWith('/')) {
+              url = `${API_BASE_URL}${url}`;
+            }
           }
-          return null;
+          
+          console.log('Processed media URL:', url);
+          return { url };
         })
         .filter(Boolean);
       
+      console.log('Valid media after processing:', validMedia);
       if (validMedia.length > 0) {
         mediaArray = validMedia;
       }
@@ -447,7 +509,7 @@ export default function GoodsServicesScreen() {
       }
     }
     
-    console.log('Media array for item:', item.id, mediaArray);
+
     
     const displayName = (() => {
       // Try direct name fields first
@@ -476,7 +538,20 @@ export default function GoodsServicesScreen() {
     const userRole = item.author_role || authorFromMap?.role || 'user';
     const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
-    const profilePhoto = getBestAvatarUrl(authorFromMap || item);
+    // Try multiple sources for profile photo
+    let profilePhoto = authorFromMap?.profile_photo_url || 
+      authorFromMap?.avatar_url || 
+      authorFromMap?.profile_photo ||
+      getBestAvatarUrl(authorFromMap) || 
+      getBestAvatarUrl(item) || 
+      item.author_profile_photo_url || 
+      item.profile_photo_url || 
+      item.avatar_url;
+    
+    // Generate avatar URL if no photo found
+    if (!profilePhoto && displayName) {
+      profilePhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6B2E2B&color=fff&size=128`;
+    }
 
     return (
       <View style={styles.card}>
@@ -484,7 +559,11 @@ export default function GoodsServicesScreen() {
         <View style={styles.headerRow}>
           <View style={styles.avatarContainer}>
             {profilePhoto ? (
-              <Image source={{ uri: profilePhoto }} style={styles.avatar} />
+              <Image 
+                source={{ uri: profilePhoto }} 
+                style={styles.avatar}
+                onError={() => console.log('Avatar failed to load:', profilePhoto)}
+              />
             ) : (
               <View style={[styles.avatar, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
                 <Text style={styles.avatarText}>
@@ -557,6 +636,8 @@ export default function GoodsServicesScreen() {
         )}
 
         {renderMediaGrid(mediaArray)}
+        
+
 
         {/* Driver-specific Reviews */}
         {driverReviews.length > 0 && (
@@ -619,8 +700,8 @@ export default function GoodsServicesScreen() {
         <View style={styles.userProfileCard}>
           <View style={styles.userProfileHeader}>
             <View style={styles.userAvatarContainer}>
-              {auth.user?.profile_photo ? (
-                <Image source={{ uri: auth.user.profile_photo }} style={styles.userAvatar} />
+              {getBestAvatarUrl(auth.user) ? (
+                <Image source={{ uri: getBestAvatarUrl(auth.user) }} style={styles.userAvatar} />
               ) : (
                 <View style={[styles.userAvatar, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
                   <Text style={styles.userAvatarText}>
@@ -655,6 +736,25 @@ export default function GoodsServicesScreen() {
             <View style={styles.userBioSection}>
               <Text style={styles.userBioText}>{userProfile.description}</Text>
               <Text style={styles.userBioDate}>Updated {formatDateTime(userProfile.updated_at)}</Text>
+              {/* Show user's own media */}
+              {userProfile.media && userProfile.media.length > 0 && (
+                <View style={styles.userMediaGrid}>
+                  {userProfile.media.slice(0, 3).map((m, idx) => {
+                    const url = typeof m === 'string' ? m : m?.url;
+                    if (!url) return null;
+                    return (
+                      <TouchableOpacity key={idx} style={styles.userMediaItem}>
+                        <Image source={{ uri: url }} style={styles.userMediaImage} resizeMode="cover" />
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {userProfile.media.length > 3 && (
+                    <View style={styles.userMediaMore}>
+                      <Text style={styles.userMediaMoreText}>+{userProfile.media.length - 3}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           ) : (
             <TouchableOpacity 
@@ -758,6 +858,8 @@ export default function GoodsServicesScreen() {
                   <Ionicons name="camera-outline" size={24} color={COLORS.primary} />
                   <Text style={styles.addPhotoText}>Add Photos</Text>
                 </TouchableOpacity>
+                
+
                 
                 {selectedImages.length > 0 && (
                   <View style={styles.selectedImagesContainer}>
@@ -1424,5 +1526,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 8,
+  },
+  
+  // User media styles
+  userMediaGrid: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 8,
+  },
+  userMediaItem: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  userMediaImage: {
+    width: '100%',
+    height: '100%',
+  },
+  userMediaMore: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userMediaMoreText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

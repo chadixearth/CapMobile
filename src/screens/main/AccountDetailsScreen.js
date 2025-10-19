@@ -29,12 +29,7 @@ import {
   uploadProfilePhoto,
   changePassword,
 } from '../../services/authService';
-import {
-  getGoodsServicesProfileByAuthor,
-  upsertGoodsServicesProfile,
-  deleteGoodsServicesPost,
-  uploadGoodsServicesMedia,
-} from '../../services/goodsServices';
+
 import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
@@ -73,11 +68,7 @@ export default function AccountDetailsScreen({ navigation }) {
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
-  const [bioDescription, setBioDescription] = useState('');
-  const [savingBio, setSavingBio] = useState(false);
-  const [bioMessage, setBioMessage] = useState('');
-  const [bioPhotos, setBioPhotos] = useState([]); // array of { uri }
-  const [existingBioId, setExistingBioId] = useState(null);
+
 
   // Change password state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -144,16 +135,7 @@ export default function AccountDetailsScreen({ navigation }) {
             }
           }
 
-          if (authorIdForBio) {
-            try {
-              const profileResult = await getGoodsServicesProfileByAuthor(authorIdForBio);
-              if (profileResult.success && profileResult.data) {
-                if (profileResult.data.description)
-                  setBioDescription(profileResult.data.description);
-                if (profileResult.data.id) setExistingBioId(profileResult.data.id);
-              }
-            } catch {}
-          }
+
 
           if (auth.role === 'tourist') {
             try {
@@ -439,124 +421,7 @@ export default function AccountDetailsScreen({ navigation }) {
     }
   };
 
-  const handleSaveBio = async () => {
-    try {
-      setSavingBio(true);
-      setBioMessage('');
 
-      const currentUser = await getCurrentUser();
-      if (!currentUser) {
-        setBioMessage('You must be logged in.');
-        return;
-      }
-      const role = (currentUser.role || '').toLowerCase();
-      if (!['driver', 'owner'].includes(role)) {
-        setBioMessage('Only drivers and owners can update bio.');
-        return;
-      }
-
-      if (!bioDescription.trim()) {
-        if (existingBioId) {
-          try {
-            const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
-            if (!del.success) {
-              setBioMessage(del.error || 'Failed to clear bio');
-              return;
-            }
-            setExistingBioId(null);
-          } catch (err) {
-            setBioMessage(err.message || 'Failed to clear bio');
-            return;
-          }
-        }
-        setBioDescription('');
-        setBioPhotos([]);
-        setBioMessage('Bio cleared.');
-        return;
-      }
-
-      let media = [];
-      if (bioPhotos.length > 0) {
-        try {
-          const uploadRes = await uploadGoodsServicesMedia(currentUser.id, bioPhotos);
-          if (!uploadRes.success) {
-            setBioMessage(uploadRes.error || 'Failed to upload photos');
-            return;
-          }
-          media = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
-        } catch {
-          setBioMessage('Failed to upload photos. Please try again.');
-          return;
-        }
-      }
-
-      const result = await upsertGoodsServicesProfile(currentUser.id, bioDescription.trim(), media);
-      if (result.success) {
-        setBioMessage('Bio saved.');
-        if (media.length > 0) setBioPhotos([]);
-        const returned = result.data?.data || result.data;
-        if (returned && (returned.id || (Array.isArray(returned) && returned[0]?.id))) {
-          const id = returned.id || returned[0]?.id;
-          setExistingBioId(id);
-        }
-
-        Alert.alert('Success', 'Your bio has been saved successfully!', [{ text: 'OK' }]);
-
-        setTimeout(async () => {
-          try {
-            const refreshResult = await getGoodsServicesProfileByAuthor(currentUser.id);
-            if (refreshResult.success && refreshResult.data) {
-              setBioDescription(refreshResult.data.description || '');
-              if (refreshResult.data.id) setExistingBioId(refreshResult.data.id);
-            }
-          } catch {}
-        }, 800);
-      } else {
-        setBioMessage(result.error || 'Failed to save bio');
-      }
-    } catch (e) {
-      setBioMessage(e.message || 'Failed to save bio');
-    } finally {
-      setSavingBio(false);
-    }
-  };
-
-  const handleBioMenu = async () => {
-    try {
-      Alert.alert('Bio options', '', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: existingBioId ? 'Update' : 'Add', onPress: () => handleSaveBio() },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const currentUser = await getCurrentUser();
-              if (!currentUser) {
-                setBioMessage('You must be logged in.');
-                return;
-              }
-              if (existingBioId) {
-                const del = await deleteGoodsServicesPost(existingBioId, currentUser.id);
-                if (!del.success) {
-                  setBioMessage(del.error || 'Failed to clear bio');
-                  return;
-                }
-              }
-              setBioDescription('');
-              setBioPhotos([]);
-              setExistingBioId(null);
-              setBioMessage('Bio cleared.');
-            } catch (err) {
-              setBioMessage(err.message || 'Failed to clear bio');
-            }
-          },
-        },
-      ]);
-    } catch {
-      setBioMessage('Unable to open menu');
-    }
-  };
 
   const openDeleteModal = () => {
     setDeleteOpen(true);
@@ -913,141 +778,7 @@ export default function AccountDetailsScreen({ navigation }) {
             </View>
           </Section>
 
-          {/* GOODS & SERVICES BIO (drivers/owners only) */}
-          {['driver', 'owner'].includes((auth.role || '').toLowerCase()) && (
-            <Section
-              icon="briefcase-outline"
-              title="Goods & Services Bio"
-              subtitle="Help customers understand your offerings"
-              right={
-                <TouchableOpacity onPress={handleBioMenu} style={styles.iconPill} activeOpacity={0.85}>
-                  <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.maroon} />
-                </TouchableOpacity>
-              }
-            >
-              <View style={styles.gsCard}>
-                <View style={styles.gsLabelRow}>
-                  <Text style={styles.gsLabel}>Short description</Text>
-                  <Text
-                    style={[
-                      styles.gsChar,
-                      (bioDescription?.length || 0) > 480 && { color: COLORS.red },
-                    ]}
-                  >
-                    {(bioDescription?.length || 0)}/500
-                  </Text>
-                </View>
 
-                <TextInput
-                  style={styles.gsInput}
-                  value={bioDescription}
-                  onChangeText={(t) => {
-                    if (t.length <= 500) setBioDescription(t);
-                  }}
-                  placeholder="Tell customers what you offer, your area, rates, and availability…"
-                  placeholderTextColor={COLORS.muted}
-                  multiline
-                  blurOnSubmit={false}
-                  autoCorrect={false}
-                  autoCapitalize="sentences"
-                />
-
-                <Text style={styles.gsHelp}>Tip: Keep it specific (services, locations, hours). You can add up to 5 photos.</Text>
-
-                <View style={styles.gsControls}>
-                  <TouchableOpacity
-                    style={styles.gsAddBtn}
-                    onPress={async () => {
-                      try {
-                        const capacity = Math.max(0, 5 - bioPhotos.length);
-                        if (capacity <= 0) return;
-                        const uploader = new MobilePhotoUpload();
-                        const images = await uploader.pickMultipleImages(capacity);
-                        if (images && images.length > 0) {
-                          setBioPhotos((prev) => [...prev, ...images]);
-                        }
-                      } catch {
-                        setBioMessage('Failed to select images. Please try again.');
-                      }
-                    }}
-                    disabled={bioPhotos.length >= 5 || savingBio}
-                    activeOpacity={0.95}
-                  >
-                    <Ionicons name="images-outline" size={16} color={COLORS.maroon} />
-                    <Text style={styles.gsAddText}>Add photos</Text>
-                    <Text style={styles.gsAddCount}>({bioPhotos.length}/5)</Text>
-                  </TouchableOpacity>
-
-                  <View style={{ flex: 1 }} />
-
-                  <TouchableOpacity
-                    onPress={handleSaveBio}
-                    activeOpacity={0.95}
-                    style={[styles.gsSaveBtn, savingBio && { opacity: 0.7 }]}
-                    disabled={savingBio}
-                  >
-                    {savingBio ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="save-outline" size={16} color="#fff" />
-                        <Text style={styles.gsSaveText}>{existingBioId ? 'Update Bio' : 'Save Bio'}</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.gsGrid}>
-                  {bioPhotos.map((photo, i) => (
-                    <View key={i} style={styles.gsTile}>
-                      <Image source={{ uri: photo.uri }} style={styles.gsThumb} />
-                      <TouchableOpacity
-                        style={styles.gsRemove}
-                        onPress={() => setBioPhotos((prev) => prev.filter((_, idx) => idx !== i))}
-                        activeOpacity={0.9}
-                      >
-                        <Ionicons name="close" size={14} color="#fff" />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-
-                  {bioPhotos.length < 5 && (
-                    <TouchableOpacity
-                      style={styles.gsAddTile}
-                      onPress={async () => {
-                        try {
-                          const capacity = Math.max(0, 5 - bioPhotos.length);
-                          if (capacity <= 0) return;
-                          const uploader = new MobilePhotoUpload();
-                          const images = await uploader.pickMultipleImages(capacity);
-                          if (images && images.length > 0) {
-                            setBioPhotos((prev) => [...prev, ...images]);
-                          }
-                        } catch {
-                          setBioMessage('Failed to select images. Please try again.');
-                        }
-                      }}
-                      activeOpacity={0.95}
-                    >
-                      <Ionicons name="add" size={22} color={COLORS.maroon} />
-                      <Text style={styles.gsAddTileText}>Add</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {!!bioMessage && (
-                  <Text
-                    style={[
-                      styles.gsNote,
-                      /saved|cleared/i.test(bioMessage) ? { color: COLORS.green } : { color: COLORS.red },
-                    ]}
-                  >
-                    {bioMessage}
-                  </Text>
-                )}
-              </View>
-            </Section>
-          )}
 
           {/* PRIVACY (tourist) */}
           {auth.role === 'tourist' && (
@@ -1468,99 +1199,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  /* GOODS & SERVICES */
-  gsCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: CARD.border,
-    borderColor: COLORS.border,
-    borderRadius: 14,
-    padding: 12,
-  },
-  gsLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  gsLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: COLORS.text,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  gsChar: { fontSize: 11, fontWeight: '800', color: '#6B7280' },
-  gsInput: {
-    minHeight: 110,
-    maxHeight: 220,
-    borderWidth: CARD.border,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 12,
-    color: COLORS.text,
-    backgroundColor: '#FBFBFB',
-    lineHeight: 20,
-  },
-  gsHelp: { marginTop: 6, fontSize: 12, color: '#6B7280' },
-  gsControls: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 10 },
-  gsAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#FDF4F4',
-    borderWidth: CARD.border,
-    borderColor: '#F3DADA',
-  },
-  gsAddText: { color: COLORS.maroon, fontWeight: '900', fontSize: 12 },
-  gsAddCount: { color: COLORS.maroon, fontWeight: '800', fontSize: 12 },
-  gsSaveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: COLORS.maroon,
-  },
-  gsSaveText: { color: '#fff', fontWeight: '900', fontSize: 12 },
-  gsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  gsTile: {
-    width: 86,
-    height: 86,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: CARD.border,
-    borderColor: COLORS.border,
-    position: 'relative',
-  },
-  gsThumb: { width: '100%', height: '100%' },
-  gsRemove: {
-    position: 'absolute',
-    right: 6,
-    top: 6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gsAddTile: {
-    width: 86,
-    height: 86,
-    borderRadius: 12,
-    borderWidth: CARD.border,
-    borderColor: '#F3DADA',
-    backgroundColor: '#FFF7F7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  gsAddTileText: { color: COLORS.maroon, fontWeight: '900', fontSize: 12 },
-  gsNote: { marginTop: 8, fontSize: 12, fontWeight: '800' },
+
 
   /* PRIVACY */
   privacyCard: {
