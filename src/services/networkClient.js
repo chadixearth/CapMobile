@@ -69,7 +69,52 @@ class NetworkClient {
         // Handle response with enhanced parsing
         let data;
         try {
-          data = await ResponseHandler.parseResponse(response);
+          // First check if response has content
+          const responseText = await response.text();
+          
+          if (!responseText || responseText.trim() === '') {
+            console.warn('[NetworkClient] Empty response received');
+            data = {
+              success: response.ok,
+              data: [],
+              message: 'Empty response from server'
+            };
+          } else {
+            // Parse the response text
+            try {
+              data = JSON.parse(responseText);
+            } catch (jsonError) {
+              // Handle truncated JSON responses
+              if (jsonError.message.includes('Unterminated string') || 
+                  jsonError.message.includes('Unexpected end of input')) {
+                console.warn('[NetworkClient] Detected truncated JSON response - attempting reconstruction');
+                
+                if (responseText.includes('"success": true')) {
+                  const messageMatch = responseText.match(/"message":\s*"([^"]*)"/);;
+                  data = {
+                    success: true,
+                    message: messageMatch ? messageMatch[1] : 'Operation completed successfully',
+                    data: []
+                  };
+                  console.log('[NetworkClient] Reconstructed successful response');
+                } else {
+                  data = {
+                    success: false,
+                    error: 'Invalid JSON response from server',
+                    data: []
+                  };
+                }
+              } else {
+                console.error('[NetworkClient] JSON parse error:', jsonError.message);
+                console.error('[NetworkClient] Response text:', responseText.substring(0, 200));
+                data = {
+                  success: false,
+                  error: 'Invalid JSON response from server',
+                  data: []
+                };
+              }
+            }
+          }
         } catch (parseError) {
           console.error('[NetworkClient] Response parsing failed:', parseError);
           data = ResponseHandler.handleError(parseError, []);

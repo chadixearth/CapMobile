@@ -82,6 +82,30 @@ export default function LoginScreen({ navigation }) {
     console.log('[LoginScreen] Starting login for:', email);
     
     try {
+      // Quick connection test first
+      console.log('[LoginScreen] Testing connection to server...');
+      const testController = new AbortController();
+      const testTimeoutId = setTimeout(() => testController.abort(), 5000);
+      
+      try {
+        const testResponse = await fetch(`${API_BASE_URL}/health/`, {
+          method: 'GET',
+          signal: testController.signal,
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Connection': 'close',
+          },
+        });
+        clearTimeout(testTimeoutId);
+        console.log('[LoginScreen] Connection test result:', testResponse.status);
+      } catch (testError) {
+        clearTimeout(testTimeoutId);
+        console.warn('[LoginScreen] Connection test failed:', testError.message);
+        if (testError.name === 'AbortError') {
+          throw new Error('Cannot connect to server. Please check your network connection.');
+        }
+      }
+      
       const allowedRoles = ['tourist', 'driver', 'owner'];
       console.log('[LoginScreen] Calling loginUser with:', { email, allowedRoles });
       const result = await loginUser(email, password, allowedRoles);
@@ -133,7 +157,30 @@ export default function LoginScreen({ navigation }) {
       }
     } catch (e) {
       console.error('[LoginScreen] Login error:', e);
-      setError('Network error. Please try again.');
+      console.error('[LoginScreen] Error details:', {
+        name: e.name,
+        message: e.message,
+        stack: e.stack?.substring(0, 500)
+      });
+      
+      let errorMessage = 'Network error. Please try again.';
+      
+      if (e.name === 'SyntaxError' && e.message.includes('JSON')) {
+        if (e.message.includes('Unterminated string') || e.message.includes('Unexpected end of input')) {
+          errorMessage = 'Server configuration error. Please contact support if this persists.';
+          console.error('[LoginScreen] Backend is sending truncated JSON responses');
+        } else {
+          errorMessage = 'Server response error. Please check your connection and try again.';
+        }
+      } else if (e.message.includes('timeout')) {
+        errorMessage = 'Request timed out. Please check your connection and try again.';
+      } else if (e.message.includes('Network request failed')) {
+        errorMessage = 'Cannot connect to server. Please check your network connection.';
+      } else if (e.message.includes('truncated JSON')) {
+        errorMessage = 'Server configuration issue. Please try again or contact support.';
+      }
+      
+      setError(errorMessage);
     } finally {
       console.log('[LoginScreen] Setting loading to false');
       setLoading(false);

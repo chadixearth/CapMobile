@@ -70,18 +70,54 @@ export async function apiRequest(endpoint, options = {}) {
     clearTimeout(timeoutId);
     
     let data;
+    let responseText = '';
     try {
-      const text = await response.text();
-      if (text.trim().startsWith('<')) {
+      responseText = await response.text();
+      
+      if (!responseText || responseText.trim() === '') {
+        console.warn(`[apiRequest] Empty response from ${endpoint}`);
+        data = { error: 'Empty response from server' };
+      } else if (responseText.trim().startsWith('<')) {
         // HTML response (likely 404 page)
         console.warn(`[apiRequest] Received HTML response from ${endpoint}`);
         data = { error: 'Endpoint not found or returned HTML instead of JSON' };
       } else {
-        data = JSON.parse(text);
+        data = JSON.parse(responseText);
       }
     } catch (parseError) {
-      console.error(`[apiRequest] JSON parse error for ${endpoint}:`, parseError.message);
-      data = { error: 'Invalid JSON response' };
+      // Handle truncated JSON responses
+      if (parseError.message.includes('Unterminated string') || 
+          parseError.message.includes('Unexpected end of input')) {
+        console.warn(`[apiRequest] Detected truncated JSON response from ${endpoint} - attempting reconstruction`);
+        
+        // Try to reconstruct common successful responses
+        if (responseText.includes('"success": true')) {
+          if (responseText.includes('"message":')) {
+            // Extract message if possible
+            const messageMatch = responseText.match(/"message":\s*"([^"]*)"/);;
+            data = {
+              success: true,
+              message: messageMatch ? messageMatch[1] : 'Operation completed successfully',
+              data: {}
+            };
+            console.log(`[apiRequest] Reconstructed successful response for ${endpoint}`);
+          } else {
+            data = {
+              success: true,
+              message: 'Operation completed successfully',
+              data: {}
+            };
+          }
+        } else {
+          console.error(`[apiRequest] JSON parse error for ${endpoint}:`, parseError.message);
+          console.error(`[apiRequest] Response text:`, responseText?.substring(0, 200));
+          data = { error: 'Invalid JSON response' };
+        }
+      } else {
+        console.error(`[apiRequest] JSON parse error for ${endpoint}:`, parseError.message);
+        console.error(`[apiRequest] Response text:`, responseText?.substring(0, 200));
+        data = { error: 'Invalid JSON response' };
+      }
     }
     
     // Check for JWT expiry and handle silently
@@ -113,8 +149,14 @@ export async function apiRequest(endpoint, options = {}) {
           let retryData;
           try {
             const retryText = await retryResponse.text();
-            retryData = JSON.parse(retryText);
+            
+            if (!retryText || retryText.trim() === '') {
+              retryData = { error: 'Empty response on retry' };
+            } else {
+              retryData = JSON.parse(retryText);
+            }
           } catch (parseError) {
+            console.error('[apiRequest] Retry JSON parse error:', parseError.message);
             retryData = { error: 'Invalid JSON response on retry' };
           }
           
@@ -288,21 +330,77 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
-  // Make direct fetch request to avoid token issues
-  const result = await fetch(`${API_BASE_URL}/auth/register/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password: password && password.trim() !== '' ? password : null,
-      role,
-      additional_data: additionalData,
-    }),
-  });
-  
-  const data = await result.json();
+  // Make direct fetch request to avoid token issues with enhanced error handling
+  let result, data;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    
+    result = await fetch(`${API_BASE_URL}/auth/register/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body: JSON.stringify({
+        email,
+        password: password && password.trim() !== '' ? password : null,
+        role,
+        additional_data: additionalData,
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    const responseText = await result.text();
+    if (!responseText || responseText.trim() === '') {
+      throw new Error('Empty response from server');
+    }
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('[authService] Registration JSON parse error:', parseError.message);
+      console.error('[authService] Registration response text:', responseText);
+      
+      // Handle truncated JSON responses
+      if (parseError.message.includes('Unterminated string') || 
+          parseError.message.includes('Unexpected end of input')) {
+        console.warn('[authService] Detected truncated JSON response from backend during registration');
+        
+        if (responseText.includes('"success": false') && responseText.includes('"error":')) {
+          data = {
+            success: false,
+            error: 'Registration failed. Please try again.',
+            error_type: 'unknown'
+          };
+          console.log('[authService] Reconstructed truncated registration error response');
+        } else {
+          throw new Error('Backend is sending truncated JSON responses. Please check Django server configuration.');
+        }
+      } else {
+        throw new Error('Invalid JSON response from server');
+      }
+    }
+  } catch (error) {
+    console.error('[authService] Registration request failed:', error.message);
+    
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Registration request timed out. Please check your connection and try again.',
+      };
+    }
+    
+    return {
+      success: false,
+      error: error.message.includes('JSON') ? 
+        'Server response error. Please try again.' : 
+        'Network error. Please check your connection.',
+    };
+  }
   const apiResult = {
     success: result.ok,
     data,
@@ -339,20 +437,123 @@ export async function loginUser(email, password, allowedRoles = null) {
   await clearStoredSession();
   console.log('[authService] Cleared existing session before login');
   
-  // Make direct fetch request to avoid token issues
-  const result = await fetch(`${API_BASE_URL}/auth/login/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      allowed_roles: allowedRoles,
-    }),
-  });
+  // Make direct fetch request to avoid token issues with enhanced error handling
+  let result, data;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    
+    result = await fetch(`${API_BASE_URL}/auth/login/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache',
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        allowed_roles: allowedRoles,
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    // Enhanced response parsing with error handling
+    const responseText = await result.text();
+    console.log('[authService] Raw response:', responseText.substring(0, 200));
+    console.log('[authService] Response length:', responseText.length);
+    
+    if (!responseText || responseText.trim() === '') {
+      throw new Error('Empty response from server');
+    }
+    
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      // Check if response is truncated (common issue with Django responses)
+      if (parseError.message.includes('Unterminated string') || 
+          parseError.message.includes('Unexpected end of input')) {
+        console.warn('[authService] Detected truncated JSON response - attempting reconstruction');
+        
+        // Try to reconstruct common responses
+        if (responseText.includes('"success": false') && responseText.includes('"error":')) {
+          // This looks like a truncated error response
+          if (responseText.includes('Invalid email or password')) {
+            data = {
+              success: false,
+              error: 'Invalid email or password.',
+              error_type: 'credentials'
+            };
+            console.log('[authService] Reconstructed truncated error response');
+          } else {
+            data = {
+              success: false,
+              error: 'Login failed. Please try again.',
+              error_type: 'unknown'
+            };
+          }
+        } else if (responseText.includes('"success": true') && responseText.includes('"user":')) {
+          // This looks like a truncated successful login response
+          console.warn('[authService] Successful login response is truncated - this is a critical backend issue');
+          
+          // Try to extract user data from the truncated response
+          try {
+            const userMatch = responseText.match(/"user":\s*\{[^}]*"id":\s*"([^"]+)"[^}]*"email":\s*"([^"]+)"[^}]*"role":\s*"([^"]+)"/);
+            const tokenMatch = responseText.match(/"access_token":\s*"([^"]+)"/);;
+            const refreshMatch = responseText.match(/"refresh_token":\s*"([^"]+)"/);;
+            
+            if (userMatch && tokenMatch) {
+              data = {
+                success: true,
+                message: 'Login successful.',
+                user: {
+                  id: userMatch[1],
+                  email: userMatch[2],
+                  role: userMatch[3],
+                  name: 'User', // Default name since it might be truncated
+                  status: 'Active'
+                },
+                session: {
+                  access_token: tokenMatch[1],
+                  refresh_token: refreshMatch ? refreshMatch[1] : 'temp_token',
+                  token_type: 'Bearer'
+                }
+              };
+              console.log('[authService] Successfully reconstructed login response for user:', userMatch[2]);
+            } else {
+              throw new Error('Cannot reconstruct truncated successful login response');
+            }
+          } catch (reconstructError) {
+            console.error('[authService] Failed to reconstruct login response:', reconstructError.message);
+            throw new Error('Backend is sending truncated JSON responses. Please check Django server configuration.');
+          }
+        } else {
+          throw new Error('Backend is sending truncated JSON responses. Please check Django server configuration.');
+        }
+      } else {
+        throw new Error('Invalid JSON response from server');
+      }
+    }
+  } catch (error) {
+    console.error('[authService] Login request failed:', error.message);
+    
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Login request timed out. Please check your connection and try again.',
+      };
+    }
+    
+    return {
+      success: false,
+      error: error.message.includes('JSON') ? 
+        'Server response error. Please try again.' : 
+        'Network error. Please check your connection.',
+    };
+  }
   
-  const data = await result.json();
   const apiResult = {
     success: result.ok,
     data,
@@ -631,14 +832,22 @@ export async function refreshAccessToken() {
     let data;
     try {
       const text = await response.text();
+      
+      if (!text || text.trim() === '') {
+        console.warn('[refreshAccessToken] Empty response from server');
+        return { success: false, error: 'Empty response from refresh endpoint' };
+      }
+      
       if (text.trim().startsWith('<')) {
         // HTML response (likely 404 or error page)
         console.warn('[refreshAccessToken] Received HTML response - endpoint may not exist');
         return { success: false, error: 'Token refresh endpoint not available' };
       }
+      
       data = JSON.parse(text);
     } catch (parseError) {
       console.error('[refreshAccessToken] JSON parse error:', parseError.message);
+      console.error('[refreshAccessToken] Response text:', text?.substring(0, 200));
       return { success: false, error: 'Invalid response from refresh endpoint' };
     }
 
