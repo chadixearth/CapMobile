@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { checkAuthStatus, logoutUser, validateSession, setSessionExpiredCallback } from '../services/authService';
+import { checkAuthStatus, logoutUser, validateSession, setSessionExpiredCallback, setProfileUpdateCallback } from '../services/authService';
 import { supabase } from '../services/supabase';
 import AuthApiLoader from '../services/AuthApiLoader';
 import ModalManager from '../services/ModalManager';
@@ -113,34 +113,63 @@ export const useAuth = () => {
   const logout = useCallback(async (navigationRef = null) => {
     console.log('[useAuth] Starting logout process');
     
-    // Clear state immediately
-    updateGlobalAuthState({
-      isAuthenticated: false,
-      user: null,
-      role: null,
-      loading: false
-    });
-    
-    // Clear caches
-    AuthApiLoader.clearCache();
-    
-    // Clear authenticated data
     try {
-      const AppInitService = (await import('../services/AppInitService')).default;
-      AppInitService.clearAuthenticatedData();
+      // Set loading state during logout
+      updateGlobalAuthState({ loading: true });
+      
+      // Backend cleanup first (with timeout)
+      const logoutPromise = Promise.race([
+        logoutUser(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
+      ]);
+      
+      try {
+        await logoutPromise;
+        console.log('[useAuth] Backend logout successful');
+      } catch (error) {
+        console.warn('[useAuth] Backend logout failed or timed out:', error.message);
+        // Continue with local cleanup even if backend fails
+      }
+      
+      // Clear local state and caches
+      AuthApiLoader.clearCache();
+      
+      // Clear authenticated data
+      try {
+        const AppInitService = (await import('../services/AppInitService')).default;
+        AppInitService.clearAuthenticatedData();
+      } catch (error) {
+        console.warn('[useAuth] Failed to clear authenticated data:', error);
+      }
+      
+      // Supabase cleanup (non-blocking)
+      supabase.auth.signOut().catch(() => {});
+      
+      // Clear auth state last
+      updateGlobalAuthState({
+        isAuthenticated: false,
+        user: null,
+        role: null,
+        loading: false
+      });
+      
+      console.log('[useAuth] Auth state cleared, RootNavigator will handle navigation');
+      console.log('[useAuth] Logout complete');
+      
+      return { success: true };
     } catch (error) {
-      console.warn('[useAuth] Failed to clear authenticated data:', error);
+      console.error('[useAuth] Logout error:', error);
+      
+      // Force clear state even on error
+      updateGlobalAuthState({
+        isAuthenticated: false,
+        user: null,
+        role: null,
+        loading: false
+      });
+      
+      return { success: true }; // Always return success for logout
     }
-    
-    // Don't force navigation - let RootNavigator handle it
-    console.log('[useAuth] Auth state cleared, RootNavigator will handle navigation');
-    
-    // Backend cleanup (non-blocking)
-    logoutUser().catch(() => {});
-    supabase.auth.signOut().catch(() => {});
-    
-    console.log('[useAuth] Logout complete');
-    return { success: true };
   }, []);
 
   // Login function (updates local state and loads authenticated APIs)
@@ -188,6 +217,15 @@ export const useAuth = () => {
         isAuthenticated: false,
         user: null,
         role: null
+      });
+    });
+    
+    // Set up profile update handler
+    setProfileUpdateCallback((updatedUser) => {
+      console.log('[useAuth] Profile updated, refreshing auth state');
+      updateGlobalAuthState({
+        user: updatedUser,
+        role: updatedUser.role || globalAuthState.role
       });
     });
   }, []); // Remove checkAuth from dependencies to avoid infinite loop

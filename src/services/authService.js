@@ -923,6 +923,13 @@ export async function getAccessToken() {
   }
 }
 
+// Global profile update callback for notifying useAuth hook
+let profileUpdateCallback = null;
+
+export function setProfileUpdateCallback(callback) {
+  profileUpdateCallback = callback;
+}
+
 /**
  * Update user profile information
  * @param {string} userId
@@ -965,16 +972,23 @@ export async function updateUserProfile(userId, profileData) {
     
     if (result.success && result.data && result.data.success) {
       // Update local session with new data
+      let updatedUser = null;
       try {
         const session = await getStoredSession();
         if (session.user) {
-          const updatedUser = { ...session.user, ...cleanedData };
+          updatedUser = { ...session.user, ...cleanedData };
           await storeSession({
             access_token: session.accessToken,
             refresh_token: session.refreshToken,
             user: updatedUser
           });
           console.log('[authService] Local session updated successfully');
+          
+          // Notify useAuth hook about the profile update
+          if (profileUpdateCallback) {
+            profileUpdateCallback(updatedUser);
+            console.log('[authService] Profile update callback triggered');
+          }
         }
       } catch (sessionError) {
         console.warn('Failed to update local session:', sessionError);
@@ -982,7 +996,7 @@ export async function updateUserProfile(userId, profileData) {
       
       return {
         success: true,
-        data: result.data.data || result.data.user,
+        data: result.data.data || result.data.user || updatedUser,
         message: result.data.message || 'Profile updated successfully'
       };
     }
@@ -1091,6 +1105,12 @@ export async function uploadProfilePhoto(userId, photoUri) {
             refresh_token: session.refreshToken,
             user: updatedUser
           });
+          
+          // Notify useAuth hook about the profile update
+          if (profileUpdateCallback) {
+            profileUpdateCallback(updatedUser);
+            console.log('[authService] Profile photo update callback triggered');
+          }
           
           // Also update the profile in the database with the correct field
           const profileUpdateResult = await updateUserProfile(session.user.id, {

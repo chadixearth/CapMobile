@@ -154,7 +154,7 @@ export default function AccountDetailsScreen({ navigation }) {
       };
       fetchUser();
     }
-  }, [auth.loading, auth.isAuthenticated]);
+  }, [auth.loading, auth.isAuthenticated, auth.user]); // Added auth.user to refresh when profile updates
 
   if (auth.loading) {
     return (
