@@ -28,7 +28,7 @@ export function setSessionExpiredCallback(callback) {
 export async function apiRequest(endpoint, options = {}) {
   try {
     // Only log non-JWT related requests
-    if (!endpoint.includes('JWT') && !data?.message?.includes('JWT expired')) {
+    if (!endpoint.includes('JWT')) {
       console.log(`[authService] Making API request to: ${API_BASE_URL}${endpoint}`);
     }
     
@@ -41,7 +41,7 @@ export async function apiRequest(endpoint, options = {}) {
       ...options.headers,
     };
     
-    // Only add auth token for non-auth endpoints
+    // Add auth token for all endpoints except auth endpoints
     const isAuthEndpoint = endpoint.includes('/auth/login') || 
                           endpoint.includes('/auth/register') || 
                           endpoint.includes('/auth/logout');
@@ -50,10 +50,7 @@ export async function apiRequest(endpoint, options = {}) {
       const token = await getAccessToken();
       if (token) {
         headers.Authorization = `Bearer ${token}`;
-        // Silent auth token addition
       }
-    } else {
-      // Silent auth endpoint handling
     }
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -330,11 +327,42 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
+  // Test connection and registration endpoint first
+  console.log('[authService] Testing connection before registration...');
+  try {
+    const { testRegistrationEndpoint } = await import('./networkConfig');
+    const endpointTest = await testRegistrationEndpoint();
+    
+    if (!endpointTest.success) {
+      console.log('[authService] Registration endpoint test failed:', endpointTest);
+      return {
+        success: false,
+        error: `Registration endpoint not available (Status: ${endpointTest.status || 'unknown'}). Please ensure the backend server is running and the registration API is implemented.`,
+      };
+    }
+    
+    console.log('[authService] Registration endpoint test passed:', endpointTest.status);
+  } catch (testError) {
+    console.log('[authService] Endpoint test failed:', testError.message);
+    return {
+      success: false,
+      error: 'Cannot connect to server. Please check your network connection and ensure the backend server is running.',
+    };
+  }
+
   // Make direct fetch request to avoid token issues with enhanced error handling
   let result, data;
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased to 10 seconds
+    
+    console.log('[authService] Making registration request to:', `${API_BASE_URL}/auth/register/`);
+    console.log('[authService] Registration data:', {
+      email,
+      role,
+      hasPassword: !!password,
+      additionalDataKeys: Object.keys(additionalData)
+    });
     
     result = await fetch(`${API_BASE_URL}/auth/register/`, {
       method: 'POST',
@@ -342,19 +370,30 @@ export async function registerUser(email, password, role, additionalData = {}) {
         'Content-Type': 'application/json',
         'Connection': 'close',
         'Cache-Control': 'no-cache',
+        'Accept': 'application/json',
       },
       body: JSON.stringify({
         email,
         password: password && password.trim() !== '' ? password : null,
         role,
         additional_data: additionalData,
+        verification_method: additionalData.verification_method || 'email',
       }),
       signal: controller.signal,
     });
     
     clearTimeout(timeoutId);
     
+    console.log('[authService] Registration response status:', result.status);
+    console.log('[authService] Registration response headers:', {
+      contentType: result.headers.get('content-type'),
+      contentLength: result.headers.get('content-length')
+    });
+    
     const responseText = await result.text();
+    console.log('[authService] Registration response length:', responseText.length);
+    console.log('[authService] Registration response preview:', responseText.substring(0, 200));
+    
     if (!responseText || responseText.trim() === '') {
       throw new Error('Empty response from server');
     }
@@ -371,21 +410,58 @@ export async function registerUser(email, password, role, additionalData = {}) {
         console.warn('[authService] Detected truncated JSON response from backend during registration');
         
         if (responseText.includes('"success": false') && responseText.includes('"error":')) {
+          let errorMsg = 'Registration failed.';
+          if (responseText.includes('10 seconds') || responseText.includes('too many')) {
+            errorMsg = 'Too many requests. Wait 10 seconds.';
+          } else if (responseText.includes('email already')) {
+            errorMsg = 'Email already registered. Check your email for confirmation link.';
+          } else if (responseText.includes('pending approval')) {
+            errorMsg = 'Your registration is already submitted and waiting for admin approval. You will be notified once approved.';
+          }
           data = {
             success: false,
-            error: 'Registration failed. Please try again.',
-            error_type: 'unknown'
+            error: errorMsg,
+            pending_approval: responseText.includes('pending approval')
           };
           console.log('[authService] Reconstructed truncated registration error response');
+        } else if (responseText.includes('"success": true')) {
+          // Handle truncated success response
+          const userMatch = responseText.match(/"user":\s*\{[^}]*"id":\s*"([^"]+)"[^}]*"email":\s*"([^"]+)"[^}]*"role":\s*"([^"]+)"/);
+          const statusMatch = responseText.match(/"status":\s*"([^"]+)"/);
+          
+          if (userMatch) {
+            data = {
+              success: true,
+              message: 'Check your email to confirm your account.',
+              user: {
+                id: userMatch[1],
+                email: userMatch[2],
+                role: userMatch[3]
+              },
+              status: statusMatch ? statusMatch[1] : 'email_confirmation_required'
+            };
+            console.log('[authService] Reconstructed truncated success response');
+          } else {
+            data = {
+              success: true,
+              message: 'Registration successful.',
+              status: 'active'
+            };
+          }
         } else {
           throw new Error('Backend is sending truncated JSON responses. Please check Django server configuration.');
         }
       } else {
-        throw new Error('Invalid JSON response from server');
+        data = { success: false, error: 'Invalid response from server.' };
       }
     }
   } catch (error) {
     console.error('[authService] Registration request failed:', error.message);
+    console.error('[authService] Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.substring(0, 300)
+    });
     
     if (error.name === 'AbortError') {
       return {
@@ -394,11 +470,16 @@ export async function registerUser(email, password, role, additionalData = {}) {
       };
     }
     
+    if (error.message.includes('Network request failed')) {
+      return {
+        success: false,
+        error: `Cannot connect to registration server at ${API_BASE_URL}/auth/register/. Please check:\n1. Backend server is running\n2. Device is on same network\n3. IP address ${API_BASE_URL.split('//')[1]} is correct`,
+      };
+    }
+    
     return {
       success: false,
-      error: error.message.includes('JSON') ? 
-        'Server response error. Please try again.' : 
-        'Network error. Please check your connection.',
+      error: error.message || 'Network error. Please check your connection.',
     };
   }
   const apiResult = {
@@ -412,8 +493,19 @@ export async function registerUser(email, password, role, additionalData = {}) {
       success: true,
       user: apiResult.data.user,
       message: apiResult.data.message,
-      status: apiResult.data.status, // Could be 'pending_approval' for driver/owner
+      status: apiResult.data.status, // Could be 'pending_approval' for driver/owner or 'email_confirmation_required' for tourist
       registration_id: apiResult.data.registration_id, // For pending registrations
+      email_confirmation_required: apiResult.data.status === 'email_confirmation_required',
+    };
+  }
+
+  // Handle pending approval case as informational, not error
+  if (apiResult.data?.pending_approval) {
+    return {
+      success: true,
+      message: apiResult.data.error,
+      status: 'already_pending',
+      pending_approval: true
     };
   }
 
@@ -441,7 +533,7 @@ export async function loginUser(email, password, allowedRoles = null) {
   let result, data;
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
     
     result = await fetch(`${API_BASE_URL}/auth/login/`, {
       method: 'POST',
@@ -1236,6 +1328,40 @@ export async function changePassword(currentPassword, newPassword) {
     return {
       success: false,
       error: error.message || 'Failed to change password.'
+    };
+  }
+}
+
+/**
+ * Resend email confirmation for unconfirmed accounts
+ * @param {string} email
+ * @returns {Promise<{ success: boolean, message?: string, error?: string }>}
+ */
+export async function resendConfirmationEmail(email) {
+  try {
+    console.log('[authService] Resending confirmation email for:', email);
+    
+    const result = await apiRequest('/auth/resend-confirmation/', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+    
+    if (result.success && result.data && result.data.success) {
+      return {
+        success: true,
+        message: result.data.message || 'Confirmation email sent successfully.'
+      };
+    }
+    
+    return {
+      success: false,
+      error: result.data?.error || result.error || 'Failed to send confirmation email.'
+    };
+  } catch (error) {
+    console.error('resendConfirmationEmail error:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to send confirmation email.'
     };
   }
 }

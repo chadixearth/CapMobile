@@ -142,6 +142,12 @@ const RegistrationScreen = ({ navigation, route }) => {
   const [businessPermit, setBusinessPermit] = useState(''); // kept for future use
   const [drivesOwnTartanilla, setDrivesOwnTartanilla] = useState(false);
 
+  // Notification preference (driver/owner only)
+  const [notificationPreference, setNotificationPreference] = useState('both');
+  
+  // Verification method for tourists
+  const [verificationMethod, setVerificationMethod] = useState('email');
+
   // UI
   const [agree, setAgree] = useState(false);
   const [showTC, setShowTC] = useState(false);
@@ -149,8 +155,7 @@ const RegistrationScreen = ({ navigation, route }) => {
 
   // ===== Stepper (Fabric-safe animations) =====
   const isFabric = global?.nativeFabricUIManager != null;
-  const canUseLayoutAnimation =
-    Platform.OS === 'ios' || (Platform.OS === 'android' && !isFabric);
+  const canUseLayoutAnimation = Platform.OS === 'ios' && !isFabric;
   const withLayoutAnimation = (cb) => {
     if (canUseLayoutAnimation) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -198,6 +203,11 @@ const RegistrationScreen = ({ navigation, route }) => {
         showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
         return;
       }
+      // Validate phone number if SMS verification is chosen
+      if (verificationMethod === 'phone' && !phone) {
+        showError('Phone number is required for SMS verification.', { title: 'Phone Required', type: 'warning' });
+        return;
+      }
     } else if ((password || confirmPassword) && password !== confirmPassword) {
       showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
       return;
@@ -235,6 +245,7 @@ const RegistrationScreen = ({ navigation, route }) => {
           license_number: licenseNumber,
           owns_tartanilla: !!ownsTartanilla,
           owned_count: ownsTartanilla ? Math.max(0, parseInt(ownedCount, 10) || 0) : 0,
+          preferred_notification: notificationPreference,
         };
       } else if (role === 'owner') {
         additionalData = {
@@ -243,9 +254,15 @@ const RegistrationScreen = ({ navigation, route }) => {
           phone,
           business_name: businessName,
           drives_own_tartanilla: !!drivesOwnTartanilla,
+          preferred_notification: notificationPreference,
         };
       } else {
-        additionalData = { first_name: firstName, last_name: lastName };
+        additionalData = { 
+          first_name: firstName, 
+          last_name: lastName,
+          phone: phone, // Include phone for SMS verification if needed
+          verification_method: verificationMethod
+        };
       }
 
       const result = await registerUser(
@@ -274,10 +291,31 @@ const RegistrationScreen = ({ navigation, route }) => {
               { cancelable: false }
             );
           }
+        } else if (result.status === 'email_verification_required') {
+          // Navigate to verification screen for email verification
+          navigation.navigate('Verification', {
+            email: email,
+            verification_method: 'email',
+            user: result.user
+          });
+        } else if (result.status === 'phone_verification_required') {
+          // Navigate to verification screen for phone verification
+          navigation.navigate('Verification', {
+            phone: phone,
+            verification_method: 'phone',
+            user: result.user
+          });
+        } else if (result.status === 'phone_verification_pending') {
+          Alert.alert(
+            'Registration Submitted',
+            'SMS verification is currently pending. Please contact admin for account activation.',
+            [{ text: 'OK', onPress: okAction }],
+            { cancelable: false }
+          );
         } else {
           Alert.alert(
             'Registration Successful',
-            result.message || 'Please check your phone for SMS verification.',
+            'Your account has been created successfully.',
             [{ text: 'OK', onPress: okAction }],
             { cancelable: false }
           );
@@ -457,6 +495,7 @@ const RegistrationScreen = ({ navigation, route }) => {
                   value={email}
                   onChangeText={setEmail}
                   registerRef={reg('email')}
+                  nextField={verificationMethod === 'phone' ? focus('phone') : undefined}
                   onFocusScroll={scrollToInput}
                   styles={styles}
                   ACCENT={ACCENT}
@@ -464,6 +503,61 @@ const RegistrationScreen = ({ navigation, route }) => {
                   autoCapitalize="none"
                   keyboardType="email-address"
                 />
+                
+                {/* Verification Method Selection */}
+                <View style={styles.questionBox}>
+                  <Text style={styles.questionTitle}>How would you like to verify your account?</Text>
+                  <Text style={styles.questionSubtitle}>Choose your preferred verification method</Text>
+                  <View style={styles.notificationOptions}>
+                    <TouchableOpacity
+                      style={[styles.notificationOption, verificationMethod === 'email' && styles.notificationOptionSelected]}
+                      onPress={() => setVerificationMethod('email')}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons 
+                        name={verificationMethod === 'email' ? 'radio-button-on' : 'radio-button-off'} 
+                        size={18} 
+                        color={verificationMethod === 'email' ? ACCENT : colors.textSecondary} 
+                      />
+                      <View style={styles.notificationOptionText}>
+                        <Text style={[styles.notificationOptionTitle, verificationMethod === 'email' && { color: ACCENT }]}>Email Verification</Text>
+                        <Text style={styles.notificationOptionDesc}>Receive verification link via email</Text>
+                      </View>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.notificationOption, verificationMethod === 'phone' && styles.notificationOptionSelected]}
+                      onPress={() => setVerificationMethod('phone')}
+                      activeOpacity={0.9}
+                    >
+                      <Ionicons 
+                        name={verificationMethod === 'phone' ? 'radio-button-on' : 'radio-button-off'} 
+                        size={18} 
+                        color={verificationMethod === 'phone' ? ACCENT : colors.textSecondary} 
+                      />
+                      <View style={styles.notificationOptionText}>
+                        <Text style={[styles.notificationOptionTitle, verificationMethod === 'phone' && { color: ACCENT }]}>SMS Verification</Text>
+                        <Text style={styles.notificationOptionDesc}>Receive verification code via text message</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                {/* Phone input for SMS verification */}
+                {verificationMethod === 'phone' && (
+                  <ModernInput
+                    leftIcon="call-outline"
+                    placeholder="Phone number"
+                    value={phone}
+                    onChangeText={setPhone}
+                    registerRef={reg('phone')}
+                    onFocusScroll={scrollToInput}
+                    styles={styles}
+                    ACCENT={ACCENT}
+                    colors={colors}
+                    keyboardType="phone-pad"
+                  />
+                )}
               </>
             )}
 
@@ -657,6 +751,63 @@ const RegistrationScreen = ({ navigation, route }) => {
                   </View>
                 </View>
               </>
+            )}
+
+            {/* Notification Preference for Driver/Owner */}
+            {(role === 'driver' || role === 'owner') && (
+              <View style={styles.questionBox}>
+                <Text style={styles.questionTitle}>How would you like to receive your login credentials?</Text>
+                <Text style={styles.questionSubtitle}>Choose your preferred notification method</Text>
+                <View style={styles.notificationOptions}>
+                  <TouchableOpacity
+                    style={[styles.notificationOption, notificationPreference === 'email' && styles.notificationOptionSelected]}
+                    onPress={() => setNotificationPreference('email')}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons 
+                      name={notificationPreference === 'email' ? 'radio-button-on' : 'radio-button-off'} 
+                      size={18} 
+                      color={notificationPreference === 'email' ? ACCENT : colors.textSecondary} 
+                    />
+                    <View style={styles.notificationOptionText}>
+                      <Text style={[styles.notificationOptionTitle, notificationPreference === 'email' && { color: ACCENT }]}>Email Only</Text>
+                      <Text style={styles.notificationOptionDesc}>Receive credentials via email</Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.notificationOption, notificationPreference === 'sms' && styles.notificationOptionSelected]}
+                    onPress={() => setNotificationPreference('sms')}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons 
+                      name={notificationPreference === 'sms' ? 'radio-button-on' : 'radio-button-off'} 
+                      size={18} 
+                      color={notificationPreference === 'sms' ? ACCENT : colors.textSecondary} 
+                    />
+                    <View style={styles.notificationOptionText}>
+                      <Text style={[styles.notificationOptionTitle, notificationPreference === 'sms' && { color: ACCENT }]}>SMS Only</Text>
+                      <Text style={styles.notificationOptionDesc}>Receive credentials via text message</Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.notificationOption, notificationPreference === 'both' && styles.notificationOptionSelected]}
+                    onPress={() => setNotificationPreference('both')}
+                    activeOpacity={0.9}
+                  >
+                    <Ionicons 
+                      name={notificationPreference === 'both' ? 'radio-button-on' : 'radio-button-off'} 
+                      size={18} 
+                      color={notificationPreference === 'both' ? ACCENT : colors.textSecondary} 
+                    />
+                    <View style={styles.notificationOptionText}>
+                      <Text style={[styles.notificationOptionTitle, notificationPreference === 'both' && { color: ACCENT }]}>Both Email & SMS</Text>
+                      <Text style={styles.notificationOptionDesc}>Receive credentials via both methods</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
 
             <Text style={styles.helperCaption}>Review and accept our terms to continue</Text>
@@ -992,6 +1143,26 @@ const styles = StyleSheet.create({
   declineBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   acceptBtn: { backgroundColor: ACCENT },
   footerBtnText: { fontSize: 13, fontWeight: '700' },
+
+  // Notification preferences
+  questionSubtitle: { fontSize: 11, color: colors.textSecondary, marginBottom: 12, marginTop: 2 },
+  notificationOptions: { gap: 8 },
+  notificationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  notificationOptionSelected: {
+    borderColor: ACCENT + '60',
+    backgroundColor: ACCENT + '08',
+  },
+  notificationOptionText: { marginLeft: 10, flex: 1 },
+  notificationOptionTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  notificationOptionDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 
   // Pending modal
   pendingBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },

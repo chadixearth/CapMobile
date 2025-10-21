@@ -81,7 +81,7 @@ const NotificationManager = ({ navigation }) => {
         // Silently handle push notification errors
       }
       
-      // Start polling for notifications
+      // Start polling for notifications with reduced frequency
       NotificationService.startPolling(currentUser.id, handleNewNotifications);
       
     } catch (error) {

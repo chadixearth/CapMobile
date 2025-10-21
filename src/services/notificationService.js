@@ -15,6 +15,10 @@ class NotificationService {
   static callbacks = new Set();
   static locationWatcher = null;
   static pushToken = null;
+  static consecutiveFailures = 0;
+  static maxFailures = 3;
+  static backoffTime = 0;
+  static isCircuitOpen = false;
 
   // Initialize notification service
   static async initialize() {
@@ -40,11 +44,14 @@ class NotificationService {
         message,
         type,
         role
+      }, {
+        timeout: 8000,
+        retries: 0
       });
       
       return result.data;
     } catch (error) {
-      console.error('Error sending notification:', error);
+      console.log('[NotificationService] Send notification failed:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -57,12 +64,10 @@ class NotificationService {
         return ResponseHandler.createSafeResponse([]);
       }
       
-      console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
-      
-      // Use longer timeout for notifications to prevent connection issues
+      // Use shorter timeout for notifications to prevent connection issues
       const result = await networkClient.get(`/notifications/?user_id=${userId}`, {
-        timeout: 25000, // Increased to 25s
-        retries: 1      // Reduced to 1 retry to prevent congestion
+        timeout: 8000,  // Reduced to 8s
+        retries: 0      // No retries to prevent congestion
       });
       
       // Ensure result has proper structure
@@ -71,17 +76,24 @@ class NotificationService {
       }
       
       const notifications = result.data?.data || result.data || [];
-      console.log(`[NotificationService] Received ${notifications.length} notifications for user ${userId}`);
       
       return ResponseHandler.createSafeResponse(notifications);
     } catch (error) {
-      // Don't log timeout errors as errors - they're expected sometimes
-      if (error.message && error.message.includes('timeout')) {
-        console.log('[NotificationService] Request timeout - returning cached data');
+      // Handle different types of errors gracefully
+      const errorMessage = error?.message || 'Unknown error';
+      
+      if (errorMessage.includes('timeout') || errorMessage.includes('Request timeout')) {
+        console.log('[NotificationService] Request timeout - backend may be slow');
+      } else if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+        console.log('[NotificationService] Notification endpoint not found - feature may not be implemented');
+      } else if (errorMessage.includes('500')) {
+        console.log('[NotificationService] Backend server error - notifications temporarily unavailable');
+      } else if (errorMessage.includes('Network request failed')) {
+        console.log('[NotificationService] Network connection failed - notifications unavailable');
       } else {
-        console.error('[NotificationService] Error fetching notifications:', error);
+        console.log('[NotificationService] Network error:', errorMessage);
       }
-      return ResponseHandler.handleError(error, []);
+      return ResponseHandler.createSafeResponse([]);
     }
   }
 
@@ -91,10 +103,12 @@ class NotificationService {
       const result = await networkClient.put('/notifications/mark-read/', {
         notification_id: notificationId
       }, {
-        timeout: 10000
+        timeout: 5000,
+        retries: 0
       });
       return result?.data || { success: true };
     } catch (error) {
+      console.log('[NotificationService] Mark as read failed:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -103,21 +117,45 @@ class NotificationService {
   static async markAllAsRead() {
     try {
       const result = await networkClient.put('/notifications/mark-all-read/', {}, {
-        timeout: 10000
+        timeout: 5000,
+        retries: 0
       });
       return result?.data || { success: true };
     } catch (error) {
+      console.log('[NotificationService] Mark all as read failed:', error.message);
       return { success: false, error: error.message };
     }
   }
 
   // Start real-time polling for notifications
-  static startPolling(userId, callback) {
+  static async startPolling(userId, callback) {
     if (this.pollingInterval) {
       this.stopPolling();
     }
 
     this.callbacks.add(callback);
+    
+    // Test if notification endpoint is available before starting polling
+    try {
+      const { testNotificationEndpoint } = await import('./networkConfig');
+      const endpointTest = await testNotificationEndpoint();
+      
+      if (!endpointTest.success) {
+        console.log('[NotificationService] Notification endpoint not available, disabling notifications');
+        // Still call callback with empty array so UI doesn't break
+        if (callback) {
+          callback([]);
+        }
+        return;
+      }
+      console.log('[NotificationService] Notification endpoint available, starting polling');
+    } catch (error) {
+      console.log('[NotificationService] Could not test notification endpoint, disabling notifications to prevent errors');
+      if (callback) {
+        callback([]);
+      }
+      return;
+    }
     
     // Register for push notifications
     try {
@@ -134,11 +172,27 @@ class NotificationService {
       }
     });
     
-    // Poll every 15 seconds for new notifications (faster for better real-time feel)
+    // Poll every 60 seconds to reduce server load
     this.pollingInterval = setInterval(async () => {
       try {
+        // Check circuit breaker
+        if (this.isCircuitOpen) {
+          const now = Date.now();
+          if (now < this.backoffTime) {
+            console.log('[NotificationService] Circuit breaker open, skipping poll');
+            return;
+          } else {
+            console.log('[NotificationService] Circuit breaker reset, attempting poll');
+            this.isCircuitOpen = false;
+            this.consecutiveFailures = 0;
+          }
+        }
+        
         const result = await this.getNotifications(userId);
         if (result.success && result.data) {
+          // Reset failure count on success
+          this.consecutiveFailures = 0;
+          this.isCircuitOpen = false;
           // Only get truly new notifications (not just unread ones)
           const newNotifications = this.lastNotificationCheck 
             ? result.data.filter(n => {
@@ -201,12 +255,24 @@ class NotificationService {
           this.lastNotificationCheck = new Date();
         }
       } catch (error) {
-        // Silently handle polling errors - don't log timeouts
-        if (!error.message || !error.message.includes('timeout')) {
-          console.warn('[NotificationService] Polling error (non-timeout):', error.message);
+        // Increment failure count
+        this.consecutiveFailures++;
+        
+        const errorMessage = error?.message || 'Unknown error';
+        
+        // Open circuit breaker if too many failures
+        if (this.consecutiveFailures >= this.maxFailures) {
+          this.isCircuitOpen = true;
+          this.backoffTime = Date.now() + (60000 * Math.pow(2, Math.min(this.consecutiveFailures - this.maxFailures, 3))); // Exponential backoff up to 8 minutes
+          console.log(`[NotificationService] Circuit breaker opened after ${this.consecutiveFailures} failures, backing off until ${new Date(this.backoffTime).toLocaleTimeString()}`);
+        } else {
+          // Only log non-timeout errors and not too frequently
+          if (!errorMessage.includes('timeout') && !errorMessage.includes('Network request failed')) {
+            console.log(`[NotificationService] Polling error (${this.consecutiveFailures}/${this.maxFailures}):`, errorMessage);
+          }
         }
       }
-    }, 15000);
+    }, 60000);
 
     // Initial load with timeout handling
     this.getNotifications(userId).then(result => {
@@ -215,6 +281,7 @@ class NotificationService {
       }
     }).catch(error => {
       // Handle initial load errors gracefully
+      console.log('[NotificationService] Initial notification load failed, continuing with empty state');
       if (callback) {
         callback([]);
       }
@@ -228,6 +295,37 @@ class NotificationService {
       this.pollingInterval = null;
     }
     this.callbacks.clear();
+  }
+  
+  // Reset circuit breaker (for manual recovery)
+  static resetCircuitBreaker() {
+    this.consecutiveFailures = 0;
+    this.isCircuitOpen = false;
+    this.backoffTime = 0;
+    console.log('[NotificationService] Circuit breaker manually reset');
+  }
+  
+  // Check notification service health
+  static async checkHealth() {
+    try {
+      const { testNotificationEndpoint } = await import('./networkConfig');
+      const result = await testNotificationEndpoint();
+      
+      return {
+        endpoint_available: result.success,
+        circuit_open: this.isCircuitOpen,
+        consecutive_failures: this.consecutiveFailures,
+        backoff_until: this.backoffTime > Date.now() ? new Date(this.backoffTime).toLocaleTimeString() : null,
+        polling_active: !!this.pollingInterval
+      };
+    } catch (error) {
+      return {
+        endpoint_available: false,
+        circuit_open: this.isCircuitOpen,
+        consecutive_failures: this.consecutiveFailures,
+        error: error.message
+      };
+    }
   }
 
   // Subscribe to real-time notifications (fallback to Supabase realtime)
@@ -589,28 +687,9 @@ class NotificationService {
   // Register for push notifications
   static async registerForPushNotifications() {
     try {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      
-      if (finalStatus !== 'granted') {
-        console.log('[NotificationService] Push notification permission denied');
-        return null;
-      }
-      
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: 'b3c3eee0-8587-45cd-8170-992a4580d305'
-      });
-      
-      console.log('[NotificationService] Push token registered:', token.data);
-      this.pushToken = token.data;
-      await this.storePushToken(token.data);
-      
-      return token.data;
+      // Skip Firebase setup for now - not configured
+      console.log('[NotificationService] Skipping push notifications - Firebase not configured');
+      return null;
     } catch (error) {
       console.log('[NotificationService] Push notification setup failed:', error.message);
       return null;

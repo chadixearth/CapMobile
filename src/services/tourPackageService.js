@@ -2,12 +2,13 @@ import { apiClient } from './improvedApiClient';
 import { getCurrentUser } from './authService';
 
 // Legacy request function for backward compatibility
-async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 15000 } = {}) {
+async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 10000 } = {}) {
   const result = await apiClient.makeRequest(path, {
     method,
     headers,
     body: body ? JSON.parse(body) : null,
-    timeout: timeoutMs
+    timeout: timeoutMs,
+    retries: 2
   });
   
   return {
@@ -19,10 +20,42 @@ async function request(path, { method = 'GET', headers = {}, body = null, timeou
 
 export async function getMyTourPackages() {
   try {
-    // Use the new driver_packages endpoint for better performance
+    const user = await getCurrentUser();
+    
+    // For tourists, get all available packages
+    if (user?.role === 'tourist') {
+      return await getAllPackages();
+    }
+    
+    // For drivers/owners, get their packages
     return await getDriverPackages();
   } catch (error) {
     return { success: false, error: error.message || 'Failed to fetch tour packages' };
+  }
+}
+
+export async function getAllPackages() {
+  try {
+    const result = await apiClient.get('/tourpackage/', {
+      timeout: 8000,
+      retries: 2
+    });
+    
+    if (result.success) {
+      const packages = result.data?.data || result.data || [];
+      return { success: true, data: packages };
+    }
+    
+    // If API fails but we get a response, return empty array
+    if (result.status === 200) {
+      return { success: true, data: [] };
+    }
+    
+    return { success: false, error: result.error || 'Failed to fetch packages' };
+  } catch (error) {
+    // Return empty array for network errors - don't block the app
+    console.log('[getAllPackages] Network error, returning empty array:', error.message);
+    return { success: true, data: [] };
   }
 }
 
@@ -98,7 +131,10 @@ export async function getDriverPackages() {
       return { success: false, error: 'User not authenticated' };
     }
     
-    const result = await apiClient.get(`/tourpackage/driver_packages/?driver_id=${user.id}`);
+    const result = await apiClient.get(`/tourpackage/driver_packages/?driver_id=${user.id}`, {
+      timeout: 8000,
+      retries: 2
+    });
     if (result.success) {
       return { success: true, data: result.data?.data || result.data || [] };
     }

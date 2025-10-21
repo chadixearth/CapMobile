@@ -4,7 +4,6 @@
  */
 
 import connectionManager from './connectionManager';
-import networkClient from './networkClient';
 
 class ConnectionRecoveryService {
   constructor() {
@@ -80,12 +79,22 @@ class ConnectionRecoveryService {
    */
   async performHealthCheck() {
     try {
-      const response = await networkClient.get('/api/health/', {
-        timeout: 10000,
-        retries: 1
+      const { apiBaseUrl } = require('./networkConfig');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`${apiBaseUrl()}/api/health/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connection': 'close',
+          'Cache-Control': 'no-cache',
+        },
+        signal: controller.signal,
       });
       
-      return response.success;
+      clearTimeout(timeoutId);
+      return response.ok;
     } catch (error) {
       console.log('[ConnectionRecovery] Health check failed:', error.message);
       return false;

@@ -56,7 +56,6 @@ export default function TouristHomeScreen({ navigation }) {
   const [tourPackages, setTourPackages] = useState([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [networkStatus, setNetworkStatus] = useState('Unknown');
-  const [dataSource, setDataSource] = useState('Unknown');
 
   // ✅ Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false);
@@ -180,21 +179,15 @@ export default function TouristHomeScreen({ navigation }) {
     }
   }, [sheetVisible, activePicker, pickup, destination]);
 
-  // Auto-refresh when data changes
+  // Simplified auto-refresh
   useScreenAutoRefresh('TOURIST_HOME', () => {
     const fetchPackages = async () => {
       try {
-        setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
-        const packagesArray = Array.isArray(packages) ? packages : [];
-        setTourPackages(packagesArray);
-        setFilteredPackages(packagesArray);
-        setDataSource('Auto-refreshed');
-        setNetworkStatus('Connected');
+        setTourPackages(packages);
+        setFilteredPackages(packages);
       } catch (error) {
-        console.error('Auto-refresh packages error:', error);
-      } finally {
-        setLoadingPackages(false);
+        // Silent error handling
       }
     };
     fetchPackages();
@@ -205,16 +198,13 @@ export default function TouristHomeScreen({ navigation }) {
       try {
         setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
-        const packagesArray = Array.isArray(packages) ? packages : [];
-        setTourPackages(packagesArray);
-        setFilteredPackages(packagesArray);
-        setDataSource('API Data');
+        setTourPackages(packages);
+        setFilteredPackages(packages);
         setNetworkStatus('Connected');
       } catch (error) {
-        console.error('Fetch packages error:', error);
         setTourPackages([]);
-        setDataSource('API Error');
-        setNetworkStatus('Failed');
+        setFilteredPackages([]);
+        setNetworkStatus('Offline');
       } finally {
         setLoadingPackages(false);
       }
@@ -358,14 +348,10 @@ export default function TouristHomeScreen({ navigation }) {
     try {
       setRefreshing(true);
       const packages = await tourPackageService.getAllPackages();
-      const packagesArray = Array.isArray(packages) ? packages : [];
-      setTourPackages(packagesArray);
-      setFilteredPackages(packagesArray);
-      setDataSource('Refreshed');
+      setTourPackages(packages);
+      setFilteredPackages(packages);
       setNetworkStatus('Connected');
     } catch (error) {
-      console.error('Refresh packages error:', error);
-      setDataSource('Refresh Failed');
       setNetworkStatus('Failed');
     } finally {
       setRefreshing(false);

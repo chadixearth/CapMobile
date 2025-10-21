@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import BackButton from '../../components/BackButton';
 import * as Routes from '../../constants/routes';
-import { loginUser } from '../../services/authService';
+import { loginUser, resendConfirmationEmail } from '../../services/authService';
 import { apiBaseUrl } from '../../services/networkConfig';
 import AccountDeletionHandler from '../../components/AccountDeletionHandler';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,10 +85,10 @@ export default function LoginScreen({ navigation }) {
       // Quick connection test first
       console.log('[LoginScreen] Testing connection to server...');
       const testController = new AbortController();
-      const testTimeoutId = setTimeout(() => testController.abort(), 5000);
+      const testTimeoutId = setTimeout(() => testController.abort(), 3000);
       
       try {
-        const testResponse = await fetch(`${API_BASE_URL}/health/`, {
+        const testResponse = await fetch(`${API_BASE_URL}/`, {
           method: 'GET',
           signal: testController.signal,
           headers: {
@@ -101,9 +101,7 @@ export default function LoginScreen({ navigation }) {
       } catch (testError) {
         clearTimeout(testTimeoutId);
         console.warn('[LoginScreen] Connection test failed:', testError.message);
-        if (testError.name === 'AbortError') {
-          throw new Error('Cannot connect to server. Please check your network connection.');
-        }
+        // Don't throw error for connection test failure - just log it
       }
       
       const allowedRoles = ['tourist', 'driver', 'owner'];
@@ -138,7 +136,7 @@ export default function LoginScreen({ navigation }) {
         console.log('[LoginScreen] Login failed:', result.error);
         const errorMsg = result.error || 'Login failed.';
         
-        // Handle incorrect password with helpful guidance
+        // Handle specific error types with helpful guidance
         if (errorMsg.includes('Invalid email or password') || errorMsg.includes('credentials')) {
           Alert.alert(
             'Login Failed',
@@ -148,6 +146,29 @@ export default function LoginScreen({ navigation }) {
               { 
                 text: 'Reset Password', 
                 onPress: () => navigation.navigate(Routes.FORGOT_PASSWORD)
+              }
+            ]
+          );
+        } else if (result.email_confirmation_required || errorMsg.includes('confirm your email')) {
+          Alert.alert(
+            'Email Confirmation Required',
+            'Please check your email and click the confirmation link.',
+            [
+              { text: 'OK', style: 'default' },
+              { 
+                text: 'Resend Email', 
+                onPress: async () => {
+                  try {
+                    const resendResult = await resendConfirmationEmail(email);
+                    if (resendResult.success) {
+                      Alert.alert('Email Sent', 'Please check your email.');
+                    } else {
+                      Alert.alert('Error', 'Failed to send email.');
+                    }
+                  } catch (error) {
+                    Alert.alert('Error', 'Failed to send email.');
+                  }
+                }
               }
             ]
           );

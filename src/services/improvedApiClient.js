@@ -8,8 +8,8 @@ const log = (...args) => DEBUG_API && console.log('[ApiClient]', ...args);
 class ImprovedApiClient {
   constructor() {
     this.baseURL = apiBaseUrl();
-    this.maxRetries = 3;
-    this.retryDelay = 1000; // 1 second base delay
+    this.maxRetries = 2; // Reduced retries
+    this.retryDelay = 500; // Faster retry
     this.sessionExpiredCallback = null;
   }
 
@@ -33,7 +33,7 @@ class ImprovedApiClient {
       method = 'GET',
       headers = {},
       body = null,
-      timeout = 30000,
+      timeout = 8000, // Reduced timeout
       retries = this.maxRetries,
       skipAuth = false
     } = options;

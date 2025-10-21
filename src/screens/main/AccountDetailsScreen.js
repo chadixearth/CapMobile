@@ -268,6 +268,10 @@ export default function AccountDetailsScreen({ navigation }) {
           });
           if (profileUpdateResult.success) {
             setSuccess('Profile photo updated successfully!');
+            // Refresh auth context with updated user data
+            if (auth.refreshUser) {
+              await auth.refreshUser();
+            }
           } else {
             console.warn('Photo uploaded but failed to save to profile:', profileUpdateResult.error);
             setSuccess('Profile photo uploaded!');
@@ -392,6 +396,10 @@ export default function AccountDetailsScreen({ navigation }) {
         const result = await updateUserProfile(currentUser.id, profileData);
         if (result.success) {
           setSuccess(result.message || 'Account updated successfully!');
+          // Refresh auth context with updated user data
+          if (auth.refreshUser) {
+            await auth.refreshUser();
+          }
         } else {
           setError(result.error || 'Failed to update profile.');
         }

@@ -201,6 +201,47 @@ export const useAuth = () => {
     }, 100);
   }, []);
 
+  // Refresh user data
+  const refreshUser = useCallback(async () => {
+    if (!globalAuthState.isAuthenticated || !globalAuthState.user) {
+      return;
+    }
+    
+    try {
+      const { getCurrentUser, getUserProfile } = await import('../services/authService');
+      const currentUser = await getCurrentUser();
+      
+      if (currentUser) {
+        const profileResult = await getUserProfile(currentUser.id);
+        let userData = currentUser;
+        
+        if (profileResult.success && profileResult.data) {
+          userData = { ...currentUser, ...profileResult.data };
+          
+          // Update full name if individual name parts exist
+          if (profileResult.data.first_name || profileResult.data.middle_name || profileResult.data.last_name) {
+            const fullName = [
+              profileResult.data.first_name,
+              profileResult.data.middle_name,
+              profileResult.data.last_name,
+            ].filter(Boolean).join(' ');
+            userData.name = fullName;
+            userData.full_name = fullName;
+          }
+        }
+        
+        updateGlobalAuthState({
+          user: userData,
+          role: userData.role || globalAuthState.role
+        });
+        
+        console.log('[useAuth] User data refreshed successfully');
+      }
+    } catch (error) {
+      console.warn('[useAuth] Failed to refresh user data:', error);
+    }
+  }, []);
+
   // Initialize auth state on hook mount
   useEffect(() => {
     // Only check auth on initial mount, not on every render
@@ -238,6 +279,7 @@ export const useAuth = () => {
     checkAuth,
     login,
     logout,
+    refreshUser,
   };
 };
 

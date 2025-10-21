@@ -1,14 +1,13 @@
 import { apiBaseUrl } from './networkConfig';
 import { getAccessToken } from './authService';
 import connectionManager from './connectionManager';
-import connectionRecoveryService from './connectionRecoveryService';
 import ResponseHandler from './responseHandler';
 
 class NetworkClient {
   constructor() {
     this.baseURL = apiBaseUrl();
-    this.defaultTimeout = 35000; // Increased for socket issues
-    this.maxRetries = 3; // More retries for socket errors
+    this.defaultTimeout = 8000; // Reduced to prevent hanging requests
+    this.maxRetries = 1; // Reduced retries to prevent congestion
   }
 
   async request(endpoint, options = {}) {
@@ -25,8 +24,6 @@ class NetworkClient {
     const connectionHeaders = connectionManager.getConnectionHeaders();
     const requestHeaders = {
       'Content-Type': 'application/json',
-      'Connection': 'keep-alive',
-      'Cache-Control': 'no-cache',
       'Accept': 'application/json',
       ...connectionHeaders,
       ...headers,
@@ -169,22 +166,37 @@ class NetworkClient {
         lastError = error;
         
         // Check if this is a recoverable connection error
-        if (connectionRecoveryService.isRecoverableError(error)) {
+        const isRecoverableError = (error) => {
+          if (!error) return false;
+          const errorMessage = error.message?.toLowerCase() || '';
+          return (
+            errorMessage.includes('winerror 10054') ||
+            errorMessage.includes('forcibly closed') ||
+            errorMessage.includes('existing connection') ||
+            errorMessage.includes('connection reset') ||
+            errorMessage.includes('readerror') ||
+            errorMessage.includes('http2') ||
+            errorMessage.includes('stream_id')
+          );
+        };
+        
+        if (isRecoverableError(error)) {
           console.log(`Recoverable connection error detected: ${error.message}`);
           
-          try {
-            // Attempt recovery and retry
-            const requestFunc = () => this.request(endpoint, options);
-            return await connectionRecoveryService.handleConnectionError(error, requestFunc);
-          } catch (recoveryError) {
-            console.error('Connection recovery failed:', recoveryError);
-            lastError = recoveryError;
-            break;
+          // Simple recovery: force connection reset and continue with retry
+          connectionManager.forceConnectionReset();
+          
+          // Add extra delay for connection recovery
+          if (attempt < retries) {
+            const recoveryDelay = Math.min(3000 * Math.pow(2, attempt - 1), 10000);
+            console.log(`Waiting ${recoveryDelay}ms for connection recovery...`);
+            await new Promise(resolve => setTimeout(resolve, recoveryDelay));
+            continue;
           }
         }
         
         // Handle abort errors specifically
-        if (error.name === 'AbortError' || (error.message && error.message.includes('Aborted'))) {
+        if (error && (error.name === 'AbortError' || (error.message && error.message.includes('Aborted')))) {
           console.log(`Request timeout on attempt ${attempt}`);
           if (attempt < retries) {
             // Exponential backoff for timeout retries
@@ -199,7 +211,7 @@ class NetworkClient {
         const isConnectionError = connectionManager.isConnectionError(error);
         
         // Check for Windows socket errors specifically
-        const isSocketError = error.message && (
+        const isSocketError = error && error.message && (
           error.message.includes('WinError 10035') ||
           error.message.includes('WinError 10054') ||
           error.message.includes('EWOULDBLOCK') ||
@@ -214,13 +226,14 @@ class NetworkClient {
         }
 
         // Check for server errors that should be retried
-        const isRetryableError = 
+        const isRetryableError = error && (
           (error.message && error.message.includes('500')) ||
           (error.message && error.message.includes('502')) ||
           (error.message && error.message.includes('503')) ||
           (error.message && error.message.includes('504')) ||
           isConnectionError ||
-          isSocketError;
+          isSocketError
+        );
 
         if (isRetryableError && attempt < retries) {
           const delay = isSocketError ? 
@@ -246,13 +259,18 @@ class NetworkClient {
       }
     }
 
+    // Handle final error
+    if (!lastError) {
+      throw new Error('Request failed without specific error');
+    }
+    
     // Don't log timeout errors as errors
-    if (lastError && (lastError.name === 'AbortError' || (lastError.message && lastError.message.includes('Aborted')))) {
+    if (lastError.name === 'AbortError' || (lastError.message && lastError.message.includes('Aborted'))) {
       throw new Error('Request timeout');
     }
     
     // Don't log expected business errors or JWT expiry errors
-    if (lastError && lastError.message && (
+    if (lastError.message && (
       lastError.message.includes('active ride request') ||
       lastError.message.includes('JWT expired') ||
       lastError.message.includes('PGRST301')
@@ -260,11 +278,8 @@ class NetworkClient {
       throw lastError;
     }
     
-    // Don't log JWT expiry errors
-    if (lastError && lastError.message && (
-      lastError.message.includes('JWT expired') ||
-      lastError.message.includes('PGRST301')
-    )) {
+    // Don't log network request failed errors (they're common)
+    if (lastError.message && lastError.message.includes('Network request failed')) {
       throw lastError;
     }
     
