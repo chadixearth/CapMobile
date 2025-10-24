@@ -36,7 +36,12 @@ export default function PayoutHistoryModal({ visible, onClose, driverId, preload
   const dot3Anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible && driverId) {
+    if (visible) {
+      if (!driverId) {
+        setErrorText('Driver ID is required to load payout history.');
+        setLoading(false);
+        return;
+      }
       if (preloadedData) {
         processPayoutData(preloadedData);
       } else {
@@ -111,6 +116,12 @@ export default function PayoutHistoryModal({ visible, onClose, driverId, preload
   };
 
   const fetchPayouts = async () => {
+    if (!driverId) {
+      setErrorText('Driver ID is required to load payout history.');
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
     setErrorText('');
     setCurrentPage(1);
@@ -131,10 +142,11 @@ export default function PayoutHistoryModal({ visible, onClose, driverId, preload
   };
 
   const onRefresh = useCallback(async () => {
+    if (!driverId) return;
     setRefreshing(true);
     await fetchPayouts();
     setRefreshing(false);
-  }, []);
+  }, [driverId]);
 
   const loadMore = () => {
     setCurrentPage(prev => prev + 1);

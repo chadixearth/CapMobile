@@ -319,51 +319,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     return null;
   }
 
-  const testConnection = async () => {
-    try {
-      setConnectionStatus('Testing...');
-      const result = await testCarriageConnection();
-      setConnectionStatus(result);
-      
-      if (result.success) {
-        // Update the current API URL for display
-        const workingUrl = result.url;
-        setCurrentApiUrl(workingUrl);
-        
-        Alert.alert(
-          'Connection Test', 
-          `Success! Found working endpoint: ${workingUrl}\n\nAPI URL has been updated automatically.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Refresh the data with the new URL
-                fetchUserAndCarriages();
-              }
-            }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Connection Test', 
-          `Failed to connect. Error: ${result.error}\n\nPlease check:\n1. Django server is running\n2. URL patterns in urls.py\n3. ViewSet is properly registered`,
-          [
-            {
-              text: 'Show Tested URLs',
-              onPress: () => {
-                Alert.alert('Tested URLs', result.testedUrls.join('\n'));
-              }
-            },
-            { text: 'OK' }
-          ]
-        );
-      }
-    } catch (error) {
-      setConnectionStatus({ success: false, error: error.message });
-      Alert.alert('Connection Test', `Error: ${error.message}`);
-    }
-  };
-
   const validateForm = () => {
     const errors = {};
     if (!newCarriage.plate_number.trim()) {
@@ -534,19 +489,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
-  const getStatusIcon = (status) => {
-    const statusConfig = {
-      available: { icon: 'checkmark-circle', color: '#28a745', bgColor: '#E8F5E9', text: 'Available', iconColor: '#28a745' },
-      in_use: { icon: 'time', color: '#dc3545', bgColor: '#FFEBEE', text: 'In Use', iconColor: '#dc3545' },
-      maintenance: { icon: 'build', color: '#ffc107', bgColor: '#FFF8E1', text: 'Maintenance', iconColor: '#ff8f00' },
-      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#ff8f00', bgColor: '#FFF3E0', text: 'Pending Driver', iconColor: '#ff8f00' },
-      driver_assigned: { icon: 'person-circle', color: '#2196F3', bgColor: '#E3F2FD', text: 'Driver Assigned', iconColor: '#2196F3' },
-      not_usable: { icon: 'close-circle', color: '#dc3545', bgColor: '#F5C6CB', text: 'Not Usable', iconColor: '#dc3545' },
-      default: { icon: 'help-circle', color: '#6c757d', bgColor: '#f5f5f5', text: 'Unknown', iconColor: '#6c757d' },
-    };
-    return statusConfig[status] || statusConfig.default;
-  };
-
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
       available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
@@ -563,7 +505,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     const statusKey = carriage.status?.toLowerCase() || 'default';
     const status = statusConfig[statusKey] || statusConfig.default;
     const isDriver = user?.role === 'driver';
-
     const cached = driverCache[carriage.assigned_driver_id];
 
     const buildName = (d) => {
@@ -580,142 +521,105 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       );
     };
 
-    const driverName =
-      buildName(carriage.assigned_driver) ||
-      buildName(cached) ||
-      (carriage.assigned_driver_id ? 'Unknown Driver' : 'Unassigned');
-
-    const driverEmail =
-      carriage.assigned_driver?.email ||
-      cached?.email ||
-      (carriage.assigned_driver_id ? 'No email' : '');
-
-    const driverPhone =
-      carriage.assigned_driver?.phone ||
-      carriage.assigned_driver?.mobile ||
-      carriage.assigned_driver?.phone_number ||
-      cached?.phone ||
-      cached?.mobile ||
-      cached?.phone_number ||
-      '';
-
-    const driverAddress =
-      carriage.assigned_driver?.address ||
-      carriage.assigned_driver?.location ||
-      cached?.address ||
-      cached?.location ||
-      '';
-
+    const driverName = buildName(carriage.assigned_driver) || buildName(cached) || (carriage.assigned_driver_id ? 'Unknown Driver' : 'Unassigned');
+    const driverEmail = carriage.assigned_driver?.email || cached?.email || (carriage.assigned_driver_id ? 'No email' : '');
+    const driverPhone = carriage.assigned_driver?.phone || carriage.assigned_driver?.mobile || carriage.assigned_driver?.phone_number || cached?.phone || cached?.mobile || cached?.phone_number || '';
     const hasDriverSelected = !!(carriage.assigned_driver_id || carriage.assigned_driver);
-    const assignmentStatus = hasDriverSelected && carriage.status === 'waiting_driver_acceptance'
-      ? 'Waiting for driver acceptance'
-      : null;
+    const assignmentStatus = hasDriverSelected && carriage.status === 'waiting_driver_acceptance' ? 'Waiting for driver acceptance' : null;
+
     return (
-      <View key={carriage.id} style={styles.modernCard}>
-        <View style={styles.modernCardHeader}>
-          <View style={styles.plateContainer}>
-            <View style={styles.plateIconContainer}>
-              <Ionicons name="car" size={24} color={MAROON} />
+      <View key={carriage.id} style={styles.carriageCard}>
+        <View style={styles.cardHeader}>
+          <View style={styles.plateSection}>
+            <View style={styles.plateIcon}>
+              <Ionicons name="car" size={20} color={MAROON} />
             </View>
-            <View style={styles.plateInfo}>
-              <Text style={styles.modernPlateNumber}>{carriage.plate_number}</Text>
-              <View style={[styles.modernStatusBadge, { backgroundColor: status.bgColor }]}>
-                <Ionicons name={status.icon} size={12} color={status.color} />
-                <Text style={[styles.modernStatusText, { color: status.color }]}>
-                  {status.text}
-                </Text>
-              </View>
-            </View>
+            <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
           </View>
-          {!isDriver && hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
-            <TouchableOpacity
-              style={styles.modernEditButton}
-              onPress={() => openEditModal(carriage)}
-              disabled={savingEdit}
-            >
-              <Ionicons name="pencil" size={16} color={MAROON} />
-            </TouchableOpacity>
-          )}
+          <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+            <Ionicons name={status.icon} size={14} color={status.color} />
+            <Text style={[styles.statusText, { color: status.color }]}>{status.text}</Text>
+          </View>
         </View>
 
-        <View style={styles.modernCardContent}>
-          <View style={styles.modernInfoGrid}>
-            <View style={styles.modernInfoItem}>
-              <View style={styles.modernInfoHeader}>
-                <Ionicons name="person" size={18} color={MAROON} />
-                <Text style={styles.modernInfoLabel}>Driver</Text>
+        <View style={styles.cardBody}>
+          <View style={styles.infoRow}>
+            <View style={styles.infoItem}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="person-outline" size={16} color="#666" />
+                <Text style={styles.infoLabel}>Driver</Text>
               </View>
-              <Text style={styles.modernInfoValue} numberOfLines={1}>{driverName}</Text>
-              {driverEmail && (
-                <Text style={styles.modernInfoSubtext} numberOfLines={1}>{driverEmail}</Text>
-              )}
-              {driverPhone && (
-                <Text style={styles.modernInfoSubtext} numberOfLines={1}>📱 {driverPhone}</Text>
-              )}
-              {driverAddress && (
-                <Text style={styles.modernInfoSubtext} numberOfLines={1}>📍 {driverAddress}</Text>
-              )}
-              {!isDriver && (
-                <View style={styles.modernActionButtons}>
-                  {!hasDriverSelected && (
-                    <TouchableOpacity 
-                      style={styles.modernAssignButton}
-                      onPress={() => openDriverModal(carriage)}
-                      disabled={assigningDriver}
-                    >
-                      <Ionicons name="person-add" size={14} color="#fff" />
-                      <Text style={styles.modernButtonText}>Assign</Text>
-                    </TouchableOpacity>
-                  )}
-                  {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
-                    <TouchableOpacity 
-                      style={styles.modernChangeButton}
-                      onPress={() => openDriverModal(carriage)}
-                      disabled={assigningDriver}
-                    >
-                      <Ionicons name="sync-outline" size={14} color="#fff" />
-                      <Text style={styles.modernButtonText}>Change</Text>
-                    </TouchableOpacity>
-                  )}
-                  {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
-                    <TouchableOpacity 
-                      style={styles.modernReassignButton}
-                      onPress={() => openDriverModal(carriage)}
-                      disabled={assigningDriver}
-                    >
-                      <Ionicons name="swap-horizontal" size={14} color="#fff" />
-                      <Text style={styles.modernButtonText}>Reassign</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
+              <Text style={styles.infoValue} numberOfLines={1}>{driverName}</Text>
+              {driverEmail && <Text style={styles.infoSubtext} numberOfLines={1}>{driverEmail}</Text>}
+              {driverPhone && <Text style={styles.infoSubtext} numberOfLines={1}>📱 {driverPhone}</Text>}
             </View>
-
-            <View style={styles.modernInfoItem}>
-              <View style={styles.modernInfoHeader}>
-                <Ionicons name="people" size={18} color={MAROON} />
-                <Text style={styles.modernInfoLabel}>Capacity</Text>
+            
+            <View style={styles.infoItem}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="people-outline" size={16} color="#666" />
+                <Text style={styles.infoLabel}>Capacity</Text>
               </View>
-              <Text style={styles.modernInfoValue}>{carriage.capacity || 'N/A'} persons</Text>
+              <Text style={styles.infoValue}>{carriage.capacity || 'N/A'}</Text>
+              <Text style={styles.infoSubtext}>persons</Text>
             </View>
           </View>
 
           {assignmentStatus && (
-            <View style={styles.modernAlertBox}>
-              <Ionicons name="information-circle" size={16} color="#F59E0B" />
-              <Text style={styles.modernAlertText}>{assignmentStatus}</Text>
+            <View style={styles.alertBox}>
+              <Ionicons name="information-circle-outline" size={16} color="#F59E0B" />
+              <Text style={styles.alertText}>{assignmentStatus}</Text>
             </View>
           )}
 
           {carriage.notes && (
-            <View style={styles.modernNotesSection}>
-              <View style={styles.modernInfoHeader}>
-                <Ionicons name="document-text" size={16} color={MAROON} />
-                <Text style={styles.modernInfoLabel}>Notes</Text>
-              </View>
-              <Text style={styles.modernNotesText} numberOfLines={2}>
-                {carriage.notes}
-              </Text>
+            <View style={styles.notesSection}>
+              <Text style={styles.notesLabel}>Notes</Text>
+              <Text style={styles.notesText} numberOfLines={2}>{carriage.notes}</Text>
+            </View>
+          )}
+
+          {!isDriver && (
+            <View style={styles.actionButtons}>
+              {!hasDriverSelected && (
+                <TouchableOpacity 
+                  style={styles.assignButton}
+                  onPress={() => openDriverModal(carriage)}
+                  disabled={assigningDriver}
+                >
+                  <Ionicons name="person-add-outline" size={16} color="#fff" />
+                  <Text style={styles.buttonText}>Assign Driver</Text>
+                </TouchableOpacity>
+              )}
+              {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
+                <TouchableOpacity 
+                  style={styles.changeButton}
+                  onPress={() => openDriverModal(carriage)}
+                  disabled={assigningDriver}
+                >
+                  <Ionicons name="sync-outline" size={16} color="#fff" />
+                  <Text style={styles.buttonText}>Change Driver</Text>
+                </TouchableOpacity>
+              )}
+              {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity 
+                    style={styles.reassignButton}
+                    onPress={() => openDriverModal(carriage)}
+                    disabled={assigningDriver}
+                  >
+                    <Ionicons name="swap-horizontal-outline" size={16} color="#fff" />
+                    <Text style={styles.buttonText}>Reassign</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => openEditModal(carriage)}
+                    disabled={savingEdit}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={MAROON} />
+                    <Text style={[styles.buttonText, { color: MAROON }]}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -877,23 +781,31 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Status *</Text>
               <View style={styles.statusOptions}>
-                {['available', 'in_use', 'maintenance', 'out_of_service'].map((status) => (
-                  <TouchableOpacity
-                    key={status}
-                    style={[
-                      styles.statusOption,
-                      editForm.status === status && styles.statusOptionSelected,
-                      { backgroundColor: (statusConfig[status]?.bgColor || '#f5f5f5') }
-                    ]}
-                    onPress={() => setEditForm(prev => ({ ...prev, status }))}
-                    disabled={savingEdit}
-                  >
-                    <Ionicons name={(statusConfig[status]?.icon || 'help-circle')} size={16} color={(statusConfig[status]?.color || '#666')} style={styles.statusIcon} />
-                    <Text style={[styles.statusOptionText, { color: (statusConfig[status]?.color || '#666') }, editForm.status === status && styles.statusOptionTextSelected]}>
-                      {status === 'out_of_service' ? 'Out of Service' : (statusConfig[status]?.text || 'Unknown')}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {['available', 'in_use', 'maintenance', 'out_of_service'].map((status) => {
+                  const statusConfig = {
+                    available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
+                    in_use: { icon: 'time', color: '#EF4444', bgColor: '#FEF2F2', text: 'In Use' },
+                    maintenance: { icon: 'build', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Maintenance' },
+                    out_of_service: { icon: 'close-circle', color: '#EF4444', bgColor: '#FEF2F2', text: 'Out of Service' },
+                  };
+                  return (
+                    <TouchableOpacity
+                      key={status}
+                      style={[
+                        styles.statusOption,
+                        editForm.status === status && styles.statusOptionSelected,
+                        { backgroundColor: (statusConfig[status]?.bgColor || '#f5f5f5') }
+                      ]}
+                      onPress={() => setEditForm(prev => ({ ...prev, status }))}
+                      disabled={savingEdit}
+                    >
+                      <Ionicons name={(statusConfig[status]?.icon || 'help-circle')} size={16} color={(statusConfig[status]?.color || '#666')} style={styles.statusIcon} />
+                      <Text style={[styles.statusOptionText, { color: (statusConfig[status]?.color || '#666') }, editForm.status === status && styles.statusOptionTextSelected]}>
+                        {status === 'out_of_service' ? 'Out of Service' : (statusConfig[status]?.text || 'Unknown')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
               {formErrors.status && <Text style={styles.errorText}>{formErrors.status}</Text>}
             </View>
@@ -1060,14 +972,15 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={[styles.button, styles.cancelButton, addingCarriage && styles.buttonDisabled]}
-                onPress={() => setShowAddModal(false)}
+                onPress={() => !addingCarriage && setShowAddModal(false)}
                 disabled={addingCarriage}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              
+              <TouchableOpacity 
                 style={[styles.button, styles.saveButton, addingCarriage && styles.buttonDisabled]}
                 onPress={handleAddCarriage}
                 disabled={addingCarriage}
@@ -1075,295 +988,328 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                 {addingCarriage ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.saveButtonText}>Save Carriage</Text>
+                  <Text style={styles.saveButtonText}>Add Carriage</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-      
+
       {/* Edit Carriage Modal */}
       {renderEditModal()}
     </View>
   );
 }
-
-// Status configuration
-const statusConfig = {
-  available: { 
-    icon: 'checkmark-circle', 
-    color: '#28a745',
-    bgColor: '#E8F5E9',
-    text: 'Available',
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
-  in_use: { 
-    icon: 'time', 
-    color: '#dc3545',
-    bgColor: '#FFEBEE',
-    text: 'In Use',
+  headerContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
   },
-  maintenance: { 
-    icon: 'build', 
-    color: '#ff8f00',
-    bgColor: '#FFF8E1',
-    text: 'Maintenance',
+  heading: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: MAROON,
+    marginBottom: 4,
   },
   waiting_driver_acceptance: {
     icon: 'hourglass-outline',
     color: '#ff8f00',
     bgColor: '#FFF3E0',
-    text: 'Awaiting Driver',
+    text: 'Pending Driver',
   },
-  driver_assigned: {
-    icon: 'person-circle',
-    color: '#2196F3',
-    bgColor: '#E3F2FD',
-    text: 'Driver Assigned',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
   },
-  out_of_service: {
-    icon: 'close-circle',
-    color: '#dc3545',
-    bgColor: '#F5C6CB',
-    text: 'Out of Service',
-  },
-  not_usable: {
-    icon: 'close-circle',
-    color: '#dc3545',
-    bgColor: '#F5C6CB',
-    text: 'Not Usable',
-  },
-  suspended: {
-    icon: 'pause-circle',
-    color: '#ff8f00',
-    bgColor: '#FFF3E0',
-    text: 'Suspended',
-  },
-  eligible: {
-    icon: 'checkmark-circle',
-    color: '#28a745',
-    bgColor: '#E8F5E9',
-    text: 'Eligible',
-  },
-  default: {
-    icon: 'help-circle',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
     color: '#6c757d',
-    bgColor: '#f5f5f5',
-    text: 'Unknown',
-  }
-};
-
-const styles = StyleSheet.create({
-  // Modern Card Styles
-  modernCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+  },
+  addButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: MAROON,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    zIndex: 1000,
   },
-  modernCardHeader: {
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6c757d',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 40,
+  },
+  // Modern Card Styles
+  carriageCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fafbfc',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#e9ecef',
   },
-  plateIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#FEF2F2',
+  plateSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  plateIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8f9fa',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  plateInfo: {
-    flex: 1,
-  },
-  modernPlateNumber: {
-    fontSize: 20,
+  plateNumber: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: MAROON,
   },
-  modernStatusBadge: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  modernStatusText: {
+  statusText: {
     fontSize: 12,
     fontWeight: '600',
     marginLeft: 4,
   },
-  modernEditButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
+  cardBody: {
+    padding: 20,
   },
-  modernCardContent: {
-    gap: 16,
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  modernInfoGrid: {
-    gap: 16,
+  infoItem: {
+    flex: 1,
+    marginRight: 16,
   },
-  modernInfoItem: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
-  },
-  modernInfoHeader: {
+  infoHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
   },
-  modernInfoLabel: {
-    fontSize: 14,
+  infoLabel: {
+    fontSize: 12,
     fontWeight: '600',
-    color: '#374151',
-    marginLeft: 8,
+    color: '#6c757d',
+    marginLeft: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  modernInfoValue: {
+  infoValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: '#212529',
+    marginBottom: 2,
   },
-  modernInfoSubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  modernActionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  modernAssignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  modernChangeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F59E0B',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  modernReassignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B82F6',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  modernButtonText: {
-    color: '#fff',
+  infoSubtext: {
     fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
+    color: '#6c757d',
+    lineHeight: 16,
   },
-  modernAlertBox: {
+  alertBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: '#fffbeb',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
   },
-  modernAlertText: {
-    fontSize: 14,
-    color: '#92400E',
+  alertText: {
+    fontSize: 13,
+    color: '#92400e',
     marginLeft: 8,
     fontWeight: '500',
   },
-  modernNotesSection: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
+  notesSection: {
+    marginBottom: 16,
   },
-  modernNotesText: {
+  notesLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6c757d',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  notesText: {
     fontSize: 14,
-    color: '#4B5563',
+    color: '#495057',
     lineHeight: 20,
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+  },
+  actionButtons: {
+    marginTop: 8,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  assignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: MAROON,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  changeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  reassignButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: MAROON,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  buttonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 6,
   },
   // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
-    padding: 20,
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
+    width: width * 0.9,
     maxHeight: '80%',
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#e9ecef',
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: MAROON,
   },
   modalBody: {
-    padding: 16,
-    maxHeight: '70%',
+    maxHeight: 400,
+    paddingHorizontal: 20,
   },
   modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#e9ecef',
+    gap: 12,
   },
-  
-  // Form Styles
   formGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
-    color: '#555',
-    marginBottom: 6,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#495057',
+    marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#dee2e6',
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     fontSize: 16,
     backgroundColor: '#fff',
   },
@@ -1371,43 +1317,49 @@ const styles = StyleSheet.create({
     borderColor: '#dc3545',
   },
   errorText: {
-    color: '#dc3545',
     fontSize: 12,
+    color: '#dc3545',
     marginTop: 4,
   },
   capacityContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
   capacityButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     backgroundColor: '#f8f9fa',
-    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#dee2e6',
   },
   capacityInput: {
     flex: 1,
     textAlign: 'center',
-    marginHorizontal: 8,
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
   },
   statusOptions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   statusOption: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
-    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   statusOptionSelected: {
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    borderColor: MAROON,
   },
   statusIcon: {
     marginRight: 6,
@@ -1419,630 +1371,82 @@ const styles = StyleSheet.create({
   statusOptionTextSelected: {
     fontWeight: '600',
   },
-  eligibilityContainer: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    overflow: 'hidden',
-  },
-  eligibilityOption: {
-    flex: 1,
-    padding: 12,
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-  },
-  eligibilityOptionSelected: {
-    backgroundColor: MAROON,
-  },
-  eligibilityOptionText: {
-    color: '#555',
-    fontWeight: '500',
-  },
-  eligibilityOptionTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
   button: {
+    flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 20,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 10,
-    minWidth: 100,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   cancelButton: {
     backgroundColor: '#f8f9fa',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#dee2e6',
   },
   saveButton: {
     backgroundColor: MAROON,
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   cancelButtonText: {
-    color: '#333',
+    fontSize: 14,
     fontWeight: '600',
+    color: '#6c757d',
   },
   saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  
-  // Header Styles
-  headerContainer: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: MAROON,
-    marginBottom: 4,
-  },
-  subheading: {
-    fontSize: 14,
-    color: '#666',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollViewContent: {
-    padding: 16,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  plateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  carIcon: {
-    marginRight: 8,
-  },
-  plateNumber: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  statusIcon: {
-    marginRight: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  statusEditButton: {
-    marginLeft: 8,
-    backgroundColor: MAROON,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  statusEditButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  cardContent: {
-    paddingTop: 4,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  infoIcon: {
-    width: 24,
-    textAlign: 'center',
-    marginRight: 8,
-  },
-  infoTextContainer: {
-    flex: 1,
-    marginRight: 8,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 1,
-  },
-  infoValue: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
-  },
-  assignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 4,
-    marginLeft: 'auto',
-  },
-  assignButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6c757d',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  editButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  reassignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  reassignButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    color: '#666',
-  },
-  addButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    backgroundColor: MAROON,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1,
-  },
-  addButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-    marginTop: 4,
-  },
-  // ... existing styles ...
-  
-  // Driver Section
-  driverSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  driverLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  driverName: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-  },
-  assignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: MAROON,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 4,
-  },
-  buttonIcon: {
-    marginRight: 4,
-  },
-  assignButtonText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: MAROON,
-  },
-  modalBody: {
-    padding: 0,
-  },
-  driverItem: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  driverAvatar: {
-    marginRight: 12,
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  driverPhone: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#f0f0f0',
-    marginLeft: 68,
-  },
-  emptyState: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  // ... (rest of the styles remain the same)
-  driverSection: {
-    marginTop: 10,
-    paddingTop: 10,
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  driverLabel: {
-    fontSize: 14,
-    color: '#555',
-  },
-  assignButton: {
-    backgroundColor: MAROON,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  assignButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
   },
   // Driver Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: MAROON,
-  },
-  modalBody: {
-    padding: 0,
-  },
   driverItem: {
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  driverAvatar: {
-    marginRight: 12,
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  driverEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 2,
-  },
-  driverPhone: {
-    fontSize: 13,
-    color: '#888',
-  },
-  driverRole: {
-    fontSize: 12,
-    color: MAROON,
-    fontWeight: '500',
-    textTransform: 'capitalize',
+    paddingVertical: 16,
+    paddingHorizontal: 4,
   },
   driverItemDisabled: {
     opacity: 0.6,
+  },
+  driverAvatar: {
+    marginRight: 12,
+  },
+  driverInfo: {
+    flex: 1,
+  },
+  driverName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#212529',
+    marginBottom: 2,
+  },
+  driverEmail: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginBottom: 2,
+  },
+  driverPhone: {
+    fontSize: 12,
+    color: '#6c757d',
+    marginBottom: 2,
+  },
+  driverRole: {
+    fontSize: 12,
+    color: '#495057',
+    backgroundColor: '#e9ecef',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 4,
   },
   selectDriverButton: {
     padding: 8,
   },
   divider: {
     height: 1,
-    backgroundColor: '#f0f0f0',
-    marginLeft: 68,
-  },
-  emptyState: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: DARK_GRAY,
-    marginLeft: 8,
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#f0f0f0',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    paddingVertical: 2,
-  },
-  rowText: {
-    color: '#444',
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '90%',
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-  },
-  modalBody: {
-    padding: 16,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  statusOptions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statusOption: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-  },
-  statusOptionSelected: {
-    backgroundColor: MAROON,
-    borderColor: MAROON,
-  },
-  statusOptionText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  statusOptionTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontWeight: '600',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: MAROON,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    backgroundColor: '#e9ecef',
+    marginHorizontal: 16,
   },
 });
