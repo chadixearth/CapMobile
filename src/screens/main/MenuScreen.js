@@ -284,12 +284,17 @@ export default function MenuScreen({ navigation }) {
                 label={`My Carriages ${hasData ? `(${userCarriages.length})` : ''}`}
                 onPress={() => navigation.navigate('MyCarriages')}
               />
-              <Divider />
-              <ProfileItem
-                icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
-                label="Earnings"
-                onPress={navigateToEarningsDetail}
-              />
+              {/* Earnings only for drivers */}
+              {role === 'driver' && (
+                <>
+                  <Divider />
+                  <ProfileItem
+                    icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
+                    label="Earnings"
+                    onPress={navigateToEarningsDetail}
+                  />
+                </>
+              )}
               {role === 'driver' && (
                 <>
                   <Divider />

@@ -954,7 +954,7 @@ const RegistrationScreen = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
   // Page
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: '#F5F5F5' },
   scroll: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
 
   // Minimal app bar
