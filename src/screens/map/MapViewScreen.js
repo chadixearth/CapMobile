@@ -6,6 +6,7 @@ import PointImageModal from '../../components/PointImageModal';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
 import { getRoutesByPickup } from '../../services/rideHailingService';
 import { apiRequest } from '../../services/authService';
+import { fetchRouteSummaries as fetchRouteSummariesService, processMapPointsWithColors, processRoadHighlightsWithColors, buildRouteSummariesFromPickups } from '../../services/routeManagementService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -80,6 +81,30 @@ const MapViewScreen = ({ navigation, route }) => {
     };
   }, []);
   
+
+  
+  // Debug effect to log road state changes
+  useEffect(() => {
+    console.log('Roads state changed:', {
+      roadsCount: roads.length,
+      allRoadsCount: allRoads.length,
+      mode: mode,
+      hasMapData: !!mapData,
+      roadColors: roads.map(r => r.color || r.stroke_color).slice(0, 5)
+    });
+    
+    if (roads.length > 0) {
+      console.log('First road sample:', roads[0]);
+    }
+  }, [roads, allRoads, mode, mapData]);
+  
+  const fetchRouteSummaries = async () => {
+    const summaries = await fetchRouteSummariesService();
+    console.log('Route summaries from service:', summaries?.length || 0);
+    setRouteSummaries(summaries || []);
+    return summaries || [];
+  };
+
   const loadMapDataWithCache = async () => {
     try {
       setInitialLoading(true);
@@ -91,27 +116,30 @@ const MapViewScreen = ({ navigation, route }) => {
       
       // Load cached data first (instant)
       const data = await fetchMapData({ cacheOnly: !hasLoadedCache.current });
+      console.log('Fetched map data:', {
+        hasData: !!data,
+        pointsCount: data?.points?.length || 0,
+        roadsCount: data?.roads?.length || 0
+      });
       
-      // Skip route summaries for public map view - use default colors
-      let routeSummaries = [];
-      setRouteSummaries([]);
+      // Fetch route summaries to get proper colors
+      const routeSummaries = await fetchRouteSummaries();
+      console.log('Fetched route summaries:', routeSummaries.length);
       
       if (data) {
+        console.log('Raw map data received:', {
+          points: data.points?.length || 0,
+          roads: data.roads?.length || 0,
+          routes: data.routes?.length || 0,
+          zones: data.zones?.length || 0,
+          samplePoint: data.points?.[0],
+          sampleRoad: data.roads?.[0]
+        });
+        
         processMapData(data, routeSummaries);
         hasLoadedCache.current = true;
       } else {
-        processMapData({
-          points: [],
-          roads: [],
-          routes: [],
-          zones: [],
-          config: {
-            center_latitude: 10.3157,
-            center_longitude: 123.8854,
-            zoom_level: 13
-          },
-          total_items: {}
-        }, routeSummaries);
+        console.warn('No map data received');
       }
       
       if (loadTimeoutRef.current) {
@@ -148,52 +176,23 @@ const MapViewScreen = ({ navigation, route }) => {
   };
   
   const processMapData = (data, routeSummaries = []) => {
+    console.log('processMapData called with:', {
+      hasData: !!data,
+      pointsCount: data?.points?.length || 0,
+      roadsCount: data?.roads?.length || 0,
+      routeSummariesCount: routeSummaries.length
+    });
+    
     if (!data) return;
     
     setMapData(data);
     
-    // Process points with route color associations
+    // Process points with route color associations - show ALL points immediately
     if (data.points && data.points.length > 0) {
-      let processedMarkers = data.points.map(point => {
-        // Find associated route color
-        const routeInfo = routeSummaries.find(r => {
-          // Check pickup point
-          if (r.pickup_point_id == point.id) {
-            return true;
-          }
-          
-          // Check dropoff points (handle PostgreSQL array format)
-          if (r.dropoff_point_ids) {
-            let dropoffIds = r.dropoff_point_ids;
-            
-            if (typeof dropoffIds === 'string') {
-              try {
-                dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-              } catch (e) {
-                dropoffIds = [];
-              }
-            }
-            
-            if (Array.isArray(dropoffIds)) {
-              return dropoffIds.includes(parseInt(point.id));
-            }
-          }
-          return false;
-        });
-        
-        return {
-          latitude: parseFloat(point.latitude || 0),
-          longitude: parseFloat(point.longitude || 0),
-          title: point.name || 'Unknown Point',
-          description: point.description || '',
-          pointType: point.point_type || point.pointType || 'unknown',
-          iconColor: routeInfo?.color || point.icon_color || point.iconColor || '#FF0000',
-          image_urls: point.image_urls || [],
-          id: point.id || Math.random().toString(),
-          isActive: point.is_active !== false,
-          routeId: routeInfo?.route_id
-        };
-      });
+      console.log('Processing', data.points.length, 'points with', routeSummaries.length, 'route summaries');
+      let processedMarkers = processMapPointsWithColors(data.points, routeSummaries);
+      console.log('Processed markers:', processedMarkers.length, 'markers');
+      console.log('Sample processed marker:', processedMarkers[0]);
       
       // Filter markers based on selection mode
       if (mode === 'selectPickup') {
@@ -226,24 +225,19 @@ const MapViewScreen = ({ navigation, route }) => {
         ];
         setMarkers(routeMarkers);
         
-        // Create route data for proper road routing
         const routeData = {
-          start: {
-            lat: parseFloat(locations.pickup.latitude),
-            lng: parseFloat(locations.pickup.longitude)
-          },
-          end: {
-            lat: parseFloat(locations.destination.latitude),
-            lng: parseFloat(locations.destination.longitude)
-          },
-          color: '#007AFF',
-          weight: 6,
-          opacity: 0.8,
-          name: 'Tour Route'
+          id: 'tour-route',
+          name: 'Tour Route',
+          start_latitude: parseFloat(locations.pickup.latitude),
+          start_longitude: parseFloat(locations.pickup.longitude),
+          end_latitude: parseFloat(locations.destination.latitude),
+          end_longitude: parseFloat(locations.destination.longitude),
+          stroke_color: '#007AFF',
+          stroke_width: 6,
+          stroke_opacity: 0.8,
+          highlight_type: 'tour_route'
         };
         setRoads([routeData]);
-        
-
       } else if (mode === 'viewLocation' && location) {
         // Show only the specific location marker
         const locationMarker = {
@@ -258,61 +252,33 @@ const MapViewScreen = ({ navigation, route }) => {
         setMarkers([locationMarker]);
         setRoads([]);
       } else {
-        // Show all markers (pickup and dropoff) for public map view
+        // Show ALL markers immediately (pickup and dropoff)
+        console.log('Setting markers for display:', processedMarkers.length, 'markers');
         setMarkers(processedMarkers);
-        if (mode !== 'viewRoute') {
-          setRoads(allRoads);
-        }
       }
+    } else {
+      console.log('No points data to process');
+      setMarkers([]);
     }
     
-    // Process roads with route color associations
+    // Process and show ALL roads immediately with proper colors
     if (data.roads && data.roads.length > 0) {
-      const processedRoads = data.roads.map(road => {
-        // Find associated route color
-        const routeInfo = routeSummaries.find(r => {
-          if (r.road_highlight_ids) {
-            let roadIds = r.road_highlight_ids;
-            
-            if (typeof roadIds === 'string') {
-              try {
-                roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-              } catch (e) {
-                roadIds = [];
-              }
-            }
-            
-            if (Array.isArray(roadIds)) {
-              return roadIds.includes(parseInt(road.id));
-            }
-          }
-          return false;
-        });
-        
-        const finalColor = routeInfo?.color || road.stroke_color || road.color || '#007AFF';
-        
-        return {
-          id: road.id || Math.random().toString(),
-          name: road.name || 'Road Highlight',
-          road_coordinates: road.road_coordinates || road.coordinates || null,
-          start_latitude: road.start_latitude,
-          start_longitude: road.start_longitude,
-          end_latitude: road.end_latitude,
-          end_longitude: road.end_longitude,
-          stroke_color: finalColor,
-          stroke_width: road.stroke_width || road.weight || 4,
-          stroke_opacity: road.stroke_opacity || road.opacity || 0.7,
-          highlight_type: road.highlight_type || road.type || 'available'
-        };
-      });
+      const processedRoads = processRoadHighlightsWithColors(data.roads, routeSummaries);
+      
+      console.log('Setting ALL roads immediately:', processedRoads.length, 'roads');
+      console.log('Road colors:', processedRoads.map(r => ({ id: r.id, color: r.stroke_color })));
       
       setAllRoads(processedRoads);
-      // Show all roads by default for public map view
-      if (mode !== 'viewRoute' && mode !== 'viewLocation') {
-        setRoads(processedRoads);
-      } else {
+      
+      // Always show ALL roads immediately unless in specific view modes
+      if (mode === 'viewLocation' && location) {
         setRoads([]);
+      } else {
+        setRoads(processedRoads);
       }
+    } else {
+      setAllRoads([]);
+      setRoads([]);
     }
     
     // Process routes and zones
@@ -434,9 +400,8 @@ const MapViewScreen = ({ navigation, route }) => {
       // Force refresh from server
       const data = await fetchMapData({ forceRefresh: true });
       
-      // Skip route summaries for public map view
-      let routeSummaries = [];
-      setRouteSummaries([]);
+      // Fetch route summaries to get proper colors
+      const routeSummaries = await fetchRouteSummaries();
       
       if (data) {
         processMapData(data, routeSummaries);
@@ -509,26 +474,47 @@ const MapViewScreen = ({ navigation, route }) => {
           
           // Show road highlights
           if (road_highlights.length > 0) {
-            const processedRoads = road_highlights.map(road => ({
-              id: road.id,
-              name: road.name || 'Route',
-              road_coordinates: road.coordinates || road.road_coordinates,
-              stroke_color: color || road.color || '#007AFF',
-              stroke_width: road.weight || 4,
-              stroke_opacity: road.opacity || 0.7
-            }));
+            const processedRoads = road_highlights.map(road => {
+              // Handle different coordinate formats
+              let coordinates = road.coordinates || road.road_coordinates;
+              
+              // If coordinates is a string, try to parse it
+              if (typeof coordinates === 'string') {
+                try {
+                  coordinates = JSON.parse(coordinates);
+                } catch (e) {
+                  console.warn('Failed to parse road coordinates:', e);
+                  coordinates = null;
+                }
+              }
+              
+              return {
+                id: road.id,
+                name: road.name || 'Route',
+                road_coordinates: coordinates,
+                start_latitude: road.start_latitude,
+                start_longitude: road.start_longitude,
+                end_latitude: road.end_latitude,
+                end_longitude: road.end_longitude,
+                stroke_color: color || road.color || road.stroke_color || '#007AFF',
+                stroke_width: road.weight || road.stroke_width || 4,
+                stroke_opacity: road.opacity || road.stroke_opacity || 0.7,
+                highlight_type: road.highlight_type || 'route'
+              };
+            });
             setRoads(processedRoads);
           }
+          // Keep original roads visible if no specific highlights found
           
           Alert.alert(
             marker.title,
-            `Found ${available_destinations.length} available destinations. Routes are now highlighted on the map.`,
+            `Found ${available_destinations.length} available destinations${road_highlights.length > 0 ? '. Specific routes are highlighted.' : '.'}`,
             [
               { text: 'Navigate', onPress: () => {
                 const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
                 require('react-native').Linking.openURL(url);
               }},
-              { text: 'Clear Routes', onPress: () => {
+              { text: 'Show All', onPress: () => {
                 setMarkers(allMarkers);
                 setRoads(allRoads);
               }},
@@ -538,7 +524,7 @@ const MapViewScreen = ({ navigation, route }) => {
         } else {
           Alert.alert(
             marker.title,
-            'No routes available from this pickup point.',
+            'No specific routes available from this pickup point.',
             [
               { text: 'Navigate', onPress: () => {
                 const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
@@ -679,15 +665,15 @@ const MapViewScreen = ({ navigation, route }) => {
         <View style={styles.floatingControls}>
 
           
-          {/* Clear Routes Button */}
+          {/* Reset View Button */}
           <TouchableOpacity 
-            style={[styles.floatingButton, styles.clearRoutesButton]}
+            style={[styles.floatingButton, styles.resetViewButton]}
             onPress={() => {
               setMarkers(allMarkers);
               setRoads(allRoads);
             }}
           >
-            <Text style={styles.floatingButtonText}>🗑️</Text>
+            <Text style={styles.floatingButtonText}>🔄</Text>
           </TouchableOpacity>
           
           {/* Refresh Button */}
@@ -938,8 +924,8 @@ const styles = StyleSheet.create({
   refreshButton: {
     backgroundColor: '#4CAF50',
   },
-  clearRoutesButton: {
-    backgroundColor: '#E57373',
+  resetViewButton: {
+    backgroundColor: '#81C784',
   },
   forceRefreshButton: {
     backgroundColor: '#FFB74D',

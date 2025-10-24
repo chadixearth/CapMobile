@@ -16,6 +16,7 @@ import {
   createRideBooking, 
   checkActiveRide 
 } from '../../services/rideHailingService';
+import LocationService from '../../services/locationService';
 import BackButton from '../../components/BackButton';
 
 export default function RideHailingScreen({ navigation }) {
@@ -26,6 +27,7 @@ export default function RideHailingScreen({ navigation }) {
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [user, setUser] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
     initializeScreen();
@@ -62,6 +64,25 @@ export default function RideHailingScreen({ navigation }) {
     setRefreshing(false);
   };
 
+  const getCurrentLocationForPickup = async () => {
+    setGettingLocation(true);
+    try {
+      const location = await LocationService.getCurrentLocation();
+      // For now, just set a generic message. In a real app, you'd reverse geocode the coordinates
+      setPickupAddress('Current Location (GPS)');
+      Alert.alert('Location Found', 'Your current location has been set as pickup point.');
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert(
+        'Location Error',
+        error.message || 'Unable to get your current location. Please enter your pickup location manually.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setGettingLocation(false);
+    }
+  };
+
   const handleRequestRide = async () => {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
       Alert.alert('Missing Information', 'Please enter pickup and destination addresses');
@@ -79,7 +100,6 @@ export default function RideHailingScreen({ navigation }) {
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
         passenger_count: parseInt(passengerCount),
-
         notes: 'Ride created from mobile app'
       });
 
@@ -98,12 +118,38 @@ export default function RideHailingScreen({ navigation }) {
         );
       } else if (result.error_code === 'ACTIVE_RIDE_EXISTS') {
         Alert.alert('Active Ride Found', result.error);
+      } else if (result.error_code === 'LOCATION_ERROR') {
+        Alert.alert(
+          'Location Services Required', 
+          result.error + '\n\nLocation is needed to help drivers find you.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Try Again', 
+              onPress: () => handleRequestRide()
+            }
+          ]
+        );
       } else {
         Alert.alert('Error', result.error || 'Failed to create ride');
       }
     } catch (error) {
       console.error('Error requesting ride:', error);
-      Alert.alert('Error', 'Failed to request ride');
+      if (error.message && error.message.includes('location')) {
+        Alert.alert(
+          'Location Error', 
+          'Unable to get your current location. Please make sure location services are enabled and try again.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Try Again', 
+              onPress: () => handleRequestRide()
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to request ride. Please try again.');
+      }
     }
   };
 
@@ -149,12 +195,25 @@ export default function RideHailingScreen({ navigation }) {
       >
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Pickup Location</Text>
-          <TextInput
-            style={styles.addressInput}
-            value={pickupAddress}
-            onChangeText={setPickupAddress}
-            placeholder="Enter pickup location"
-          />
+          <View style={styles.locationInputContainer}>
+            <TextInput
+              style={[styles.addressInput, styles.locationInput]}
+              value={pickupAddress}
+              onChangeText={setPickupAddress}
+              placeholder="Enter pickup location"
+            />
+            <TouchableOpacity
+              style={styles.locationButton}
+              onPress={getCurrentLocationForPickup}
+              disabled={gettingLocation}
+            >
+              {gettingLocation ? (
+                <ActivityIndicator size="small" color="#6B2E2B" />
+              ) : (
+                <Ionicons name="location" size={20} color="#6B2E2B" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.sectionCard}>
@@ -292,6 +351,24 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     minHeight: 44,
+  },
+  locationInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationInput: {
+    flex: 1,
+  },
+  locationButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#F5E9E2',
+    borderWidth: 1,
+    borderColor: '#E0CFC2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   passengerSelector: {
     flexDirection: 'row',

@@ -69,11 +69,11 @@ class AppInitService {
         results.errors.push({ type: 'api', error: error.message });
       }
 
-      // Step 4: Initialize notifications (skip push notifications)
+      // Step 4: Initialize notifications
       try {
         console.log('[AppInit] Initializing notifications...');
-        // Skip push notification registration - using polling instead
-        console.log('[AppInit] Notifications initialized');
+        await NotificationService.initialize();
+        console.log('[AppInit] Notifications initialized successfully');
       } catch (error) {
         console.error('[AppInit] Failed to initialize notifications:', error);
         results.errors.push({ type: 'notifications', error: error.message });

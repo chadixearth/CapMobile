@@ -173,8 +173,16 @@ export async function createRideBooking(bookingData) {
         bookingData.pickup_latitude = location.latitude;
         bookingData.pickup_longitude = location.longitude;
       } catch (locationError) {
-        console.warn('Could not get current location:', locationError);
-        // Continue without coordinates - they're optional
+        console.warn('Could not get current location:', locationError.message);
+        // Return error if location is critical for the booking
+        if (locationError.message.includes('Location services')) {
+          return {
+            success: false,
+            error: locationError.message,
+            error_code: 'LOCATION_ERROR'
+          };
+        }
+        // Continue without coordinates for other errors
       }
     }
     

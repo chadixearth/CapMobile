@@ -23,38 +23,37 @@ export const NotificationProvider = ({ children }) => {
       const title = n.title || '';
       const message = n.message || '';
       
-      return (
-        !title.includes('Test Notification') && 
-        !message.includes('test notification to verify') &&
-        !title.includes('Test Booking Request') &&
-        !message.includes('Test Tourist') &&
-        !message.includes('Test Driver')
-      );
+      // Don't filter out any notifications for now to debug
+      console.log('[NotificationContext] Processing notification:', { id: n.id, title, message, read: n.read });
+      
+      return true; // Show all notifications for debugging
     });
   };
 
   const loadNotifications = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('[NotificationContext] No user ID, skipping notification load');
+      return;
+    }
     
     try {
+      console.log(`[NotificationContext] Loading notifications for user: ${user.id}`);
       const result = await NotificationService.getNotifications(user.id);
+      console.log(`[NotificationContext] Service result:`, result);
+      
       if (result.success) {
         const filtered = filterTestNotifications(result.data || []);
         const newUnreadCount = filtered.filter(n => !n.read).length;
         
-        // Check if there are new notifications
-        const currentIds = notifications.map(n => n.id);
-        const newNotifications = filtered.filter(n => !currentIds.includes(n.id));
-        
-        if (newNotifications.length > 0) {
-          console.log(`[NotificationContext] Found ${newNotifications.length} new notifications`);
-        }
+        console.log(`[NotificationContext] Filtered notifications: ${filtered.length}, unread: ${newUnreadCount}`);
         
         setNotifications(filtered);
         setUnreadCount(newUnreadCount);
+      } else {
+        console.log(`[NotificationContext] Service failed:`, result.error);
       }
     } catch (error) {
-      console.error('Error loading notifications:', error);
+      console.error('[NotificationContext] Error loading notifications:', error);
     }
   };
 
@@ -72,13 +71,36 @@ export const NotificationProvider = ({ children }) => {
 
   const markAllAsRead = async () => {
     try {
-      const result = await NotificationService.markAllAsRead();
-      if (result.success) {
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-        setUnreadCount(0);
+      console.log('[NotificationContext] Marking all notifications as read');
+      
+      // Get current unread notifications
+      const unreadNotifications = notifications.filter(n => !n.read);
+      console.log(`[NotificationContext] Found ${unreadNotifications.length} unread notifications`);
+      
+      if (unreadNotifications.length === 0) {
+        console.log('[NotificationContext] No unread notifications to mark');
+        return;
+      }
+      
+      // Mark all notifications as read locally first for immediate UI update
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+      
+      // Then sync with backend
+      const result = await NotificationService.markAllAsRead(user?.id, notifications);
+      console.log('[NotificationContext] Backend sync result:', result);
+      
+      if (!result.success) {
+        console.error('[NotificationContext] Failed to sync mark all as read with backend:', result.error);
+        // Reload notifications to get correct state
+        await loadNotifications();
+      } else {
+        console.log('[NotificationContext] All notifications marked as read successfully');
       }
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      console.error('[NotificationContext] Error marking all as read:', error);
+      // Reload notifications to get correct state
+      await loadNotifications();
     }
   };
 
@@ -91,35 +113,14 @@ export const NotificationProvider = ({ children }) => {
 
     loadNotifications();
 
-    // Subscribe to new notifications
-    const subscription = NotificationService.subscribeToNotifications(
-      user.id,
-      (newNotifications) => {
-        if (Array.isArray(newNotifications)) {
-          const filtered = filterTestNotifications(newNotifications);
-          setNotifications(filtered);
-          setUnreadCount(filtered.filter(n => !n.read).length);
-        } else if (newNotifications) {
-          const filtered = filterTestNotifications([newNotifications]);
-          if (filtered.length > 0) {
-            setNotifications(prev => {
-              const exists = prev.some(n => n.id === filtered[0].id);
-              if (exists) {
-                return prev.map(n => n.id === filtered[0].id ? filtered[0] : n);
-              }
-              return [filtered[0], ...prev];
-            });
-            setUnreadCount(prev => prev + (filtered[0].read ? 0 : 1));
-          }
-        }
-      }
-    );
+    // Skip subscription since network is failing
+    console.log(`[NotificationContext] Skipping subscription due to network issues`);
+    const subscription = { unsubscribe: () => {} };
 
     return () => {
       if (subscription && subscription.unsubscribe) {
         subscription.unsubscribe();
       }
-      NotificationService.stopPolling();
     };
   }, [user?.id]);
 

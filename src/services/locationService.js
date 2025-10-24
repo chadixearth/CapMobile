@@ -9,11 +9,22 @@ class LocationService {
   // Request location permissions
   static async requestPermissions() {
     try {
+      // Check if location services are enabled first
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        Alert.alert(
+          'Location Services Disabled',
+          'Please enable location services in your device settings to use ride hailing features.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           'Location Permission Required',
-          'This app needs location access to provide real-time tracking for bookings.',
+          'This app needs location access to provide real-time tracking for bookings. Please enable location permissions in your device settings.',
           [{ text: 'OK' }]
         );
         return false;
@@ -21,6 +32,11 @@ class LocationService {
       return true;
     } catch (error) {
       console.error('Error requesting location permissions:', error);
+      Alert.alert(
+        'Location Error',
+        'Unable to access location services. Please check your device settings.',
+        [{ text: 'OK' }]
+      );
       return false;
     }
   }
@@ -97,11 +113,15 @@ class LocationService {
   // Get current location once
   static async getCurrentLocation() {
     const hasPermission = await this.requestPermissions();
-    if (!hasPermission) throw new Error('Location permission denied');
+    if (!hasPermission) {
+      throw new Error('Location services are not enabled or permission denied. Please enable location services in your device settings.');
+    }
 
     try {
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
+        timeout: 15000,
+        maximumAge: 10000,
       });
       
       return {
@@ -113,7 +133,14 @@ class LocationService {
       };
     } catch (error) {
       console.error('Error getting current location:', error);
-      throw error;
+      if (error.code === 'E_LOCATION_SERVICES_DISABLED') {
+        throw new Error('Location services are disabled. Please enable location services in your device settings.');
+      } else if (error.code === 'E_LOCATION_UNAVAILABLE') {
+        throw new Error('Unable to determine your location. Please try again or enter your location manually.');
+      } else if (error.code === 'E_LOCATION_TIMEOUT') {
+        throw new Error('Location request timed out. Please try again.');
+      }
+      throw new Error('Error fetching current location. Make sure that location services are enabled.');
     }
   }
 

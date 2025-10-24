@@ -55,12 +55,12 @@ export default function OwnerTabs({ setRole }) {
       <Tab.Screen
         name={Routes.HOME}
         component={OwnerHomeScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+        options={{ header: () => <TARTRACKHeader /> }}
       />
       <Tab.Screen
         name={Routes.TERMINALS}
         component={TerminalsScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+        options={{ header: () => <TARTRACKHeader /> }}
       />
       <Tab.Screen
         name={Routes.BREAKEVEN}
@@ -70,12 +70,12 @@ export default function OwnerTabs({ setRole }) {
       <Tab.Screen
         name={Routes.EVENTS}
         component={OwnerBookScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+        options={{ header: () => <TARTRACKHeader /> }}
       />
       <Tab.Screen
         name={Routes.GOODS_SERVICES}
         component={GoodsServicesScreen}
-        options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }}
+        options={{ header: () => <TARTRACKHeader /> }}
       />
       <Tab.Screen
         name={Routes.PROFILE}

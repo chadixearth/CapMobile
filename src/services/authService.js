@@ -1366,6 +1366,8 @@ export async function resendConfirmationEmail(email) {
   }
 }
 
+
+
 /**
  * Legacy function for backward compatibility
  * @deprecated Use registerUser instead

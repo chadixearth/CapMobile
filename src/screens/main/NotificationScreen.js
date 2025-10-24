@@ -177,10 +177,13 @@ export default function NotificationScreen({ navigation }) {
         })}
       </View>
 
-      {/* Mark all as read button */}
+      {/* Action buttons */}
       {unreadCount > 0 && (
         <View style={styles.actionBar}>
-          <TouchableOpacity style={styles.markAllBtn} onPress={markAllAsRead}>
+          <TouchableOpacity style={styles.markAllBtn} onPress={() => {
+            console.log('[NotificationScreen] Mark all as read pressed');
+            markAllAsRead();
+          }}>
             <Ionicons name="checkmark-done" size={16} color={MAROON} />
             <Text style={styles.markAllText}>Mark all as read</Text>
           </TouchableOpacity>
@@ -195,7 +198,7 @@ export default function NotificationScreen({ navigation }) {
             {...item} 
             category={categorizeNotification(item)}
             onPress={() => handleNotificationPress(item)}
-            onView={() => setSelectedNotification(item)}
+
           />
         )}
         contentContainerStyle={{ paddingBottom: 16 }}
@@ -213,39 +216,12 @@ export default function NotificationScreen({ navigation }) {
         }
       />
       
-      {/* Notification Detail Modal */}
-      <Modal
-        visible={!!selectedNotification}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedNotification(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Notification</Text>
-              <TouchableOpacity onPress={() => setSelectedNotification(null)}>
-                <Ionicons name="close" size={20} color={MAROON} />
-              </TouchableOpacity>
-            </View>
-            
-            {selectedNotification && (
-              <View style={styles.modalContent}>
-                <Text style={styles.notifTitle}>{selectedNotification.title}</Text>
-                <Text style={styles.notifTime}>
-                  {new Date(selectedNotification.created_at).toLocaleString()}
-                </Text>
-                <Text style={styles.notifMessage}>{selectedNotification.message}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+
     </View>
   );
 }
 
-function NotificationItem({ title, message, created_at, read, type, category, onPress, onView }) {
+function NotificationItem({ title, message, created_at, read, type, category, onPress }) {
   const getIcon = () => {
     const titleLower = title?.toLowerCase() || '';
     
@@ -304,7 +280,14 @@ function NotificationItem({ title, message, created_at, read, type, category, on
   };
 
   return (
-    <View style={[styles.itemRow, !read && styles.unreadItem]}>
+    <TouchableOpacity 
+      style={[styles.itemRow, !read && styles.unreadItem]}
+      onPress={() => {
+        if (!read) {
+          onPress(); // This will mark as read and navigate
+        }
+      }}
+    >
       <View style={[styles.iconCircle, { backgroundColor: getIconColor() + '20' }]}>
         <MaterialCommunityIcons name={getIcon()} size={22} color={getIconColor()} />
       </View>
@@ -315,13 +298,8 @@ function NotificationItem({ title, message, created_at, read, type, category, on
         </View>
         <Text style={styles.itemMessage} numberOfLines={2}>{message}</Text>
         {!read && <View style={styles.unreadDot} />}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={onView}>
-            <Text style={styles.actionButtonText}>View</Text>
-          </TouchableOpacity>
-        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -438,6 +416,18 @@ const styles = StyleSheet.create({
     fontWeight: '600', 
     fontSize: 13 
   },
+  testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  testText: { 
+    color: MAROON, 
+    fontWeight: '600', 
+    fontSize: 13 
+  },
 
   /* List items (sizes like Driver Booking Screen) */
   itemRow: {
@@ -486,72 +476,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    marginTop: 8,
-    gap: 8,
-  },
-  actionButton: {
-    backgroundColor: MAROON,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  modalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    maxWidth: '90%',
-    maxHeight: '70%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: TEXT,
-  },
-  modalContent: {
-    padding: 16,
-  },
-  notifTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: TEXT,
-    marginBottom: 6,
-  },
-  notifTime: {
-    fontSize: 11,
-    color: MUTED,
-    marginBottom: 12,
-  },
-  notifMessage: {
-    fontSize: 13,
-    color: TEXT,
-    lineHeight: 18,
-  },
+
 });

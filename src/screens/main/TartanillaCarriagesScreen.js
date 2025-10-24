@@ -41,7 +41,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const [newCarriage, setNewCarriage] = useState({
     plate_number: '', 
     capacity: '4',
-    status: '',
     notes: ''
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
@@ -393,7 +392,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       const carriageData = {
         plate_number: newCarriage.plate_number.trim(),
         capacity: parseInt(newCarriage.capacity) || 4,
-        status: newCarriage.status || 'waiting_driver_acceptance',
+        status: 'available', // New carriages should be available for rent
         eligibility: newCarriage.eligibility || 'eligible',
         notes: newCarriage.notes || ''
       };
@@ -433,7 +432,6 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       setNewCarriage({
         plate_number: '',
         capacity: '4',
-        status: 'waiting_driver_acceptance',
         notes: ''
       });
       
@@ -554,7 +552,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
       in_use: { icon: 'time', color: '#EF4444', bgColor: '#FEF2F2', text: 'In Use' },
       maintenance: { icon: 'build', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Maintenance' },
-      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Pending Driver' },
+      waiting_driver_acceptance: { icon: 'hourglass-outline', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Awaiting Driver' },
       driver_assigned: { icon: 'person-circle', color: '#3B82F6', bgColor: '#EFF6FF', text: 'Driver Assigned' },
       not_usable: { icon: 'close-circle', color: '#EF4444', bgColor: '#FEF2F2', text: 'Not Usable' },
       suspended: { icon: 'pause-circle', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Suspended' },
@@ -1115,7 +1113,7 @@ const statusConfig = {
     icon: 'hourglass-outline',
     color: '#ff8f00',
     bgColor: '#FFF3E0',
-    text: 'Pending Driver',
+    text: 'Awaiting Driver',
   },
   driver_assigned: {
     icon: 'person-circle',

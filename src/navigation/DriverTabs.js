@@ -54,12 +54,12 @@ export default function DriverTabs({ setRole }) {
         headerShown: true,
       })}
     >
-      <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.HOME} component={DriverHomeScreen} options={{ header: () => <TARTRACKHeader /> }} />
 
       <Tab.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} options={{ headerShown: false }} />
-      <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.BOOKINGS} component={DriverBookScreen} options={{ header: () => <TARTRACKHeader /> }} />
       {/* <Tab.Screen name="Schedule" component={DriverScheduleScreen} options={{ headerShown: false }} /> */}
-      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: ({ navigation }) => <TARTRACKHeader onNotificationPress={() => navigation.navigate(Routes.NOTIFICATION)} /> }} />
+      <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: () => <TARTRACKHeader /> }} />
       <Tab.Screen name="Carriage" component={MyCarriagesScreen} options={{ headerShown: false }} />
       <Tab.Screen name={Routes.MENU} component={MenuScreen} options={{ headerShown: false }} />
     </Tab.Navigator>

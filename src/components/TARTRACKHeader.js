@@ -21,6 +21,14 @@ const TARTRACKHeader = ({
   const defaultLogo = require('../../assets/tartrack_whitel.png');
   const { unreadCount } = useNotifications();
 
+  const handleNotificationPress = () => {
+    if (onNotificationPress) {
+      onNotificationPress();
+    } else if (global.navigationRef) {
+      global.navigationRef.navigate('Notification');
+    }
+  };
+
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, containerStyle]}>
       <View style={[styles.header, headerStyle]}>
@@ -66,7 +74,7 @@ const TARTRACKHeader = ({
 
           {showNotification && (
             <TouchableOpacity
-              onPress={onNotificationPress}
+              onPress={handleNotificationPress}
               style={styles.iconBtn}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"

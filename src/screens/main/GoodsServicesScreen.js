@@ -70,15 +70,24 @@ export default function GoodsServicesScreen() {
   const fetchUserProfile = useCallback(async () => {
     if (!auth.user?.id || !isDriverOrOwner) return;
     try {
+      console.log('[GoodsServicesScreen] Fetching user profile for:', auth.user.id);
       const result = await getGoodsServicesProfileByAuthor(auth.user.id);
+      console.log('[GoodsServicesScreen] User profile result:', result);
+      
       if (result.success) {
         setUserProfile(result.data);
         setEditDescription(result.data?.description || '');
         // Reset selected images when fetching profile
         setSelectedImages([]);
+      } else {
+        console.log('[GoodsServicesScreen] No user profile found or error:', result.error);
+        setUserProfile(null);
+        setEditDescription('');
       }
     } catch (e) {
-      console.error('Failed to fetch user profile:', e);
+      console.error('[GoodsServicesScreen] Error fetching user profile:', e);
+      setUserProfile(null);
+      setEditDescription('');
     }
   }, [auth.user?.id, isDriverOrOwner]);
 
@@ -86,14 +95,24 @@ export default function GoodsServicesScreen() {
     setLoading(true);
     setError('');
     try {
+      console.log('[GoodsServicesScreen] Fetching posts...');
       const result = await listGoodsServicesPosts();
+      console.log('[GoodsServicesScreen] Posts result:', result);
+      
       if (result.success) {
-        setPosts(Array.isArray(result.data) ? result.data : []);
+        const postsData = Array.isArray(result.data) ? result.data : [];
+        console.log('[GoodsServicesScreen] Setting posts:', postsData.length, 'items');
+        setPosts(postsData);
+        setError('');
       } else {
+        console.error('[GoodsServicesScreen] Failed to fetch posts:', result.error);
         setError(result.error || 'Failed to load posts');
+        setPosts([]);
       }
     } catch (e) {
+      console.error('[GoodsServicesScreen] Error fetching posts:', e);
       setError(e.message || 'Failed to load posts');
+      setPosts([]);
     } finally {
       setLoading(false);
     }
@@ -198,8 +217,21 @@ export default function GoodsServicesScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchPosts(), fetchRecentReviews(), fetchUserProfile()]);
-    setRefreshing(false);
+    try {
+      // Clear existing data first
+      setPosts([]);
+      setAuthorMap({});
+      setError('');
+      
+      console.log('[GoodsServicesScreen] Starting refresh...');
+      await Promise.all([fetchPosts(), fetchRecentReviews(), fetchUserProfile()]);
+      console.log('[GoodsServicesScreen] Refresh completed');
+    } catch (error) {
+      console.error('[GoodsServicesScreen] Error during refresh:', error);
+      setError('Failed to refresh data');
+    } finally {
+      setRefreshing(false);
+    }
   }, [fetchPosts, fetchRecentReviews, fetchUserProfile]);
 
   // Animation effect for loading
@@ -290,12 +322,20 @@ export default function GoodsServicesScreen() {
       
       const result = await upsertGoodsServicesProfile(auth.user.id, editDescription.trim(), allMediaUrls);
       if (result.success) {
-        setUserProfile(result.data);
+        // Clear cache and force refresh
+        setPosts([]);
+        setAuthorMap({});
+        
         setEditModalVisible(false);
         setSelectedImages([]);
         Alert.alert('Success', 'Your goods & services profile has been updated.');
-        fetchPosts();
-        fetchUserProfile();
+        
+        // Force refresh all data
+        await Promise.all([
+          fetchPosts(),
+          fetchUserProfile(),
+          fetchRecentReviews()
+        ]);
       } else {
         Alert.alert('Error', result.error || 'Failed to save profile');
       }
@@ -321,12 +361,22 @@ export default function GoodsServicesScreen() {
             try {
               const result = await deleteGoodsServicesPost(userProfile.id, auth.user.id);
               if (result.success) {
+                // Clear all state
                 setUserProfile(null);
                 setEditDescription('');
                 setSelectedImages([]);
                 setEditModalVisible(false);
+                setPosts([]);
+                setAuthorMap({});
+                
                 Alert.alert('Success', 'Your goods & services profile has been removed.');
-                fetchPosts(); // Refresh to remove from list
+                
+                // Force refresh all data
+                await Promise.all([
+                  fetchPosts(),
+                  fetchUserProfile(),
+                  fetchRecentReviews()
+                ]);
               } else {
                 Alert.alert('Error', result.error || 'Failed to clear profile');
               }
@@ -806,13 +856,28 @@ export default function GoodsServicesScreen() {
         ListFooterComponent={
           <View style={styles.footer}>
             <Button
-              title={loading ? 'Loading...' : 'Refresh'}
-              onPress={() => {
-                fetchPosts();
-                fetchRecentReviews();
-                fetchUserProfile();
+              title={loading ? 'Loading...' : 'Refresh Data'}
+              onPress={async () => {
+                console.log('[GoodsServicesScreen] Manual refresh triggered');
+                // Clear all data first
+                setPosts([]);
+                setAuthorMap({});
+                setError('');
+                
+                // Force reload
+                await Promise.all([
+                  fetchPosts(),
+                  fetchRecentReviews(),
+                  fetchUserProfile()
+                ]);
               }}
+              disabled={loading}
             />
+            {posts.length > 0 && (
+              <Text style={styles.footerText}>
+                Showing {posts.length} goods & services posts
+              </Text>
+            )}
           </View>
         }
         showsVerticalScrollIndicator={true}
@@ -1296,6 +1361,12 @@ const styles = StyleSheet.create({
 
   // Footer refresh button stays
   footer: { padding: 16 },
+  footerText: {
+    textAlign: 'center',
+    color: COLORS.sub,
+    fontSize: 12,
+    marginTop: 8,
+  },
 
   // Card (modern & simple)
   card: {

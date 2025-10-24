@@ -7,6 +7,7 @@ import RideStatusCard from '../../components/RideStatusCard';
 import { getMyActiveRides } from '../../services/rideHailingService';
 import { getCurrentUser } from '../../services/authService';
 import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
+import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -36,16 +37,28 @@ const TerminalsScreen = ({ navigation, route }) => {
         fetchMapData({ cacheOnly: true })
       ]);
       
-      setTerminals(terminalData.terminals || []);
+      // Get route summaries for proper colors
+      const routeSummaries = await fetchRouteSummaries();
+      
+      // Process terminals with colors
+      const processedTerminals = processMapPointsWithColors(terminalData.terminals || [], routeSummaries);
+      setTerminals(processedTerminals);
+      
+      // Process roads with colors
+      if (fullMapData?.roads) {
+        const processedRoads = processRoadHighlightsWithColors(fullMapData.roads, routeSummaries);
+        fullMapData.roads = processedRoads;
+      }
+      
       setMapData(fullMapData);
     } catch (error) {
       console.error('Error loading map data:', error);
       // Fallback to default terminals
       setTerminals([
-        { id: '1', name: 'Plaza Independencia', latitude: 10.2926, longitude: 123.9058 },
-        { id: '2', name: 'Carbon Market', latitude: 10.2956, longitude: 123.8772 },
-        { id: '3', name: 'SM City Cebu', latitude: 10.3111, longitude: 123.9164 },
-        { id: '4', name: 'Ayala Center Cebu', latitude: 10.3173, longitude: 123.9058 },
+        { id: '1', name: 'Plaza Independencia', latitude: 10.2926, longitude: 123.9058, pointType: 'pickup', iconColor: '#FF0000' },
+        { id: '2', name: 'Carbon Market', latitude: 10.2956, longitude: 123.8772, pointType: 'pickup', iconColor: '#FF0000' },
+        { id: '3', name: 'SM City Cebu', latitude: 10.3111, longitude: 123.9164, pointType: 'pickup', iconColor: '#FF0000' },
+        { id: '4', name: 'Ayala Center Cebu', latitude: 10.3173, longitude: 123.9058, pointType: 'pickup', iconColor: '#FF0000' },
       ]);
     }
   };
@@ -179,11 +192,11 @@ const TerminalsScreen = ({ navigation, route }) => {
             markers={terminals.map(t => ({
               latitude: parseFloat(t.latitude),
               longitude: parseFloat(t.longitude),
-              title: t.name,
-              description: `Tap to select as ${type}`,
+              title: t.title || t.name,
+              description: t.description || `Tap to select as ${type}`,
               id: t.id,
-              pointType: t.point_type || 'terminal',
-              iconColor: selectedId === t.id ? '#6B2E2B' : '#00AA00',
+              pointType: t.pointType || t.point_type || 'terminal',
+              iconColor: selectedId === t.id ? '#6B2E2B' : (t.iconColor || '#00AA00'),
             }))}
             roads={mapData?.roads || []}
             routes={mapData?.routes || []}

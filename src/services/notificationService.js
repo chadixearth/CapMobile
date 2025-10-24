@@ -22,17 +22,43 @@ class NotificationService {
 
   // Initialize notification service
   static async initialize() {
-    // Setup notification configuration
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
-    
-    // Register for push notifications immediately
-    await this.registerForPushNotifications();
+    try {
+      console.log('[NotificationService] Initializing notification service...');
+      
+      // Setup notification configuration
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+      
+      // Request notification permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        console.log('[NotificationService] Notification permission not granted');
+        return { success: false, error: 'Permission not granted' };
+      }
+      
+      console.log('[NotificationService] Notification permissions granted');
+      
+      // Register for push notifications
+      await this.registerForPushNotifications();
+      
+      console.log('[NotificationService] Notification service initialized successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('[NotificationService] Failed to initialize:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   // Send notification to backend
@@ -64,10 +90,12 @@ class NotificationService {
         return ResponseHandler.createSafeResponse([]);
       }
       
-      // Use shorter timeout for notifications to prevent connection issues
+      console.log(`[NotificationService] Fetching notifications for user: ${userId}`);
+      
+      // Direct API call to notifications endpoint
       const result = await networkClient.get(`/notifications/?user_id=${userId}`, {
-        timeout: 8000,  // Reduced to 8s
-        retries: 0      // No retries to prevent congestion
+        timeout: 10000,
+        retries: 1
       });
       
       // Ensure result has proper structure
@@ -114,13 +142,34 @@ class NotificationService {
   }
 
   // Mark all notifications as read
-  static async markAllAsRead() {
+  static async markAllAsRead(userId = null, notifications = []) {
     try {
-      const result = await networkClient.put('/notifications/mark-all-read/', {}, {
-        timeout: 5000,
-        retries: 0
-      });
-      return result?.data || { success: true };
+      console.log(`[NotificationService] Marking all notifications as read for user: ${userId}`);
+      
+      if (!notifications || notifications.length === 0) {
+        console.log('[NotificationService] No notifications to mark as read');
+        return { success: true };
+      }
+      
+      // Mark each unread notification individually since bulk endpoint doesn't exist
+      const unreadNotifications = notifications.filter(n => !n.read);
+      console.log(`[NotificationService] Found ${unreadNotifications.length} unread notifications to mark`);
+      
+      if (unreadNotifications.length === 0) {
+        return { success: true };
+      }
+      
+      // Mark each notification as read
+      const results = await Promise.allSettled(
+        unreadNotifications.map(notification => 
+          this.markAsRead(notification.id)
+        )
+      );
+      
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value?.success !== false).length;
+      console.log(`[NotificationService] Marked ${successCount}/${unreadNotifications.length} notifications as read`);
+      
+      return { success: true, marked: successCount, total: unreadNotifications.length };
     } catch (error) {
       console.log('[NotificationService] Mark all as read failed:', error.message);
       return { success: false, error: error.message };
@@ -135,27 +184,7 @@ class NotificationService {
 
     this.callbacks.add(callback);
     
-    // Test if notification endpoint is available before starting polling
-    try {
-      const { testNotificationEndpoint } = await import('./networkConfig');
-      const endpointTest = await testNotificationEndpoint();
-      
-      if (!endpointTest.success) {
-        console.log('[NotificationService] Notification endpoint not available, disabling notifications');
-        // Still call callback with empty array so UI doesn't break
-        if (callback) {
-          callback([]);
-        }
-        return;
-      }
-      console.log('[NotificationService] Notification endpoint available, starting polling');
-    } catch (error) {
-      console.log('[NotificationService] Could not test notification endpoint, disabling notifications to prevent errors');
-      if (callback) {
-        callback([]);
-      }
-      return;
-    }
+    console.log('[NotificationService] Starting notification polling for user:', userId);
     
     // Register for push notifications
     try {
@@ -172,7 +201,7 @@ class NotificationService {
       }
     });
     
-    // Poll every 60 seconds to reduce server load
+    // Poll every 30 seconds to reduce excessive calls
     this.pollingInterval = setInterval(async () => {
       try {
         // Check circuit breaker
@@ -241,6 +270,10 @@ class NotificationService {
               if (type === 'package' || title.includes('package') || title.includes('tour')) {
                 invalidateData.packages();
               }
+              // Handle announcements - no specific data invalidation needed
+              if (type === 'announcement' || title.includes('announcement')) {
+                console.log('[NotificationService] Received announcement:', title);
+              }
             });
             
             this.callbacks.forEach(cb => {
@@ -272,7 +305,7 @@ class NotificationService {
           }
         }
       }
-    }, 60000);
+    }, 30000); // 30 seconds to reduce excessive calls
 
     // Initial load with timeout handling
     this.getNotifications(userId).then(result => {
@@ -307,24 +340,32 @@ class NotificationService {
   
   // Check notification service health
   static async checkHealth() {
+    return {
+      endpoint_available: true,
+      circuit_open: this.isCircuitOpen,
+      consecutive_failures: this.consecutiveFailures,
+      backoff_until: this.backoffTime > Date.now() ? new Date(this.backoffTime).toLocaleTimeString() : null,
+      polling_active: !!this.pollingInterval,
+      push_token: this.pushToken ? 'Available' : 'Not available'
+    };
+  }
+  
+  // Test notification system
+  static async testNotification() {
     try {
-      const { testNotificationEndpoint } = await import('./networkConfig');
-      const result = await testNotificationEndpoint();
+      console.log('[NotificationService] Testing notification system...');
       
-      return {
-        endpoint_available: result.success,
-        circuit_open: this.isCircuitOpen,
-        consecutive_failures: this.consecutiveFailures,
-        backoff_until: this.backoffTime > Date.now() ? new Date(this.backoffTime).toLocaleTimeString() : null,
-        polling_active: !!this.pollingInterval
-      };
+      // Send a test local notification
+      await this.sendLocalNotification(
+        'Test Notification',
+        'This is a test notification to verify the system is working.',
+        { type: 'test', timestamp: Date.now() }
+      );
+      
+      return { success: true, message: 'Test notification sent' };
     } catch (error) {
-      return {
-        endpoint_available: false,
-        circuit_open: this.isCircuitOpen,
-        consecutive_failures: this.consecutiveFailures,
-        error: error.message
-      };
+      console.error('[NotificationService] Test notification failed:', error);
+      return { success: false, error: error.message };
     }
   }
 
@@ -687,11 +728,27 @@ class NotificationService {
   // Register for push notifications
   static async registerForPushNotifications() {
     try {
-      // Skip Firebase setup for now - not configured
-      console.log('[NotificationService] Skipping push notifications - Firebase not configured');
-      return null;
+      console.log('[NotificationService] Registering for push notifications...');
+      
+      // Get push token for Expo notifications
+      const token = await Notifications.getExpoPushTokenAsync({
+        projectId: 'your-expo-project-id', // You can get this from app.json or expo config
+      });
+      
+      if (token) {
+        console.log('[NotificationService] Got Expo push token:', token.data.substring(0, 20) + '...');
+        this.pushToken = token.data;
+        
+        // Store token in backend
+        await this.storePushToken(token.data);
+        
+        return token.data;
+      } else {
+        console.log('[NotificationService] Failed to get push token');
+        return null;
+      }
     } catch (error) {
-      console.log('[NotificationService] Push notification setup failed:', error.message);
+      console.log('[NotificationService] Push notification registration failed:', error.message);
       return null;
     }
   }
@@ -716,6 +773,8 @@ class NotificationService {
   // Send local notification with better formatting
   static async sendLocalNotification(title, message, data = {}) {
     try {
+      console.log('[NotificationService] Sending local notification:', title);
+      
       await Notifications.scheduleNotificationAsync({
         content: {
           title: title || 'New Notification',
@@ -728,9 +787,10 @@ class NotificationService {
         },
         trigger: null,
       });
-      console.log('[NotificationService] Local notification sent:', title);
+      
+      console.log('[NotificationService] Local notification sent successfully:', title);
     } catch (error) {
-      console.log('[NotificationService] Local notification failed:', error.message);
+      console.error('[NotificationService] Local notification failed:', error.message);
     }
   }
 

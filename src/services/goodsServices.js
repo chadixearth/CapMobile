@@ -69,17 +69,30 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
     method: 'GET',
     headers: {
       'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache'
+      'Pragma': 'no-cache',
+      'If-None-Match': ''
     }
   });
   
   if (res.ok) {
-    // The optimized list may return {results: [...]} or a raw array
-    const items = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
+    // Handle multiple response formats
+    let items = [];
+    if (Array.isArray(res.data)) {
+      items = res.data;
+    } else if (res.data && typeof res.data === 'object') {
+      items = res.data.results || res.data.data || res.data.items || [];
+      // If it's a single object, wrap it in an array
+      if (!Array.isArray(items) && res.data.id) {
+        items = [res.data];
+      }
+    }
+    
     console.log('[goodsServices] Fetched items:', items.length, 'posts');
-    return { success: true, data: items };
+    return { success: true, data: Array.isArray(items) ? items : [] };
   }
-  return { success: false, error: res.data?.error || 'Failed to fetch posts' };
+  
+  console.error('[goodsServices] Failed to fetch posts:', res.status, res.data);
+  return { success: false, error: res.data?.error || res.data?.message || 'Failed to fetch posts' };
 }
 
 export async function createGoodsServicesPost(authorId, description, media = []) {
@@ -103,9 +116,16 @@ export async function createGoodsServicesPost(authorId, description, media = [])
   console.log('[goodsServices] Create/update response:', JSON.stringify(res, null, 2));
   
   if (res.ok) {
-    return { success: true, data: res.data };
+    // Handle different response formats
+    let responseData = res.data;
+    if (res.data && typeof res.data === 'object') {
+      responseData = res.data.data || res.data.result || res.data;
+    }
+    return { success: true, data: responseData };
   }
-  return { success: false, error: res.data?.error || res.data?.message || 'Failed to create post' };
+  
+  console.error('[goodsServices] Failed to create/update post:', res.status, res.data);
+  return { success: false, error: res.data?.error || res.data?.message || res.data?.detail || 'Failed to create post' };
 }
 
 export async function updateGoodsServicesPost(postId, { author_id, description, is_active, media }) {
@@ -120,9 +140,23 @@ export async function updateGoodsServicesPost(postId, { author_id, description, 
 }
 
 export async function deleteGoodsServicesPost(postId, authorId) {
-  const res = await request(`/goods-services-profiles/${postId}/`, { method: 'DELETE', body: JSON.stringify({ author_id: authorId }) });
-  if (res.ok) return { success: true };
-  return { success: false, error: res.data?.error || 'Failed to delete post' };
+  const res = await request(`/goods-services-profiles/${postId}/`, { 
+    method: 'DELETE', 
+    body: JSON.stringify({ author_id: authorId }),
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    }
+  });
+  
+  console.log('[goodsServices] Delete response:', res.status, res.data);
+  
+  if (res.ok) {
+    return { success: true };
+  }
+  
+  console.error('[goodsServices] Failed to delete post:', res.status, res.data);
+  return { success: false, error: res.data?.error || res.data?.message || res.data?.detail || 'Failed to delete post' };
 }
 
 // Convenience helpers for the new bio-style semantics

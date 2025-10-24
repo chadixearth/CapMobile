@@ -22,12 +22,15 @@ const LINE_GRAY = '#A9A9A9';
 const BG = '#F5F5F5';
 
 export default function ForgotPasswordScreen({ navigation }) {
+  const [step, setStep] = useState(1); // 1: email, 2: code, 3: new password
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
 
-  const handleResetPassword = async () => {
+  const handleSendCode = async () => {
     if (loading) return;
     
     if (!email.trim()) {
@@ -44,7 +47,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/reset-password/`, {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -55,30 +58,103 @@ export default function ForgotPasswordScreen({ navigation }) {
       const data = await response.json();
       
       if (response.ok && data.success) {
-        setSuccess(true);
+        setStep(2);
+        Alert.alert('Code Sent', 'A verification code has been sent to your email.');
+      } else {
+        setError(data.error || 'Failed to send verification code.');
+      }
+    } catch (e) {
+      console.error('Send code error:', e);
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (loading) return;
+    
+    if (!code.trim()) {
+      setError('Please enter the verification code.');
+      return;
+    }
+    
+    setError('');
+    setLoading(true);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-reset-code/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, code }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setStep(3);
+      } else {
+        setError(data.error || 'Invalid verification code.');
+      }
+    } catch (e) {
+      console.error('Verify code error:', e);
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (loading) return;
+    
+    if (!newPassword.trim()) {
+      setError('Please enter a new password.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    
+    setError('');
+    setLoading(true);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password-confirm/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          email, 
+          code,
+          new_password: newPassword 
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         Alert.alert(
-          'Reset Link Sent',
-          'If an account with this email exists, you will receive a password reset link shortly.',
+          'Password Reset Successful',
+          'Your password has been reset successfully. You can now log in with your new password.',
           [
             {
-              text: 'Back to Login',
+              text: 'Go to Login',
               onPress: () => navigation.goBack()
             }
           ]
         );
       } else {
-        // Always show generic message for security
-        setSuccess(true);
-        Alert.alert(
-          'Reset Link Sent',
-          'If an account with this email exists, you will receive a password reset link shortly.',
-          [
-            {
-              text: 'Back to Login',
-              onPress: () => navigation.goBack()
-            }
-          ]
-        );
+        setError(data.error || 'Failed to reset password.');
       }
     } catch (e) {
       console.error('Reset password error:', e);
@@ -113,37 +189,125 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         {/* Form */}
         <View style={styles.form}>
-          <Text style={styles.title}>Reset Password</Text>
-          <Text style={styles.subtitle}>
-            Enter your email address and we'll send you a link to reset your password.
-          </Text>
+          {step === 1 && (
+            <>
+              <Text style={styles.title}>Reset Password</Text>
+              <Text style={styles.subtitle}>
+                Enter your email address and we'll send you a verification code.
+              </Text>
 
-          <TextInput
-            style={styles.underlineInput}
-            placeholder="Email Address"
-            placeholderTextColor="#9B9B9B"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            keyboardType="email-address"
-            returnKeyType="done"
-            onSubmitEditing={handleResetPassword}
-          />
+              <TextInput
+                style={styles.underlineInput}
+                placeholder="Email Address"
+                placeholderTextColor="#9B9B9B"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                keyboardType="email-address"
+                returnKeyType="done"
+                onSubmitEditing={handleSendCode}
+              />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <TouchableOpacity
-            style={[styles.resetBtn, loading && { opacity: 0.7 }]}
-            onPress={handleResetPassword}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.resetText}>
-              {loading ? 'Sending...' : 'Send Reset Link'}
-            </Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.resetBtn, loading && { opacity: 0.7 }]}
+                onPress={handleSendCode}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.resetText}>
+                  {loading ? 'Sending...' : 'Send Code'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <Text style={styles.title}>Enter Verification Code</Text>
+              <Text style={styles.subtitle}>
+                Enter the 6-digit code sent to {email}
+              </Text>
+
+              <TextInput
+                style={styles.underlineInput}
+                placeholder="Verification Code"
+                placeholderTextColor="#9B9B9B"
+                value={code}
+                onChangeText={setCode}
+                keyboardType="number-pad"
+                maxLength={6}
+                returnKeyType="done"
+                onSubmitEditing={handleVerifyCode}
+              />
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <TouchableOpacity
+                style={[styles.resetBtn, loading && { opacity: 0.7 }]}
+                onPress={handleVerifyCode}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.resetText}>
+                  {loading ? 'Verifying...' : 'Verify Code'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => setStep(1)}
+              >
+                <Text style={styles.backButtonText}>Back to Email</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <Text style={styles.title}>Set New Password</Text>
+              <Text style={styles.subtitle}>
+                Enter your new password below.
+              </Text>
+
+              <TextInput
+                style={styles.underlineInput}
+                placeholder="New Password"
+                placeholderTextColor="#9B9B9B"
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+                returnKeyType="next"
+              />
+
+              <TextInput
+                style={styles.underlineInput}
+                placeholder="Confirm New Password"
+                placeholderTextColor="#9B9B9B"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleResetPassword}
+              />
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <TouchableOpacity
+                style={[styles.resetBtn, loading && { opacity: 0.7 }]}
+                onPress={handleResetPassword}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.resetText}>
+                  {loading ? 'Resetting...' : 'Reset Password'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           <Text style={styles.backText}>
             Remember your password?{' '}
@@ -240,5 +404,18 @@ const styles = StyleSheet.create({
     color: MAROON,
     textDecorationLine: 'underline',
     fontWeight: '600',
+  },
+  backButton: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    color: MAROON,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backButton: {
+    marginTop: 16,
+    alignItems: 'center',
   },
 });
