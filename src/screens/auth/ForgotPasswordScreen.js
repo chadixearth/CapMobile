@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import BackButton from '../../components/BackButton';
+import CodeInput from '../../components/CodeInput';
 import { apiBaseUrl } from '../../services/networkConfig';
 
 const API_BASE_URL = apiBaseUrl();
@@ -29,6 +30,17 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Auto-submit when code is complete
+  React.useEffect(() => {
+    if (step === 2 && code.length === 6 && !loading) {
+      // Small delay to show the complete code before verifying
+      const timer = setTimeout(() => {
+        handleVerifyCode();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [code, step, loading]);
 
   const handleSendCode = async () => {
     if (loading) return;
@@ -61,7 +73,12 @@ export default function ForgotPasswordScreen({ navigation }) {
         setStep(2);
         Alert.alert('Code Sent', 'A verification code has been sent to your email.');
       } else {
-        setError(data.error || 'Failed to send verification code.');
+        // Handle specific error cases
+        if (response.status === 404) {
+          setError('No account found with this email address.');
+        } else {
+          setError(data.error || 'Failed to send verification code.');
+        }
       }
     } catch (e) {
       console.error('Send code error:', e);
@@ -74,8 +91,8 @@ export default function ForgotPasswordScreen({ navigation }) {
   const handleVerifyCode = async () => {
     if (loading) return;
     
-    if (!code.trim()) {
-      setError('Please enter the verification code.');
+    if (!code.trim() || code.length !== 6) {
+      setError('Please enter the complete 6-digit verification code.');
       return;
     }
     
@@ -231,38 +248,50 @@ export default function ForgotPasswordScreen({ navigation }) {
               <Text style={styles.subtitle}>
                 Enter the 6-digit code sent to {email}
               </Text>
+              
+              <Text style={styles.codeHint}>
+                Code will be verified automatically when complete
+              </Text>
 
-              <TextInput
-                style={styles.underlineInput}
-                placeholder="Verification Code"
-                placeholderTextColor="#9B9B9B"
+              <CodeInput
                 value={code}
                 onChangeText={setCode}
-                keyboardType="number-pad"
-                maxLength={6}
-                returnKeyType="done"
-                onSubmitEditing={handleVerifyCode}
+                length={6}
+                autoFocus={true}
+                editable={!loading}
               />
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
 
-              <TouchableOpacity
-                style={[styles.resetBtn, loading && { opacity: 0.7 }]}
-                onPress={handleVerifyCode}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.resetText}>
-                  {loading ? 'Verifying...' : 'Verify Code'}
-                </Text>
-              </TouchableOpacity>
+              {code.length === 6 && (
+                <TouchableOpacity
+                  style={[styles.resetBtn, loading && { opacity: 0.7 }]}
+                  onPress={handleVerifyCode}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.resetText}>
+                    {loading ? 'Verifying...' : 'Verify Code'}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => setStep(1)}
-              >
-                <Text style={styles.backButtonText}>Back to Email</Text>
-              </TouchableOpacity>
+              <View style={styles.stepActions}>
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={handleSendCode}
+                  disabled={loading}
+                >
+                  <Text style={styles.resendButtonText}>Resend Code</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => setStep(1)}
+                >
+                  <Text style={styles.backButtonText}>Back to Email</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -405,17 +434,35 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
     fontWeight: '600',
   },
-  backButton: {
-    marginTop: 16,
+  stepActions: {
+    marginTop: 20,
     alignItems: 'center',
+    gap: 12,
   },
-  backButtonText: {
+  resendButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  resendButtonText: {
     color: MAROON,
     fontSize: 14,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   backButton: {
-    marginTop: 16,
-    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  backButtonText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  codeHint: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
 });

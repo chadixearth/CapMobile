@@ -63,11 +63,20 @@ export async function createTourPackage(packageData) {
   try {
     const user = await getCurrentUser();
     const userRole = user?.role || 'driver';
+    
+    // Handle expiration date - set to null if "No Expiration" is selected
+    let expiration_date = packageData.expiration_date_data;
+    if (!expiration_date || expiration_date === 'No Expiration') {
+      expiration_date = null;
+    }
+    
     const dataWithDriver = {
       ...packageData,
       creator_role: userRole,
       creator_id: user?.id,
-      driver_id: user?.id
+      driver_id: user?.id,
+      expiration_date_data: expiration_date,
+      no_expiry: !expiration_date
     };
     
     const result = await apiClient.post('/tourpackage/', dataWithDriver, {
@@ -198,6 +207,19 @@ export async function getDropoffPoints(pickupId, pickupName) {
     return { success: false, error: result.error || 'Failed to fetch dropoff points' };
   } catch (error) {
     return { success: false, error: error.message || 'Failed to fetch dropoff points' };
+  }
+}
+
+export async function getStops() {
+  try {
+    const result = await apiClient.get('/tourpackage/get_stops/');
+    if (result.success) {
+      const stops = result.data?.data || result.data || [];
+      return { success: true, data: stops };
+    }
+    return { success: false, error: result.error || 'Failed to fetch stops' };
+  } catch (error) {
+    return { success: false, error: error.message || 'Failed to fetch stops' };
   }
 }
 
