@@ -761,7 +761,11 @@ export default function TouristHomeScreen({ navigation }) {
                 }}
               >
                 {pkg.photos && pkg.photos.length > 0 ? (
-                  <Image source={{ uri: pkg.photos[0] }} style={styles.packageImage} resizeMode="cover" />
+                  <Image 
+                    source={{ uri: typeof pkg.photos[0] === 'string' ? pkg.photos[0] : pkg.photos[0]?.url }} 
+                    style={styles.packageImage} 
+                    resizeMode="cover" 
+                  />
                 ) : (
                   <Image
                     source={require('../../../assets/images/tourA.png')}
