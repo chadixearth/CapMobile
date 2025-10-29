@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import driverService from '../../services/carriages/fetchDriver';
 import { apiBaseUrl } from '../../services/networkConfig';
@@ -44,6 +46,8 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     notes: ''
   });
   const [addingCarriage, setAddingCarriage] = useState(false);
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [currentApiUrl, setCurrentApiUrl] = useState('');
   const [showDriverModal, setShowDriverModal] = useState(false);
@@ -129,6 +133,125 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     setSelectedCarriage(carriage);
     setShowDriverModal(true);
     await fetchAllDrivers();
+  };
+
+  const pickImage = async () => {
+    try {
+      const remainingSlots = 5 - selectedImages.length;
+      if (remainingSlots <= 0) {
+        Alert.alert('Limit Reached', 'You can only upload up to 5 photos per carriage.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'Images',
+        allowsEditing: false, // Disabled to fix warning with multiple selection
+        aspect: [4, 3],
+        quality: 0.8,
+        allowsMultipleSelection: true,
+        selectionLimit: remainingSlots,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newImages = [...selectedImages, ...result.assets];
+        setSelectedImages(newImages.slice(0, 5)); // Ensure max 5 images
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const remainingSlots = 5 - selectedImages.length;
+      if (remainingSlots <= 0) {
+        Alert.alert('Limit Reached', 'You can only upload up to 5 photos per carriage.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: 'Images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newImages = [...selectedImages, ...result.assets];
+        setSelectedImages(newImages.slice(0, 5)); // Ensure max 5 images
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const uploadImageToSupabase = async (imageUri, index) => {
+    try {
+      // Create a unique filename with index
+      const timestamp = Date.now();
+      const filename = `carriage_${timestamp}_${index}.jpg`;
+      
+      // Read file as base64
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Convert base64 to Uint8Array
+      const binaryData = atob(base64);
+      const bytes = new Uint8Array(binaryData.length);
+      for (let i = 0; i < binaryData.length; i++) {
+        bytes[i] = binaryData.charCodeAt(i);
+      }
+      
+      // Upload to Supabase storage using service role
+      const { data, error } = await supabase.storage
+        .from('carriage-photos')
+        .upload(filename, bytes, {
+          contentType: 'image/jpeg',
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('carriage-photos')
+        .getPublicUrl(filename);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    }
+  };
+
+  const uploadAllImages = async (images) => {
+    try {
+      setUploadingImage(true);
+      
+      const uploadPromises = images.map((image, index) => 
+        uploadImageToSupabase(image.uri, index)
+      );
+      
+      const imageUrls = await Promise.all(uploadPromises);
+      return imageUrls;
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      throw error;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const removeImage = (index) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearAllImages = () => {
+    setSelectedImages([]);
   };
 
   const fetchUserAndCarriages = useCallback(async () => {
@@ -343,13 +466,28 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
     setAddingCarriage(true);
     try {
+      let imageUrls = [];
+      
+      // Upload images if selected
+      if (selectedImages.length > 0) {
+        try {
+          imageUrls = await uploadAllImages(selectedImages);
+        } catch (error) {
+          console.error('Error uploading images:', error);
+          Alert.alert('Error', 'Failed to upload images. Please try again.');
+          setAddingCarriage(false);
+          return;
+        }
+      }
+
       // Format the data exactly as the API expects it
       const carriageData = {
         plate_number: newCarriage.plate_number.trim(),
         capacity: parseInt(newCarriage.capacity) || 4,
         status: 'available', // New carriages should be available for rent
         eligibility: newCarriage.eligibility || 'eligible',
-        notes: newCarriage.notes || ''
+        notes: newCarriage.notes || '',
+        image_urls: imageUrls
       };
       
       // Remove any empty fields
@@ -389,6 +527,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         capacity: '4',
         notes: ''
       });
+      setSelectedImages([]);
       
       // Show success message
       Alert.alert('Success', 'Carriage added successfully!', [
@@ -969,6 +1108,78 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                   editable={!addingCarriage}
                 />
               </View>
+
+              <View style={styles.formGroup}>
+                <View style={styles.imageLabelContainer}>
+                  <Text style={styles.label}>Carriage Photos (Optional)</Text>
+                  <Text style={styles.imageCountText}>
+                    {selectedImages.length}/5 photos
+                  </Text>
+                </View>
+                
+                {selectedImages.length > 0 && (
+                  <View style={styles.imagesGrid}>
+                    {selectedImages.map((image, index) => (
+                      <View key={index} style={styles.imagePreviewContainer}>
+                        <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                        <TouchableOpacity 
+                          style={styles.removeImageButton}
+                          onPress={() => removeImage(index)}
+                          disabled={addingCarriage || uploadingImage}
+                        >
+                          <Ionicons name="close-circle" size={20} color="#dc3545" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {selectedImages.length < 5 && (
+                  <View style={styles.imageUploadContainer}>
+                    <TouchableOpacity 
+                      style={styles.imageUploadButton}
+                      onPress={() => {
+                        Alert.alert(
+                          'Select Images',
+                          'Choose how you want to add photos',
+                          [
+                            { text: 'Camera', onPress: takePhoto },
+                            { text: 'Gallery', onPress: pickImage },
+                            { text: 'Cancel', style: 'cancel' }
+                          ]
+                        );
+                      }}
+                      disabled={addingCarriage || uploadingImage}
+                    >
+                      <Ionicons name="camera-outline" size={32} color="#6c757d" />
+                      <Text style={styles.imageUploadText}>
+                        Add {selectedImages.length === 0 ? 'Photos' : 'More Photos'}
+                      </Text>
+                      <Text style={styles.imageUploadSubtext}>
+                        {5 - selectedImages.length} more photos allowed
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {selectedImages.length > 0 && (
+                  <TouchableOpacity 
+                    style={styles.clearAllButton}
+                    onPress={clearAllImages}
+                    disabled={addingCarriage || uploadingImage}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#dc3545" />
+                    <Text style={styles.clearAllButtonText}>Clear All Photos</Text>
+                  </TouchableOpacity>
+                )}
+
+                {uploadingImage && (
+                  <View style={styles.uploadingContainer}>
+                    <ActivityIndicator size="small" color={MAROON} />
+                    <Text style={styles.uploadingText}>Uploading images...</Text>
+                  </View>
+                )}
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1448,5 +1659,97 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#e9ecef',
     marginHorizontal: 16,
+  },
+  // Image Upload Styles
+  imageLabelContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  imageCountText: {
+    fontSize: 12,
+    color: '#6c757d',
+    fontWeight: '500',
+  },
+  imagesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  imageUploadContainer: {
+    marginTop: 8,
+  },
+  imageUploadButton: {
+    borderWidth: 2,
+    borderColor: '#dee2e6',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  imageUploadText: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  imageUploadSubtext: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 4,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    width: '48%',
+    aspectRatio: 1,
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 10,
+    padding: 2,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  clearAllButtonText: {
+    fontSize: 12,
+    color: '#dc3545',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  uploadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+  },
+  uploadingText: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginLeft: 8,
   },
 });
