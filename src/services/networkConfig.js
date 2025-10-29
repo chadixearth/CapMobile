@@ -23,22 +23,25 @@ export function apiBaseUrl() {
   return `${protocol}://${host}${port}/api`;
 }
 
-// Get backend health status
+// Get backend health status with faster timeout
 export async function getBackendHealth() {
   try {
     const baseUrl = apiBaseUrl().replace('/api', '');
     const healthUrl = `${baseUrl}/health/`;
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // Reduced to 2 seconds
     
     const response = await fetch(healthUrl, {
       method: 'GET',
       signal: controller.signal,
       headers: {
         'Connection': 'close',
-        'Cache-Control': 'no-cache',
-      }
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Keep-Alive': 'timeout=1, max=1',
+      },
+      keepalive: false
     });
     
     clearTimeout(timeoutId);
@@ -54,31 +57,45 @@ export async function getBackendHealth() {
   }
 }
 
-// Test connection function
+// Test connection function with multiple endpoints
 export async function testConnection() {
-  try {
-    const url = `${apiBaseUrl()}/`;
-    console.log(`[networkConfig] Testing connection to: ${url}`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        'Connection': 'close',
-        'Cache-Control': 'no-cache',
+  const endpoints = [
+    `${apiBaseUrl()}/quick/`,
+    `${apiBaseUrl()}/ping/`,
+    `${apiBaseUrl().replace('/api', '')}/health/`
+  ];
+  
+  for (const url of endpoints) {
+    try {
+      console.log(`[networkConfig] Testing connection to: ${url}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Connection': 'close',
+          'Cache-Control': 'no-cache',
+          'Keep-Alive': 'timeout=1, max=1',
+        },
+        keepalive: false
+      });
+      
+      clearTimeout(timeoutId);
+      console.log(`[networkConfig] Connection test result: ${response.status}`);
+      
+      if (response.ok) {
+        return { success: true, status: response.status, endpoint: url };
       }
-    });
-    
-    clearTimeout(timeoutId);
-    console.log(`[networkConfig] Connection test result: ${response.status}`);
-    return { success: true, status: response.status };
-  } catch (error) {
-    console.log(`[networkConfig] Connection test failed: ${error.message}`);
-    return { success: false, error: error.message };
+    } catch (error) {
+      console.log(`[networkConfig] Connection test failed for ${url}: ${error.message}`);
+      continue;
+    }
   }
+  
+  return { success: false, error: 'All connection tests failed' };
 }
 
 // Test notification endpoint specifically

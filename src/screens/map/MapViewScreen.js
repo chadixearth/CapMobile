@@ -4,9 +4,10 @@ import LeafletMapView from '../../components/LeafletMapView'; // WebView-based L
 import BackButton from '../../components/BackButton';
 import PointImageModal from '../../components/PointImageModal';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
-import { getRoutesByPickup } from '../../services/rideHailingService';
+import { getRoutesByPickup, navigateToNearestRoad } from '../../services/rideHailingService';
 import { apiRequest } from '../../services/authService';
 import { fetchRouteSummaries as fetchRouteSummariesService, processMapPointsWithColors, processRoadHighlightsWithColors, buildRouteSummariesFromPickups } from '../../services/routeManagementService';
+import { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap, groupRoadHighlightsByPickup } from '../../services/roadHighlightsService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -38,6 +39,8 @@ const MapViewScreen = ({ navigation, route }) => {
   const [routeSummaries, setRouteSummaries] = useState([]);
   const [allMarkers, setAllMarkers] = useState([]);
   const [allRoads, setAllRoads] = useState([]);
+  const [roadHighlightsData, setRoadHighlightsData] = useState(null);
+  const [pickupDropoffGroups, setPickupDropoffGroups] = useState({});
   const hasLoadedCache = useRef(false);
   const loadTimeoutRef = useRef(null);
 
@@ -114,8 +117,8 @@ const MapViewScreen = ({ navigation, route }) => {
       const info = await getMapCacheInfo();
       setCacheInfo(info);
       
-      // Load cached data first (instant)
-      const data = await fetchMapData({ cacheOnly: !hasLoadedCache.current });
+      // Force fresh data from server
+      const data = await fetchMapData({ forceRefresh: true });
       console.log('Fetched map data:', {
         hasData: !!data,
         pointsCount: data?.points?.length || 0,
@@ -125,6 +128,26 @@ const MapViewScreen = ({ navigation, route }) => {
       // Fetch route summaries to get proper colors
       const routeSummaries = await fetchRouteSummaries();
       console.log('Fetched route summaries:', routeSummaries.length);
+      
+      // Fetch road highlights with pickup/dropoff points
+      const roadHighlightsResult = await getAllRoadHighlightsWithPoints();
+      console.log('Fetched road highlights with points:', {
+        success: roadHighlightsResult.success,
+        roadHighlights: roadHighlightsResult.roadHighlights?.length || 0,
+        pickupPoints: roadHighlightsResult.pickupPoints?.length || 0,
+        dropoffPoints: roadHighlightsResult.dropoffPoints?.length || 0
+      });
+      
+      if (roadHighlightsResult.success) {
+        setRoadHighlightsData(roadHighlightsResult);
+        
+        // Group road highlights by pickup points
+        const groups = groupRoadHighlightsByPickup(
+          roadHighlightsResult.roadHighlights,
+          roadHighlightsResult.pickupPoints
+        );
+        setPickupDropoffGroups(groups);
+      }
       
       if (data) {
         console.log('Raw map data received:', {
@@ -136,7 +159,7 @@ const MapViewScreen = ({ navigation, route }) => {
           sampleRoad: data.roads?.[0]
         });
         
-        processMapData(data, routeSummaries);
+        processMapData(data, routeSummaries, roadHighlightsResult);
         hasLoadedCache.current = true;
       } else {
         console.warn('No map data received');
@@ -167,7 +190,7 @@ const MapViewScreen = ({ navigation, route }) => {
         total_items: {},
         error: true,
         errorMessage: err.message
-      }, []);
+      }, [], null);
       
       setInitialLoading(false);
       setLoading(false);
@@ -175,33 +198,98 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   };
   
-  const processMapData = (data, routeSummaries = []) => {
+  const processMapData = (data, routeSummaries = [], roadHighlightsResult = null) => {
     console.log('processMapData called with:', {
       hasData: !!data,
       pointsCount: data?.points?.length || 0,
       roadsCount: data?.roads?.length || 0,
-      routeSummariesCount: routeSummaries.length
+      routeSummariesCount: routeSummaries.length,
+      hasRoadHighlights: !!roadHighlightsResult
     });
     
     if (!data) return;
     
     setMapData(data);
     
-    // Process points with route color associations - show ALL points immediately
+    // Process points - combine regular points with pickup/dropoff points
+    let allPointsToShow = [];
+    
+    // Add regular map points
     if (data.points && data.points.length > 0) {
-      console.log('Processing', data.points.length, 'points with', routeSummaries.length, 'route summaries');
-      let processedMarkers = processMapPointsWithColors(data.points, routeSummaries);
-      console.log('Processed markers:', processedMarkers.length, 'markers');
-      console.log('Sample processed marker:', processedMarkers[0]);
+      console.log('Processing', data.points.length, 'regular points');
       
-      // Filter markers based on selection mode
-      if (mode === 'selectPickup') {
-        processedMarkers = processedMarkers.filter(marker => marker.pointType === 'pickup');
-      }
+      const processedMarkers = data.points.map(point => ({
+        latitude: parseFloat(point.latitude),
+        longitude: parseFloat(point.longitude),
+        title: point.name,
+        description: point.description || '',
+        pointType: point.point_type,
+        iconColor: point.stroke_color || point.icon_color || '#FF0000',
+        id: point.id,
+        image_urls: point.image_urls || []
+      }));
       
-      setAllMarkers(processedMarkers);
+      allPointsToShow = [...processedMarkers];
+    }
+    
+    // Create color mapping from enhanced road highlights
+    const pickupColorMap = {};
+    const dropoffColorMap = {};
+    
+    if (roadHighlightsResult && roadHighlightsResult.roadHighlights) {
+      roadHighlightsResult.roadHighlights.forEach(road => {
+        if (road.pickup_point_id && road.stroke_color) {
+          pickupColorMap[road.pickup_point_id] = road.stroke_color;
+        }
+        if (road.dropoff_point_id && road.stroke_color) {
+          dropoffColorMap[road.dropoff_point_id] = road.stroke_color;
+        }
+      });
+    }
+    
+    console.log('Pickup color map:', pickupColorMap);
+    console.log('Dropoff color map:', dropoffColorMap);
+    
+    // Add pickup points from road highlights with route colors
+    if (roadHighlightsResult && roadHighlightsResult.pickupPoints) {
+      console.log('Processing', roadHighlightsResult.pickupPoints.length, 'pickup points');
       
-      if (mode === 'viewRoute' && locations) {
+      const pickupMarkers = roadHighlightsResult.pickupPoints.map(pickup => ({
+        latitude: parseFloat(pickup.latitude),
+        longitude: parseFloat(pickup.longitude),
+        title: pickup.name,
+        description: 'Pickup Point',
+        pointType: 'pickup',
+        iconColor: pickupColorMap[pickup.id] || pickup.stroke_color || pickup.icon_color || '#2E7D32',
+        id: pickup.id,
+        image_urls: pickup.image_urls || []
+      }));
+      
+      allPointsToShow = [...allPointsToShow, ...pickupMarkers];
+    }
+    
+    // Add dropoff points from road highlights with matching pickup colors
+    if (roadHighlightsResult && roadHighlightsResult.dropoffPoints) {
+      console.log('Processing', roadHighlightsResult.dropoffPoints.length, 'dropoff points');
+      
+      const dropoffMarkers = roadHighlightsResult.dropoffPoints.map(dropoff => ({
+        latitude: parseFloat(dropoff.latitude),
+        longitude: parseFloat(dropoff.longitude),
+        title: dropoff.name,
+        description: 'Drop-off Point',
+        pointType: 'dropoff',
+        iconColor: dropoffColorMap[dropoff.id] || dropoff.stroke_color || dropoff.icon_color || '#C62828',
+        id: dropoff.id,
+        image_urls: dropoff.image_urls || []
+      }));
+      
+      allPointsToShow = [...allPointsToShow, ...dropoffMarkers];
+    }
+    
+    console.log('Total processed markers:', allPointsToShow.length, 'markers');
+    setAllMarkers(allPointsToShow);
+    
+    if (mode === 'viewRoute' && locations) {
         // Show both pickup and destination markers
         const routeMarkers = [
           {
@@ -224,20 +312,6 @@ const MapViewScreen = ({ navigation, route }) => {
           }
         ];
         setMarkers(routeMarkers);
-        
-        const routeData = {
-          id: 'tour-route',
-          name: 'Tour Route',
-          start_latitude: parseFloat(locations.pickup.latitude),
-          start_longitude: parseFloat(locations.pickup.longitude),
-          end_latitude: parseFloat(locations.destination.latitude),
-          end_longitude: parseFloat(locations.destination.longitude),
-          stroke_color: '#007AFF',
-          stroke_width: 6,
-          stroke_opacity: 0.8,
-          highlight_type: 'tour_route'
-        };
-        setRoads([routeData]);
       } else if (mode === 'viewLocation' && location) {
         // Show only the specific location marker
         const locationMarker = {
@@ -250,35 +324,61 @@ const MapViewScreen = ({ navigation, route }) => {
           id: 'pickup-location'
         };
         setMarkers([locationMarker]);
-        setRoads([]);
-      } else {
-        // Show ALL markers immediately (pickup and dropoff)
-        console.log('Setting markers for display:', processedMarkers.length, 'markers');
-        setMarkers(processedMarkers);
-      }
     } else {
-      console.log('No points data to process');
-      setMarkers([]);
+      // Show ALL markers immediately (regular + pickup + dropoff)
+      console.log('Setting markers for display:', allPointsToShow.length, 'markers');
+      setMarkers(allPointsToShow);
     }
     
-    // Process and show ALL roads immediately with proper colors
-    if (data.roads && data.roads.length > 0) {
-      const processedRoads = processRoadHighlightsWithColors(data.roads, routeSummaries);
+    // Process and show road highlights with pickup/dropoff points
+    let processedRoads = [];
+    
+    if (roadHighlightsResult && roadHighlightsResult.success && roadHighlightsResult.roadHighlights.length > 0) {
+      console.log('Processing road highlights with pickup/dropoff points:', roadHighlightsResult.roadHighlights.length);
       
-      console.log('Setting ALL roads immediately:', processedRoads.length, 'roads');
-      console.log('Road colors:', processedRoads.map(r => ({ id: r.id, color: r.stroke_color })));
+      // Process road highlights for map display
+      processedRoads = processRoadHighlightsForMap(roadHighlightsResult.roadHighlights);
       
-      setAllRoads(processedRoads);
+      console.log('Processed road highlights:', processedRoads.length, 'roads');
+      console.log('Road highlight colors:', processedRoads.map(r => ({ id: r.id, color: r.stroke_color, pickup: r.pickup_point_id })));
+    } else if (data.roads && data.roads.length > 0) {
+      console.log('Processing fallback roads from map data:', data.roads.length);
       
-      // Always show ALL roads immediately unless in specific view modes
-      if (mode === 'viewLocation' && location) {
-        setRoads([]);
-      } else {
-        setRoads(processedRoads);
-      }
-    } else {
-      setAllRoads([]);
+      // Fallback to regular roads if no road highlights available
+      processedRoads = data.roads.map(road => ({
+        id: road.id,
+        name: road.name,
+        road_coordinates: road.road_coordinates || [],
+        stroke_color: road.stroke_color || '#007AFF',
+        stroke_width: road.stroke_width || 4,
+        stroke_opacity: road.stroke_opacity || 0.7,
+        highlight_type: road.highlight_type || 'available'
+      }));
+    }
+    
+    setAllRoads(processedRoads);
+    
+    // Show roads based on mode
+    if (mode === 'viewLocation' && location) {
       setRoads([]);
+    } else if (mode === 'viewRoute' && locations) {
+      const routeData = {
+        id: 'tour-route',
+        name: 'Tour Route',
+        start_latitude: parseFloat(locations.pickup.latitude),
+        start_longitude: parseFloat(locations.pickup.longitude),
+        end_latitude: parseFloat(locations.destination.latitude),
+        end_longitude: parseFloat(locations.destination.longitude),
+        stroke_color: '#007AFF',
+        stroke_width: 6,
+        stroke_opacity: 0.8,
+        highlight_type: 'tour_route'
+      };
+      setRoads([routeData]);
+    } else {
+      // Show ALL road highlights immediately
+      console.log('Setting ALL road highlights for display:', processedRoads.length, 'roads');
+      setRoads(processedRoads);
     }
     
     // Process routes and zones
@@ -403,8 +503,22 @@ const MapViewScreen = ({ navigation, route }) => {
       // Fetch route summaries to get proper colors
       const routeSummaries = await fetchRouteSummaries();
       
+      // Fetch road highlights with pickup/dropoff points
+      const roadHighlightsResult = await getAllRoadHighlightsWithPoints();
+      
       if (data) {
-        processMapData(data, routeSummaries);
+        processMapData(data, routeSummaries, roadHighlightsResult);
+        
+        if (roadHighlightsResult.success) {
+          setRoadHighlightsData(roadHighlightsResult);
+          
+          // Group road highlights by pickup points
+          const groups = groupRoadHighlightsByPickup(
+            roadHighlightsResult.roadHighlights,
+            roadHighlightsResult.pickupPoints
+          );
+          setPickupDropoffGroups(groups);
+        }
         
         // Update cache info
         const info = await getMapCacheInfo();
@@ -444,104 +558,132 @@ const MapViewScreen = ({ navigation, route }) => {
         ]
       );
     } else if (marker.pointType === 'pickup') {
-      // Show pickup point with associated drop-off points
-      try {
-        setLoading(true);
-        const routeResult = await getRoutesByPickup(marker.id);
+      // Show pickup point with associated drop-off points using grouped data
+      const pickupGroup = pickupDropoffGroups[marker.id];
+      
+      if (pickupGroup && pickupGroup.roads.length > 0) {
+        // Get associated dropoff points for this pickup
+        const associatedDropoffIds = pickupGroup.roads.map(road => road.dropoff_point_id).filter(Boolean);
+        const associatedDropoffs = roadHighlightsData?.dropoffPoints?.filter(dropoff => 
+          associatedDropoffIds.includes(dropoff.id)
+        ) || [];
         
-        if (routeResult.success && routeResult.data) {
-          const { available_destinations = [], road_highlights = [], color } = routeResult.data;
-          
-          // Show pickup marker
-          const pickupMarker = {
-            ...marker,
-            iconColor: color || marker.iconColor
-          };
-          
-          // Create dropoff markers
-          const dropoffMarkers = available_destinations.map(dest => ({
-            latitude: parseFloat(dest.latitude),
-            longitude: parseFloat(dest.longitude),
-            title: dest.name,
-            description: 'Drop-off point',
-            pointType: 'dropoff',
-            iconColor: color || '#FF5722',
-            id: dest.id
-          }));
-          
-          // Show all markers (pickup + dropoffs)
-          setMarkers([pickupMarker, ...dropoffMarkers]);
-          
-          // Show road highlights
-          if (road_highlights.length > 0) {
-            const processedRoads = road_highlights.map(road => {
-              // Handle different coordinate formats
-              let coordinates = road.coordinates || road.road_coordinates;
-              
-              // If coordinates is a string, try to parse it
-              if (typeof coordinates === 'string') {
-                try {
-                  coordinates = JSON.parse(coordinates);
-                } catch (e) {
-                  console.warn('Failed to parse road coordinates:', e);
-                  coordinates = null;
-                }
-              }
-              
-              return {
-                id: road.id,
-                name: road.name || 'Route',
-                road_coordinates: coordinates,
-                start_latitude: road.start_latitude,
-                start_longitude: road.start_longitude,
-                end_latitude: road.end_latitude,
-                end_longitude: road.end_longitude,
-                stroke_color: color || road.color || road.stroke_color || '#007AFF',
-                stroke_width: road.weight || road.stroke_width || 4,
-                stroke_opacity: road.opacity || road.stroke_opacity || 0.7,
-                highlight_type: road.highlight_type || 'route'
-              };
-            });
-            setRoads(processedRoads);
-          }
-          // Keep original roads visible if no specific highlights found
-          
-          Alert.alert(
-            marker.title,
-            `Found ${available_destinations.length} available destinations${road_highlights.length > 0 ? '. Specific routes are highlighted.' : '.'}`,
-            [
-              { text: 'Navigate', onPress: () => {
-                const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
-                require('react-native').Linking.openURL(url);
-              }},
-              { text: 'Show All', onPress: () => {
-                setMarkers(allMarkers);
-                setRoads(allRoads);
-              }},
-              { text: 'OK' }
-            ]
-          );
-        } else {
-          Alert.alert(
-            marker.title,
-            'No specific routes available from this pickup point.',
-            [
-              { text: 'Navigate', onPress: () => {
-                const url = `https://www.google.com/maps/dir/?api=1&destination=${marker.latitude},${marker.longitude}`;
-                require('react-native').Linking.openURL(url);
-              }},
-              { text: 'OK' }
-            ]
-          );
-        }
-      } catch (error) {
+        // Show pickup marker with group color
+        const pickupMarker = {
+          ...marker,
+          iconColor: pickupGroup.color
+        };
+        
+        // Create dropoff markers
+        const dropoffMarkers = associatedDropoffs.map(dest => ({
+          latitude: parseFloat(dest.latitude),
+          longitude: parseFloat(dest.longitude),
+          title: dest.name,
+          description: 'Drop-off point',
+          pointType: 'dropoff',
+          iconColor: pickupGroup.color,
+          id: dest.id
+        }));
+        
+        // Show all markers (pickup + associated dropoffs)
+        setMarkers([pickupMarker, ...dropoffMarkers]);
+        
+        // Show associated road highlights
+        setRoads(pickupGroup.roads);
+        
         Alert.alert(
-          'Error',
-          'Failed to load routes. Please try again.',
-          [{ text: 'OK' }]
+          marker.title,
+          `Found ${associatedDropoffs.length} available destinations. Routes are highlighted in ${pickupGroup.color}.`,
+          [
+            { text: 'Navigate', onPress: async () => {
+              const result = await navigateToNearestRoad(marker.latitude, marker.longitude);
+              if (result.usedNearestRoad) {
+                console.log(`Navigating to nearest road: ${result.roadName}`);
+              }
+            }},
+            { text: 'Show All', onPress: () => {
+              setMarkers(allMarkers);
+              setRoads(allRoads);
+            }},
+            { text: 'OK' }
+          ]
         );
-      } finally {
-        setLoading(false);
+      } else {
+        // Fallback to API call if no grouped data available
+        try {
+          setLoading(true);
+          const routeResult = await getRoutesByPickup(marker.id);
+          
+          if (routeResult.success && routeResult.data) {
+            const { available_destinations = [], road_highlights = [], color } = routeResult.data;
+            
+            // Show pickup marker
+            const pickupMarker = {
+              ...marker,
+              iconColor: color || marker.iconColor
+            };
+            
+            // Create dropoff markers
+            const dropoffMarkers = available_destinations.map(dest => ({
+              latitude: parseFloat(dest.latitude),
+              longitude: parseFloat(dest.longitude),
+              title: dest.name,
+              description: 'Drop-off point',
+              pointType: 'dropoff',
+              iconColor: color || '#FF5722',
+              id: dest.id
+            }));
+            
+            // Show all markers (pickup + dropoffs)
+            setMarkers([pickupMarker, ...dropoffMarkers]);
+            
+            // Show road highlights
+            if (road_highlights.length > 0) {
+              const processedRoads = processRoadHighlightsForMap(road_highlights);
+              setRoads(processedRoads);
+            }
+            
+            Alert.alert(
+              marker.title,
+              `Found ${available_destinations.length} available destinations${road_highlights.length > 0 ? '. Specific routes are highlighted.' : '.'}`,
+              [
+                { text: 'Navigate', onPress: async () => {
+                  const result = await navigateToNearestRoad(marker.latitude, marker.longitude);
+                  if (result.usedNearestRoad) {
+                    console.log(`Navigating to nearest road: ${result.roadName}`);
+                  }
+                }},
+                { text: 'Show All', onPress: () => {
+                  setMarkers(allMarkers);
+                  setRoads(allRoads);
+                }},
+                { text: 'OK' }
+              ]
+            );
+          } else {
+            Alert.alert(
+              marker.title,
+              'No specific routes available from this pickup point.',
+              [
+                { text: 'Navigate', onPress: async () => {
+                  const result = await navigateToNearestRoad(marker.latitude, marker.longitude);
+                  if (result.usedNearestRoad) {
+                    console.log(`Navigating to nearest road: ${result.roadName}`);
+                  }
+                }},
+                { text: 'OK' }
+              ]
+            );
+          }
+        } catch (error) {
+          Alert.alert(
+            'Error',
+            'Failed to load routes. Please try again.',
+            [{ text: 'OK' }]
+          );
+        } finally {
+          setLoading(false);
+        }
       }
     } else if (marker.image_urls && marker.image_urls.length > 0) {
       // Show images if available
@@ -552,7 +694,15 @@ const MapViewScreen = ({ navigation, route }) => {
       Alert.alert(
         marker.title,
         marker.description || 'No additional information available',
-        [{ text: 'OK' }]
+        [
+          { text: 'Navigate', onPress: async () => {
+            const result = await navigateToNearestRoad(marker.latitude, marker.longitude);
+            if (result.usedNearestRoad) {
+              console.log(`Navigating to nearest road: ${result.roadName}`);
+            }
+          }},
+          { text: 'OK' }
+        ]
       );
     }
   };
@@ -768,8 +918,13 @@ const MapViewScreen = ({ navigation, route }) => {
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{mapData.total_items?.roads || 0}</Text>
+                  <Text style={styles.statValue}>{roads.length}</Text>
                   <Text style={styles.statLabel}>Roads</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{Object.keys(pickupDropoffGroups).length}</Text>
+                  <Text style={styles.statLabel}>Groups</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>

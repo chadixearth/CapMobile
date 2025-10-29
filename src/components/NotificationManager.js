@@ -98,7 +98,7 @@ const NotificationManager = ({ navigation }) => {
     // Only show one notification at a time to prevent modal spam
     const unshownNotifications = notifications.filter(notification => {
       const notificationKey = `${notification.id}_${notification.created_at}`;
-      return !shownNotifications.has(notificationKey) && !notification.read && !notification.tapped;
+      return !shownNotifications.has(notificationKey) && !notification.read;
     });
     
     if (unshownNotifications.length > 0) {
@@ -109,7 +109,7 @@ const NotificationManager = ({ navigation }) => {
 
   const handleNotificationByType = (notification) => {
     // Only show alerts for new notifications (not already read)
-    if (notification.read || notification.tapped) {
+    if (notification.read) {
       return;
     }
     
@@ -121,12 +121,11 @@ const NotificationManager = ({ navigation }) => {
       return;
     }
     
-    // Mark as shown immediately to prevent duplicate alerts
-    saveDismissedNotification(notificationKey);
-    
     // Mark notification as read when modal is shown
     const markAsReadAndNavigate = async (screenName) => {
       try {
+        // Mark as shown to prevent duplicate alerts
+        saveDismissedNotification(notificationKey);
         await NotificationService.markAsRead(notification.id);
         loadNotifications(); // Refresh context
         if (screenName && navigation) {

@@ -87,7 +87,7 @@ export default function PackageDetailsScreen({ navigation, route }) {
           {booking.number_of_pax} pax • ₱{booking.total_amount}
         </Text>
         <Text style={styles.bookingDate}>
-          {new Date(booking.booking_date).toLocaleDateString()} at {booking.pickup_time || pkg.start_time || 'TBD'}
+          {new Date(booking.booking_date).toLocaleDateString()} at {pkg.start_time || booking.pickup_time || 'TBD'}
         </Text>
         {booking.special_requests && (
           <Text style={styles.specialRequests}>Note: {booking.special_requests}</Text>
@@ -165,6 +165,30 @@ export default function PackageDetailsScreen({ navigation, route }) {
           {pkg.package_name}
         </Text>
       </View>
+
+      {/* Package Photos */}
+      {pkg.photos && Array.isArray(pkg.photos) && pkg.photos.length > 0 && (
+        <ScrollView horizontal style={styles.photosContainer} showsHorizontalScrollIndicator={false}>
+          {pkg.photos.map((photo, index) => {
+            let imageSource = require('../../../assets/images/tourA.png');
+            if (typeof photo === 'string' && photo.startsWith('http')) {
+              imageSource = { uri: photo };
+            } else if (photo && typeof photo === 'object' && photo.url && photo.url.startsWith('http')) {
+              imageSource = { uri: photo.url };
+            }
+            
+            return (
+              <TouchableOpacity key={index} style={styles.photoContainer}>
+                <Image 
+                  source={imageSource} 
+                  style={styles.packagePhoto}
+                  onError={() => {/* Silent error handling */}}
+                />
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Package Info */}
       <View style={styles.packageInfo}>
@@ -503,5 +527,25 @@ const styles = StyleSheet.create({
     color: MAROON,
     marginLeft: 6,
     fontWeight: '500',
+  },
+  photosContainer: {
+    backgroundColor: CARD,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  photoContainer: {
+    marginRight: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  packagePhoto: {
+    width: 120,
+    height: 80,
+    borderRadius: 12,
   },
 });

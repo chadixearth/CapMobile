@@ -35,7 +35,7 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     available_days_data: [],
     expiration_date_data: '',
     start_time: '',
-    photo: null,
+    photos: [],
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -47,7 +47,7 @@ export default function CreateTourPackageScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [loadingPickups, setLoadingPickups] = useState(true);
   const [loadingDropoffs, setLoadingDropoffs] = useState(false);
-  const [photoUri, setPhotoUri] = useState(null);
+  const [photos, setPhotos] = useState([]);
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -173,35 +173,81 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     }
   };
 
-  const pickImage = async () => {
+  const pickImages = async () => {
+    if (photos.length >= 5) {
+      Alert.alert('Limit Reached', 'You can add up to 5 photos only.');
+      return;
+    }
+    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - photos.length,
       aspect: [16, 9],
       quality: 0.8,
     });
 
     if (!result.canceled) {
-      setPhotoUri(result.assets[0].uri);
-      updateField('photo', result.assets[0]);
+      const newPhotos = result.assets.map(asset => ({
+        uri: asset.uri,
+        type: asset.type,
+        name: asset.fileName || `photo_${Date.now()}.jpg`
+      }));
+      const updatedPhotos = [...photos, ...newPhotos];
+      setPhotos(updatedPhotos);
+      updateField('photos', updatedPhotos);
     }
+  };
+  
+  const removePhoto = (index) => {
+    const updatedPhotos = photos.filter((_, i) => i !== index);
+    setPhotos(updatedPhotos);
+    updateField('photos', updatedPhotos);
   };
 
   const validateForm = () => {
     if (!formData.package_name.trim()) {
-      Alert.alert('Error', 'Package name is required');
+      Alert.alert('Validation Error', 'Package name is required');
+      return false;
+    }
+    if (formData.package_name.length < 5) {
+      Alert.alert('Validation Error', 'Package name must be at least 5 characters long');
       return false;
     }
     if (!formData.description.trim()) {
-      Alert.alert('Error', 'Description is required');
+      Alert.alert('Validation Error', 'Description is required');
+      return false;
+    }
+    if (formData.description.length < 20) {
+      Alert.alert('Validation Error', 'Description must be at least 20 characters long');
       return false;
     }
     if (!formData.price || isNaN(formData.price) || parseFloat(formData.price) <= 0) {
-      Alert.alert('Error', 'Valid price is required');
+      Alert.alert('Validation Error', 'Valid price is required');
+      return false;
+    }
+    if (parseFloat(formData.price) < 100) {
+      Alert.alert('Validation Error', 'Minimum price is ₱100');
       return false;
     }
     if (!formData.destination || !formData.destination.trim()) {
-      Alert.alert('Error', 'Please select a drop location');
+      Alert.alert('Validation Error', 'Please select a drop location');
+      return false;
+    }
+    if (!formData.pickup_location || !formData.pickup_location.trim()) {
+      Alert.alert('Validation Error', 'Please select a pickup location');
+      return false;
+    }
+    if (!formData.duration_hours || parseInt(formData.duration_hours) < 1) {
+      Alert.alert('Validation Error', 'Duration must be at least 1 hour');
+      return false;
+    }
+    if (!formData.max_pax || parseInt(formData.max_pax) < 1) {
+      Alert.alert('Validation Error', 'Maximum passengers must be at least 1');
+      return false;
+    }
+    if (formData.available_days_data.length === 0) {
+      Alert.alert('Validation Error', 'Please select at least one available day');
       return false;
     }
     return true;
@@ -230,7 +276,24 @@ export default function CreateTourPackageScreen({ navigation, route }) {
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
       } else {
-        Alert.alert('Error', result.error || `Failed to ${isEdit ? 'update' : 'create'} package`);
+        if (result.code === 'ACTIVE_PACKAGE_EXISTS') {
+          Alert.alert(
+            'Cannot Create Package',
+            result.error,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'View Active Package',
+                onPress: () => {
+                  navigation.goBack();
+                  navigation.navigate('PackageDetails', { package: result.activePackage });
+                }
+              }
+            ]
+          );
+        } else {
+          Alert.alert('Error', result.error || `Failed to ${isEdit ? 'update' : 'create'} package`);
+        }
       }
     } catch (error) {
       Alert.alert('Error', `Failed to ${isEdit ? 'update' : 'create'} package`);
@@ -292,20 +355,34 @@ export default function CreateTourPackageScreen({ navigation, route }) {
             />
           </View>
 
-          {/* Photo */}
+          {/* Photos */}
           <View style={styles.field}>
-            <Text style={styles.label}>Package Photo</Text>
+            <Text style={styles.label}>Package Photos ({photos.length}/5)</Text>
             <TouchableOpacity
-              style={styles.photoButton}
-              onPress={pickImage}
+              style={[styles.photoButton, photos.length >= 5 && styles.disabledButton]}
+              onPress={pickImages}
+              disabled={photos.length >= 5}
             >
-              <Ionicons name="camera-outline" size={20} color={MAROON} />
-              <Text style={styles.photoButtonText}>
-                {photoUri ? 'Change Photo' : 'Add Photo'}
+              <Ionicons name="camera-outline" size={20} color={photos.length >= 5 ? '#ccc' : MAROON} />
+              <Text style={[styles.photoButtonText, photos.length >= 5 && { color: '#ccc' }]}>
+                {photos.length === 0 ? 'Add Photos' : `Add More Photos (${5 - photos.length} remaining)`}
               </Text>
             </TouchableOpacity>
-            {photoUri && (
-              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+            
+            {photos.length > 0 && (
+              <ScrollView horizontal style={styles.photosContainer} showsHorizontalScrollIndicator={false}>
+                {photos.map((photo, index) => (
+                  <View key={index} style={styles.photoItem}>
+                    <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+                    <TouchableOpacity
+                      style={styles.removePhotoButton}
+                      onPress={() => removePhoto(index)}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#FF3B30" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
             )}
           </View>
 
@@ -448,15 +525,28 @@ export default function CreateTourPackageScreen({ navigation, route }) {
           {/* Start Time */}
           <View style={styles.field}>
             <Text style={styles.label}>Start Time</Text>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <Ionicons name="time-outline" size={20} color={MAROON} />
-              <Text style={styles.dateButtonText}>
-                {formData.start_time || 'Select Start Time'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.startTimeContainer}>
+              <TouchableOpacity
+                style={[styles.startTimeOption, !formData.start_time && styles.selectedStartTimeOption]}
+                onPress={() => updateField('start_time', '')}
+              >
+                <Text style={[styles.startTimeOptionText, !formData.start_time && styles.selectedStartTimeOptionText]}>
+                  None (Flexible)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.startTimeOption, formData.start_time && styles.selectedStartTimeOption]}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <Ionicons name="time-outline" size={16} color={formData.start_time ? '#fff' : MAROON} />
+                <Text style={[styles.startTimeOptionText, formData.start_time && styles.selectedStartTimeOptionText]}>
+                  {formData.start_time || 'Set Fixed Time'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.helperText}>
+              Choose "None" to let tourists pick their own time, or set a fixed start time
+            </Text>
           </View>
 
           {/* Expiration Date */}
@@ -539,24 +629,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   form: {
-    padding: 16,
+    padding: 20,
   },
   field: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   label: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#2C2C2C',
+    marginBottom: 10,
+    letterSpacing: 0.3,
   },
   input: {
     backgroundColor: CARD,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8E8E8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   textArea: {
     height: 80,
@@ -567,13 +663,18 @@ const styles = StyleSheet.create({
   },
   mapButton: {
     backgroundColor: CARD,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8E8E8',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   mapButtonText: {
     fontSize: 16,
@@ -602,17 +703,27 @@ const styles = StyleSheet.create({
   },
   dayOption: {
     backgroundColor: CARD,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 25,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    minWidth: 50,
+    borderColor: '#E8E8E8',
+    minWidth: 55,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   selectedDay: {
     backgroundColor: MAROON,
     borderColor: MAROON,
+    shadowColor: MAROON,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dayText: {
     fontSize: 14,
@@ -629,9 +740,14 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: MAROON,
-    paddingVertical: 16,
-    borderRadius: 8,
+    paddingVertical: 18,
+    borderRadius: 12,
     alignItems: 'center',
+    shadowColor: MAROON,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   disabledButton: {
     opacity: 0.5,
@@ -644,23 +760,75 @@ const styles = StyleSheet.create({
   },
   photoButton: {
     backgroundColor: CARD,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8E8E8',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   photoButtonText: {
     fontSize: 16,
     color: '#666',
     flex: 1,
   },
-  photoPreview: {
-    width: '100%',
-    height: 150,
+  photosContainer: {
+    marginTop: 12,
+  },
+  photoItem: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  photoThumbnail: {
+    width: 80,
+    height: 80,
     borderRadius: 8,
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  startTimeContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  startTimeOption: {
+    flex: 1,
+    backgroundColor: CARD,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  selectedStartTimeOption: {
+    backgroundColor: MAROON,
+    borderColor: MAROON,
+  },
+  startTimeOptionText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '600',
+  },
+  selectedStartTimeOptionText: {
+    color: '#fff',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#999',
     marginTop: 8,
+    fontStyle: 'italic',
   },
 });

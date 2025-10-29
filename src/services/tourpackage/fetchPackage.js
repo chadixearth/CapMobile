@@ -3,7 +3,7 @@ import { apiRequest } from '../authService';
 export const tourPackageService = {
   async getAllPackages() {
     try {
-      const result = await apiRequest('/tourpackage/');
+      const result = await apiRequest('/tourpackage/?include_details=true');
       
       if (!result.success) {
         return [];
@@ -24,6 +24,11 @@ export const tourPackageService = {
       
       return packages.map(pkg => ({
         ...pkg,
+        // Add missing fields that mobile expects
+        start_time: pkg.start_time || '09:00',
+        destination_lat: pkg.destination_lat || pkg.dropoff_lat,
+        destination_lng: pkg.destination_lng || pkg.dropoff_lng,
+        status: pkg.status || (pkg.is_active ? 'active' : 'inactive'),
         reviews: [],
         reviews_count: 0,
         average_rating: 0
@@ -54,6 +59,11 @@ export const tourPackageService = {
       
       return {
         ...packageData,
+        // Add missing fields that mobile expects
+        start_time: packageData.start_time || '09:00',
+        destination_lat: packageData.destination_lat || packageData.dropoff_lat,
+        destination_lng: packageData.destination_lng || packageData.dropoff_lng,
+        status: packageData.status || (packageData.is_active ? 'active' : 'inactive'),
         reviews: [],
         reviews_count: 0,
         average_rating: 0

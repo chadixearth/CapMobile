@@ -24,12 +24,12 @@ function navigateToLogin() {
 class ApiClient {
   constructor() {
     this.baseURL = apiBaseUrl();
-    this.timeout = 15000;
+    this.timeout = 10000; // Reduced to 10 seconds
     this.circuitBreaker = {
       failures: 0,
       lastFailureTime: null,
-      threshold: 5,
-      resetTimeout: 30000 // 30 seconds
+      threshold: 3, // Reduced threshold
+      resetTimeout: 15000 // 15 seconds
     };
   }
 
@@ -77,8 +77,11 @@ class ApiClient {
       const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Connection': 'close', // Force connection close to prevent HTTP/2 issues
-        'Cache-Control': 'no-cache',
+        'Connection': 'close',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Keep-Alive': 'timeout=5, max=1',
         ...options.headers,
       };
 
@@ -95,7 +98,8 @@ class ApiClient {
         ...options,
         headers,
         signal: controller.signal,
-        cache: 'no-store', // Prevent caching issues
+        cache: 'no-store',
+        keepalive: false, // Prevent connection reuse
       });
 
       clearTimeout(timeoutId);

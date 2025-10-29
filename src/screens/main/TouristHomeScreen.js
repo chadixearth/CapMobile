@@ -236,9 +236,10 @@ export default function TouristHomeScreen({ navigation }) {
             const finalColor = routeInfo?.color || road.stroke_color || road.color || '#007AFF';
             return {
               ...road,
-              color: finalColor,
-              weight: road.stroke_width || road.weight || 4,
-              opacity: road.stroke_opacity || road.opacity || 0.7
+              road_coordinates: road.road_coordinates || road.coordinates || [],
+              stroke_color: finalColor,
+              stroke_width: road.stroke_width || road.weight || 4,
+              stroke_opacity: road.stroke_opacity || road.opacity || 0.7
             };
           });
           setAllRoads(processedRoads);
@@ -378,6 +379,17 @@ export default function TouristHomeScreen({ navigation }) {
         console.warn('Route summaries fetch error:', error);
       }
     }
+    
+    // Show initial road highlights if not already loaded
+    if (roadHighlights.length === 0) {
+      try {
+        const highlights = await getRoadHighlights();
+        setRoadHighlights(highlights);
+      } catch (error) {
+        console.warn('Failed to load road highlights:', error);
+      }
+    }
+    
     setSheetVisible(true);
   };
 
@@ -410,7 +422,12 @@ export default function TouristHomeScreen({ navigation }) {
               const routeRoads = result.data.road_highlights || [];
               const routeDestinations = result.data.available_destinations || [];
               const processedRoads = routeRoads.map(road => ({
-                id: road.id, name: road.name, coordinates: road.coordinates, color: result.data.color, weight: 4, opacity: 0.8
+                id: road.id, 
+                name: road.name, 
+                coordinates: road.coordinates || road.road_coordinates || [], 
+                color: result.data.color, 
+                weight: 4, 
+                opacity: 0.8
               }));
               const destinationMarkers = routeDestinations.map(dest => ({
                 latitude: parseFloat(dest.latitude),
@@ -444,8 +461,26 @@ export default function TouristHomeScreen({ navigation }) {
         Alert.alert('Permission needed', 'Location permission is required to use current location.');
         return;
       }
+      
+      console.log('Getting current location...');
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const nearestPoint = findNearestRoadPoint(roadHighlights, pos.coords.latitude, pos.coords.longitude, 200);
+      console.log('Current location:', pos.coords.latitude, pos.coords.longitude);
+      
+      // Get fresh road highlights if not available
+      let availableRoads = roadHighlights;
+      if (availableRoads.length === 0) {
+        console.log('No road highlights available, fetching...');
+        availableRoads = await getRoadHighlights();
+        setRoadHighlights(availableRoads);
+        console.log('Fetched', availableRoads.length, 'road highlights');
+      }
+      
+      if (availableRoads.length === 0) {
+        Alert.alert('No Roads Available', 'No road data is currently available. Please try again later or select a location manually.');
+        return;
+      }
+      
+      const nearestPoint = findNearestRoadPoint(availableRoads, pos.coords.latitude, pos.coords.longitude, Infinity);
       if (nearestPoint) {
         const point = { name: `Near ${nearestPoint.name}`, latitude: nearestPoint.latitude, longitude: nearestPoint.longitude };
         if (activePicker === 'pickup') setPickup(point);
@@ -453,9 +488,10 @@ export default function TouristHomeScreen({ navigation }) {
         setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
         Alert.alert('Location Found', `Snapped to nearest road: ${nearestPoint.name} (${Math.round(nearestPoint.distance)}m away)`, [{ text: 'OK' }]);
       } else {
-        Alert.alert('No Road Nearby', 'Your current location is not near any available ride routes. Please select a location on a highlighted road.', [{ text: 'OK' }]);
+        Alert.alert('No Roads Found', `No roads found from your location.\n\nSearched ${availableRoads.length} roads.`, [{ text: 'OK' }]);
       }
     } catch (err) {
+      console.error('Location error:', err);
       Alert.alert('Location error', err.message || 'Failed to get current location.');
     }
   };
@@ -475,7 +511,12 @@ export default function TouristHomeScreen({ navigation }) {
               const routeRoads = result.data.road_highlights || [];
               const routeDestinations = result.data.available_destinations || [];
               const processedRoads = routeRoads.map(road => ({
-                id: road.id, name: road.name, coordinates: road.coordinates, color: result.data.color, weight: 4, opacity: 0.8
+                id: road.id, 
+                name: road.name, 
+                coordinates: road.coordinates || road.road_coordinates || [], 
+                color: result.data.color, 
+                weight: 4, 
+                opacity: 0.8
               }));
               const destinationMarkers = routeDestinations.map(dest => ({
                 latitude: parseFloat(dest.latitude),
@@ -760,15 +801,25 @@ export default function TouristHomeScreen({ navigation }) {
                   setModalVisible(true);
                 }}
               >
-                {pkg.photos && pkg.photos.length > 0 ? (
-                  <Image source={{ uri: pkg.photos[0] }} style={styles.packageImage} resizeMode="cover" />
-                ) : (
-                  <Image
-                    source={require('../../../assets/images/tourA.png')}
-                    style={styles.packageImage}
-                    resizeMode="cover"
-                  />
-                )}
+                {(() => {
+                  let imageSource = require('../../../assets/images/tourA.png');
+                  if (pkg.photos && pkg.photos.length > 0) {
+                    const photo = pkg.photos[0];
+                    if (typeof photo === 'string' && photo.startsWith('http')) {
+                      imageSource = { uri: photo };
+                    } else if (photo && typeof photo === 'object' && photo.url && photo.url.startsWith('http')) {
+                      imageSource = { uri: photo.url };
+                    }
+                  }
+                  return (
+                    <Image 
+                      source={imageSource} 
+                      style={styles.packageImage} 
+                      resizeMode="cover"
+                      onError={() => {/* Silent error handling */}}
+                    />
+                  );
+                })()}
 
                 {/* Title */}
                 <Text style={styles.packageTitle} numberOfLines={2}>
@@ -795,6 +846,18 @@ export default function TouristHomeScreen({ navigation }) {
                     </View>
                   ) : null}
 
+                  {pkg.start_time ? (
+                    <View style={styles.metaInline}>
+                      <Ionicons name="alarm-outline" size={12} />
+                      <Text style={styles.metaInlineText} numberOfLines={1}>
+                        {pkg.start_time}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Rating row */}
+                <View style={styles.metaRow}>
                   {(typeof pkg.average_rating === 'number' && pkg.average_rating > 0) ? (
                     <View style={styles.metaInline}>
                       <Ionicons name="star" size={12} color="#FFD700" />
@@ -817,29 +880,29 @@ export default function TouristHomeScreen({ navigation }) {
                   <View
                     style={[
                       styles.statusBadge,
-                      (pkg.is_active === false || pkg.is_expired) && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' },
+                      (pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())) && { backgroundColor: '#fdecea', borderColor: '#f5c2c7' },
                     ]}
                   >
                     <Ionicons
-                      name={(pkg.is_active === false || pkg.is_expired) ? 'close-circle-outline' : 'checkmark-circle-outline'}
+                      name={(pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())) ? 'close-circle-outline' : 'checkmark-circle-outline'}
                       size={12}
-                      color={(pkg.is_active === false || pkg.is_expired) ? '#d32f2f' : '#2e7d32'}
+                      color={(pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())) ? '#d32f2f' : '#2e7d32'}
                     />
                     <Text
                       style={[
                         styles.statusText,
-                        { color: (pkg.is_active === false || pkg.is_expired) ? '#d32f2f' : '#2e7d32' },
+                        { color: (pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())) ? '#d32f2f' : '#2e7d32' },
                       ]}
                       numberOfLines={1}
                     >
-                      {pkg.is_expired ? 'Expired' : pkg.is_active === false ? 'Unavailable' : 'Available'}
+                      {(pkg.expiration_date && new Date(pkg.expiration_date) < new Date()) ? 'Expired' : (pkg.is_active === false || pkg.status !== 'active') ? 'Unavailable' : 'Available'}
                     </Text>
                   </View>
 
                   <TouchableOpacity
-                    style={[styles.bookBtn, (pkg.is_active === false || pkg.is_expired) && styles.bookBtnDisabled]}
+                    style={[styles.bookBtn, (pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())) && styles.bookBtnDisabled]}
                     onPress={() => {
-                      if (pkg.is_expired) {
+                      if (pkg.expiration_date && new Date(pkg.expiration_date) < new Date()) {
                         Alert.alert(
                           'Package Expired',
                           'This tour package has expired and is no longer available for booking.',
@@ -847,7 +910,7 @@ export default function TouristHomeScreen({ navigation }) {
                         );
                         return;
                       }
-                      if (pkg.is_active === false) {
+                      if (pkg.is_active === false || pkg.status !== 'active') {
                         Alert.alert(
                           'Package Unavailable',
                           'This tour package is currently unavailable for booking.',
@@ -858,11 +921,11 @@ export default function TouristHomeScreen({ navigation }) {
                       setSelectedPackage(pkg);
                       setModalVisible(true);
                     }}
-                    disabled={pkg.is_active === false || pkg.is_expired}
+                    disabled={pkg.is_active === false || pkg.status !== 'active' || (pkg.expiration_date && new Date(pkg.expiration_date) < new Date())}
                   >
                     <Ionicons name="book-outline" size={12} color="#fff" style={{ marginRight: 6 }} />
                     <Text style={styles.bookBtnText} numberOfLines={1}>
-                      {pkg.is_expired ? 'Expired' : 'Book'}
+                      {(pkg.expiration_date && new Date(pkg.expiration_date) < new Date()) ? 'Expired' : 'Book'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1027,6 +1090,40 @@ export default function TouristHomeScreen({ navigation }) {
               <Ionicons name="navigate-circle-outline" size={16} color="#6B2E2B" />
               <Text style={styles.quickText}>Use my location</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={[styles.quickBtn, { backgroundColor: '#E8F5E8', borderColor: '#C8E6C9' }]} onPress={async () => {
+              try {
+                console.log('Fetching nearest road...');
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert('Permission needed', 'Location permission is required.');
+                  return;
+                }
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                const availableRoads = await getRoadHighlights();
+                console.log('Found', availableRoads.length, 'roads');
+                
+                if (availableRoads.length === 0) {
+                  Alert.alert('No Roads Available', 'No road data available.');
+                  return;
+                }
+                
+                const nearestPoint = findNearestRoadPoint(availableRoads, pos.coords.latitude, pos.coords.longitude, Infinity);
+                if (nearestPoint) {
+                  const point = { name: nearestPoint.name, latitude: nearestPoint.latitude, longitude: nearestPoint.longitude };
+                  if (activePicker === 'pickup') setPickup(point);
+                  else setDestination(point);
+                  setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
+                  Alert.alert('Nearest Road Found', `${nearestPoint.name} (${Math.round(nearestPoint.distance)}m away)`);
+                } else {
+                  Alert.alert('No Roads Found', `No roads found. Searched ${availableRoads.length} roads.`);
+                }
+              } catch (err) {
+                Alert.alert('Error', err.message);
+              }
+            }}>
+              <Ionicons name="trail-sign-outline" size={16} color="#2E7D32" />
+              <Text style={[styles.quickText, { color: '#2E7D32' }]}>Nearest road</Text>
+            </TouchableOpacity>
             {showingRoutes && (
               <TouchableOpacity 
                 style={[styles.quickBtn, { backgroundColor: '#FFE5E5', borderColor: '#FFCDD2' }]} 
@@ -1053,7 +1150,13 @@ export default function TouristHomeScreen({ navigation }) {
             <LeafletMapView
               style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
               region={mapRegion}
-              roads={roadHighlights.length > 0 ? roadHighlights : roads}
+              roads={roadHighlights.length > 0 ? roadHighlights.map(road => ({
+                ...road,
+                road_coordinates: road.coordinates || road.road_coordinates || [],
+                stroke_color: road.color || road.stroke_color || '#007AFF',
+                stroke_width: road.weight || road.stroke_width || 4,
+                stroke_opacity: road.opacity || road.stroke_opacity || 0.7
+              })) : roads}
               markers={markers}
               onMapPress={handleMapPress}
               onMarkerPress={handleMarkerPress}

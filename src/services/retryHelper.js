@@ -1,4 +1,4 @@
-export const withRetry = async (apiCall, maxRetries = 3, baseDelay = 1000) => {
+export const withRetry = async (apiCall, maxRetries = 2, baseDelay = 500) => {
   let lastError;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -9,9 +9,7 @@ export const withRetry = async (apiCall, maxRetries = 3, baseDelay = 1000) => {
       lastError = error;
       const errorMessage = error?.message || '';
       
-      if (__DEV__) {
-        console.log(`network error on attempt ${attempt}, retrying in ${baseDelay * attempt}ms:`, errorMessage);
-      }
+      console.log(`Request timeout on attempt ${attempt}`);
       
       // Don't retry auth errors
       if (errorMessage.includes('JWT expired') || 
@@ -33,13 +31,11 @@ export const withRetry = async (apiCall, maxRetries = 3, baseDelay = 1000) => {
         break;
       }
       
-      // Wait before retrying (exponential backoff)
+      // Wait before retrying (shorter delay)
       await new Promise(resolve => setTimeout(resolve, baseDelay * attempt));
     }
   }
   
-  if (__DEV__) {
-    console.error(`API call failed after ${maxRetries} retries:`, lastError);
-  }
+  console.error(`API call failed after ${maxRetries} retries:`, lastError?.message);
   throw lastError;
 };

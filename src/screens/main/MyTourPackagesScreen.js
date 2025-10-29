@@ -316,12 +316,41 @@ export default function MyTourPackagesScreen({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Tour Packages</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('CreateTourPackage')}
+          onPress={() => {
+            const activePackages = packages.filter(pkg => pkg.is_active);
+            if (activePackages.length > 0) {
+              Alert.alert(
+                'Active Package Exists',
+                'You can only have one active tour package at a time. Please deactivate your current package first.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'View Active Package',
+                    onPress: () => navigation.navigate('PackageDetails', { package: activePackages[0] })
+                  }
+                ]
+              );
+            } else {
+              navigation.navigate('CreateTourPackage');
+            }
+          }}
           style={styles.addButton}
         >
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* Active Package Info */}
+      {packages.filter(pkg => pkg.is_active).length > 0 && (
+        <View style={styles.activePackageInfo}>
+          <View style={styles.activePackageIcon}>
+            <Ionicons name="checkmark-circle" size={16} color="#28A745" />
+          </View>
+          <Text style={styles.activePackageText}>
+            You have 1 active package. Deactivate it to create a new one.
+          </Text>
+        </View>
+      )}
 
       {/* Content */}
       <ScrollView
@@ -355,7 +384,24 @@ export default function MyTourPackagesScreen({ navigation }) {
             </Text>
             <TouchableOpacity
               style={styles.createButton}
-              onPress={() => navigation.navigate('CreateTourPackage')}
+              onPress={() => {
+                const activePackages = packages.filter(pkg => pkg.is_active);
+                if (activePackages.length > 0) {
+                  Alert.alert(
+                    'Active Package Exists',
+                    'You can only have one active tour package at a time. Please deactivate your current package first.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'View Active Package',
+                        onPress: () => navigation.navigate('PackageDetails', { package: activePackages[0] })
+                      }
+                    ]
+                  );
+                } else {
+                  navigation.navigate('CreateTourPackage');
+                }
+              }}
             >
               <Text style={styles.createButtonText}>Create Package</Text>
             </TouchableOpacity>
@@ -637,5 +683,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     fontStyle: 'italic',
+  },
+  activePackageInfo: {
+    backgroundColor: '#E8F5E8',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: '#28A745',
+  },
+  activePackageIcon: {
+    marginRight: 8,
+  },
+  activePackageText: {
+    fontSize: 14,
+    color: '#155724',
+    flex: 1,
+    fontWeight: '500',
   },
 });

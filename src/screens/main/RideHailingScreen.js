@@ -17,6 +17,7 @@ import {
   checkActiveRide 
 } from '../../services/rideHailingService';
 import LocationService from '../../services/locationService';
+import { getRoadHighlights, findNearestRoadPoint } from '../../services/roadHighlightsService';
 import BackButton from '../../components/BackButton';
 
 export default function RideHailingScreen({ navigation }) {
@@ -28,6 +29,8 @@ export default function RideHailingScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [activeRide, setActiveRide] = useState(null);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [findingNearestRoad, setFindingNearestRoad] = useState(false);
+  const [nearestRoad, setNearestRoad] = useState(null);
 
   useEffect(() => {
     initializeScreen();
@@ -68,7 +71,6 @@ export default function RideHailingScreen({ navigation }) {
     setGettingLocation(true);
     try {
       const location = await LocationService.getCurrentLocation();
-      // For now, just set a generic message. In a real app, you'd reverse geocode the coordinates
       setPickupAddress('Current Location (GPS)');
       Alert.alert('Location Found', 'Your current location has been set as pickup point.');
     } catch (error) {
@@ -80,6 +82,54 @@ export default function RideHailingScreen({ navigation }) {
       );
     } finally {
       setGettingLocation(false);
+    }
+  };
+
+  const findNearestRoadForPickup = async () => {
+    setFindingNearestRoad(true);
+    try {
+      console.log('Getting current location...');
+      const location = await LocationService.getCurrentLocation();
+      console.log('Current location:', location);
+      
+      console.log('Fetching road highlights...');
+      const roads = await getRoadHighlights();
+      console.log('Roads fetched:', roads.length);
+      
+      if (roads.length === 0) {
+        Alert.alert('No Roads Found', 'No available roads found in your area. The map data may not be loaded yet.');
+        return;
+      }
+
+      console.log('Finding nearest road point...');
+      const nearestRoadPoint = findNearestRoadPoint(
+        roads, 
+        location.latitude, 
+        location.longitude,
+        500 // 500 meters max distance
+      );
+
+      if (nearestRoadPoint) {
+        setNearestRoad(nearestRoadPoint);
+        setPickupAddress(`${nearestRoadPoint.name} (${Math.round(nearestRoadPoint.distance)}m away)`);
+        Alert.alert(
+          'Nearest Road Found', 
+          `Found ${nearestRoadPoint.name} approximately ${Math.round(nearestRoadPoint.distance)} meters from your location.`
+        );
+      } else {
+        Alert.alert(
+          'No Nearby Roads', 
+          `No available roads found within 500 meters of your location.\n\nSearched ${roads.length} roads from your current position.\n\nPlease enter your pickup location manually.`
+        );
+      }
+    } catch (error) {
+      console.error('Error finding nearest road:', error);
+      Alert.alert(
+        'Error', 
+        `Unable to find nearest road: ${error.message}\n\nPlease check your location settings and try again.`
+      );
+    } finally {
+      setFindingNearestRoad(false);
     }
   };
 
@@ -213,7 +263,24 @@ export default function RideHailingScreen({ navigation }) {
                 <Ionicons name="location" size={20} color="#6B2E2B" />
               )}
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.locationButton, styles.roadButton]}
+              onPress={findNearestRoadForPickup}
+              disabled={findingNearestRoad}
+            >
+              {findingNearestRoad ? (
+                <ActivityIndicator size="small" color="#2E7D32" />
+              ) : (
+                <Ionicons name="trail-sign" size={20} color="#2E7D32" />
+              )}
+            </TouchableOpacity>
           </View>
+          <Text style={styles.locationHint}>Tap 📍 for current location or 🛣️ for nearest road</Text>
+          {nearestRoad && (
+            <Text style={styles.nearestRoadInfo}>
+              Nearest road: {nearestRoad.name} ({Math.round(nearestRoad.distance)}m away)
+            </Text>
+          )}
         </View>
 
         <View style={styles.sectionCard}>
@@ -369,6 +436,23 @@ const styles = StyleSheet.create({
     borderColor: '#E0CFC2',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  roadButton: {
+    backgroundColor: '#E8F5E8',
+    borderColor: '#C8E6C9',
+  },
+  locationHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  nearestRoadInfo: {
+    fontSize: 11,
+    color: '#2E7D32',
+    marginTop: 4,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   passengerSelector: {
     flexDirection: 'row',

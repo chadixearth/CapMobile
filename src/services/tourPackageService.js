@@ -36,14 +36,22 @@ export async function getMyTourPackages() {
 
 export async function getAllPackages() {
   try {
-    const result = await apiClient.get('/tourpackage/', {
+    const result = await apiClient.get('/tourpackage/?include_details=true', {
       timeout: 8000,
       retries: 2
     });
     
     if (result.success) {
       const packages = result.data?.data || result.data || [];
-      return { success: true, data: packages };
+      // Map packages to ensure all expected fields are present
+      const mappedPackages = packages.map(pkg => ({
+        ...pkg,
+        start_time: pkg.start_time || '09:00',
+        destination_lat: pkg.destination_lat || pkg.dropoff_lat,
+        destination_lng: pkg.destination_lng || pkg.dropoff_lng,
+        status: pkg.status || (pkg.is_active ? 'active' : 'inactive')
+      }));
+      return { success: true, data: mappedPackages };
     }
     
     // If API fails but we get a response, return empty array
@@ -63,6 +71,20 @@ export async function createTourPackage(packageData) {
   try {
     const user = await getCurrentUser();
     const userRole = user?.role || 'driver';
+    
+    // Check for existing active packages
+    const existingPackages = await getDriverPackages();
+    if (existingPackages.success) {
+      const activePackages = existingPackages.data.filter(pkg => pkg.is_active);
+      if (activePackages.length > 0) {
+        return {
+          success: false,
+          error: 'You can only have one active tour package at a time. Please deactivate your current package first.',
+          code: 'ACTIVE_PACKAGE_EXISTS',
+          activePackage: activePackages[0]
+        };
+      }
+    }
     
     // Handle expiration date - set to null if "No Expiration" is selected
     let expiration_date = packageData.expiration_date_data;
@@ -145,7 +167,16 @@ export async function getDriverPackages() {
       retries: 2
     });
     if (result.success) {
-      return { success: true, data: result.data?.data || result.data || [] };
+      const packages = result.data?.data || result.data || [];
+      // Map packages to ensure all expected fields are present
+      const mappedPackages = packages.map(pkg => ({
+        ...pkg,
+        start_time: pkg.start_time || '09:00',
+        destination_lat: pkg.destination_lat || pkg.dropoff_lat,
+        destination_lng: pkg.destination_lng || pkg.dropoff_lng,
+        status: pkg.status || (pkg.is_active ? 'active' : 'inactive')
+      }));
+      return { success: true, data: mappedPackages };
     }
     return { success: false, error: result.error || 'Failed to fetch driver packages' };
   } catch (error) {

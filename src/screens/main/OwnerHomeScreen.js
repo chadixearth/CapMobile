@@ -363,27 +363,12 @@ export default function OwnerHomeScreen({ navigation }) {
         <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
           <TouchableOpacity
             style={styles.quickCard}
-            onPress={() => navigation?.navigate?.('DriversScreen')}
+            onPress={() => navigation?.navigate?.('DriversList')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Ionicons name="car-sport" size={22} color={MAROON} />
               <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
                 Drivers
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#999" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-          <TouchableOpacity
-            style={styles.quickCard}
-            onPress={() => navigation?.navigate?.('BookingsScreen')}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="calendar-outline" size={22} color={MAROON} />
-              <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
-                Bookings
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#999" />

@@ -195,7 +195,7 @@ export async function createBooking(bookingData) {
       }
       
       // Handle availability errors - but allow booking to proceed
-      const isAvailabilityError = /not available on|driver not available|schedule not set|Tour package is not available/i.test(err?.message || '');
+      const isAvailabilityError = /not available on|driver not available|schedule not set|Tour package is not available|Driver is not available/i.test(err?.message || '');
       if (isAvailabilityError) {
         console.log('Driver availability issue detected, but allowing booking to proceed as pending');
         // Instead of blocking the booking, we'll let it go through as pending

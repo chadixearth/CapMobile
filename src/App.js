@@ -15,17 +15,31 @@ import mobileDiagnostics from './services/mobileDiagnostics';
 import CustomModalProvider from './components/CustomModalProvider';
 import CustomModalService from './services/CustomModalService';
 
-// Suppress location-related console errors
+// Suppress location-related console errors and UIFrameGuarded warnings
 const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
 console.error = (...args) => {
   const message = args.join(' ');
   if (message.includes('Location request failed') || 
       message.includes('unsatisfied device settings') ||
+      message.includes('UIFrameGuarded') ||
+      message.includes('RCTImageView') ||
       message.includes('location') && message.includes('failed')) {
-    // Silently ignore location errors
+    // Silently ignore location, UIFrameGuarded, and image errors
     return;
   }
   originalConsoleError.apply(console, args);
+};
+
+console.warn = (...args) => {
+  const message = args.join(' ');
+  if (message.includes('UIFrameGuarded') || 
+      message.includes('Navigation reset failed')) {
+    // Silently ignore UIFrameGuarded warnings
+    return;
+  }
+  originalConsoleWarn.apply(console, args);
 };
 
 export default function App() {
@@ -79,29 +93,41 @@ export default function App() {
           <NavigationContainer 
           ref={navRef}
           onReady={() => {
-            // Set navigation reference for error handling service
-            ErrorHandlingService.setNavigationRef(navRef.current);
-            // Make navigation ref globally available for logout
-            global.navigationRef = navRef.current;
-            
-            // Set up JWT expiry callback
-            const handleSessionExpiry = () => {
+            try {
+              // Set navigation reference for error handling service
               if (navRef.current) {
-                navRef.current.reset({
-                  index: 0,
-                  routes: [{ name: 'Login' }],
-                });
+                ErrorHandlingService.setNavigationRef(navRef.current);
+                // Make navigation ref globally available for logout
+                global.navigationRef = navRef.current;
               }
-            };
-            
-            setSessionExpiredCallback(handleSessionExpiry);
-            
-            // Also set up API client session expiry callback
-            const { apiClient } = require('./services/improvedApiClient');
-            apiClient.setSessionExpiredCallback(handleSessionExpiry);
-            
-            // Set up custom modal service
-            CustomModalService.setModalRef(modalRef.current);
+              
+              // Set up JWT expiry callback with safety checks
+              const handleSessionExpiry = () => {
+                try {
+                  if (navRef.current && navRef.current.isReady()) {
+                    navRef.current.reset({
+                      index: 0,
+                      routes: [{ name: 'Login' }],
+                    });
+                  }
+                } catch (error) {
+                  console.warn('Navigation reset failed:', error);
+                }
+              };
+              
+              setSessionExpiredCallback(handleSessionExpiry);
+              
+              // Also set up API client session expiry callback
+              const { apiClient } = require('./services/improvedApiClient');
+              apiClient.setSessionExpiredCallback(handleSessionExpiry);
+              
+              // Set up custom modal service
+              if (modalRef.current) {
+                CustomModalService.setModalRef(modalRef.current);
+              }
+            } catch (error) {
+              console.warn('Navigation setup error:', error);
+            }
           }}
         >
             <NetworkStatus />

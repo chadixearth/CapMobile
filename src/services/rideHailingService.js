@@ -170,8 +170,38 @@ export async function createRideBooking(bookingData) {
       try {
         const LocationService = (await import('./locationService')).default;
         const location = await LocationService.getCurrentLocation();
-        bookingData.pickup_latitude = location.latitude;
-        bookingData.pickup_longitude = location.longitude;
+        
+        // Try to find nearest road for better pickup location
+        try {
+          const { getRoadHighlights, findNearestRoadPoint } = await import('./roadHighlightsService');
+          const roads = await getRoadHighlights();
+          
+          if (roads.length > 0) {
+            const nearestRoad = findNearestRoadPoint(
+              roads, 
+              location.latitude, 
+              location.longitude,
+              Infinity
+            );
+            
+            if (nearestRoad) {
+              console.log('Using nearest road coordinates for pickup:', nearestRoad.name);
+              bookingData.pickup_latitude = nearestRoad.latitude;
+              bookingData.pickup_longitude = nearestRoad.longitude;
+              bookingData.pickup_address = `${bookingData.pickup_address} (${nearestRoad.name})`;
+            } else {
+              bookingData.pickup_latitude = location.latitude;
+              bookingData.pickup_longitude = location.longitude;
+            }
+          } else {
+            bookingData.pickup_latitude = location.latitude;
+            bookingData.pickup_longitude = location.longitude;
+          }
+        } catch (roadError) {
+          console.warn('Could not find nearest road, using GPS location:', roadError.message);
+          bookingData.pickup_latitude = location.latitude;
+          bookingData.pickup_longitude = location.longitude;
+        }
       } catch (locationError) {
         console.warn('Could not get current location:', locationError.message);
         // Return error if location is critical for the booking
@@ -595,6 +625,54 @@ export async function getActiveRides(userId, userType = 'customer') {
   } catch (error) {
     console.error('Error getting active rides:', error);
     return { success: false, error: error.message, data: [] };
+  }
+}
+
+// Navigate to nearest road point
+export async function navigateToNearestRoad(latitude, longitude) {
+  try {
+    const { getRoadHighlights, findNearestRoadPoint } = await import('./roadHighlightsService');
+    const roads = await getRoadHighlights();
+    
+    if (roads.length === 0) {
+      // Fallback to regular navigation
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+      const { Linking } = await import('react-native');
+      await Linking.openURL(url);
+      return { success: true, usedNearestRoad: false };
+    }
+    
+    const nearestRoad = findNearestRoadPoint(roads, latitude, longitude, Infinity);
+    
+    if (nearestRoad) {
+      // Navigate to nearest road point
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${nearestRoad.latitude},${nearestRoad.longitude}`;
+      const { Linking } = await import('react-native');
+      await Linking.openURL(url);
+      return { 
+        success: true, 
+        usedNearestRoad: true, 
+        roadName: nearestRoad.name,
+        distance: nearestRoad.distance 
+      };
+    } else {
+      // Fallback to original coordinates
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+      const { Linking } = await import('react-native');
+      await Linking.openURL(url);
+      return { success: true, usedNearestRoad: false };
+    }
+  } catch (error) {
+    console.error('Error navigating to nearest road:', error);
+    // Fallback to regular navigation
+    try {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+      const { Linking } = await import('react-native');
+      await Linking.openURL(url);
+      return { success: true, usedNearestRoad: false, error: error.message };
+    } catch (navError) {
+      return { success: false, error: navError.message };
+    }
   }
 }
 

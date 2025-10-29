@@ -101,12 +101,22 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
     return nodes;
   };
 
-  if (!packageData) return null;
+  const photos = React.useMemo(() => {
+    if (!packageData || !Array.isArray(packageData.photos) || packageData.photos.length === 0) {
+      return [require('../../assets/images/tourA.png')];
+    }
+    return packageData.photos.map(photo => {
+      if (typeof photo === 'string') {
+        return photo;
+      }
+      if (photo && typeof photo === 'object' && photo.url) {
+        return photo.url;
+      }
+      return require('../../assets/images/tourA.png');
+    });
+  }, [packageData?.photos]);
 
-  const photos =
-    Array.isArray(packageData.photos) && packageData.photos.length > 0
-      ? packageData.photos
-      : [require('../../assets/images/tourA.png')];
+  if (!packageData) return null;
 
   const onScrollPhotos = (e) => {
     const x = e.nativeEvent.contentOffset.x;
@@ -214,14 +224,14 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
 
                 {/* Availability moved here */}
                 <AdaptiveChip>
-                  <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && !packageData?.is_expired) ? '#16A34A' : '#DC2626' }]} />
+                  <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#16A34A' : '#DC2626' }]} />
                   <Text
                     style={[
                       styles.chipText,
-                      { color: (packageData?.is_active && !packageData?.is_expired) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
+                      { color: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
                     ]}
                   >
-                    {packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Available' : 'Unavailable'}
+                    {packageData?.expiration_date && new Date(packageData.expiration_date) < new Date() ? 'Expired' : packageData?.is_active && packageData?.status === 'active' ? 'Available' : 'Unavailable'}
                   </Text>
                 </AdaptiveChip>
               </View>
@@ -260,26 +270,90 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
               )}
 
               {/* Key-value details */}
-              <InfoRow
-                title="Cancellation"
-                subtitle={packageData?.cancellation_policy || 'Booking cancellation has a cancellation fee'}
-              />
-              {/* <InfoRow
-                title="Book now"
-                subtitle={
-                  packageData?.pay_later_info ||
-                  'Keep your travel plans flexible – book your package today'
-                }
-              /> */}
-              <InfoRow title="Driver" subtitle={packageData?.driver_language || 'TBA'} />
+              {packageData?.price && (
+                <InfoRow
+                  title="Package Price"
+                  subtitle={`${formatPeso(packageData.price)} per person`}
+                />
+              )}
+              
+              {packageData?.start_time && (
+                <InfoRow
+                  title="Start Time"
+                  subtitle={`Departure: ${packageData.start_time}`}
+                />
+              )}
+              
+              {packageData?.duration_hours && (
+                <InfoRow
+                  title="Duration"
+                  subtitle={`${packageData.duration_hours} hours tour experience`}
+                />
+              )}
+              
+              {packageData?.max_pax && (
+                <InfoRow
+                  title="Group Size"
+                  subtitle={`Maximum ${packageData.max_pax} passengers per booking`}
+                />
+              )}
+              
               <InfoRow
                 title="Pick-up Location"
-                subtitle={packageData?.pickup_location || packageData?.start_point || packageData?.location || 'Tartanilla Terminal'}
+                subtitle={packageData?.pickup_location || 'Tartanilla Terminal'}
               />
+              
               <InfoRow
                 title="Destination"
-                subtitle={packageData?.destination || 'Various locations'}
+                subtitle={packageData?.destination || 'Various scenic locations around Cebu City'}
               />
+              
+              {packageData?.expiration_date && (
+                <InfoRow
+                  title="Package Validity"
+                  subtitle={`Valid until: ${new Date(packageData.expiration_date).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}`}
+                  isExpired={new Date(packageData.expiration_date) < new Date()}
+                />
+              )}
+              
+              {packageData?.available_days && Object.keys(packageData.available_days).length > 0 && (
+                <InfoRow
+                  title="Available Days"
+                  subtitle={Array.isArray(packageData.available_days) ? packageData.available_days.join(', ') : JSON.stringify(packageData.available_days)}
+                />
+              )}
+              
+              <InfoRow title="Driver Guide" subtitle={packageData?.driver_language || 'Professional local driver'} />
+              
+              <InfoRow
+                title="Cancellation Policy"
+                subtitle={packageData?.cancellation_policy || 'Free cancellation up to 24 hours before departure'}
+              />
+              
+              {packageData?.inclusions && (
+                <InfoRow
+                  title="What's Included"
+                  subtitle={packageData.inclusions}
+                />
+              )}
+              
+              {packageData?.exclusions && (
+                <InfoRow
+                  title="What's Not Included"
+                  subtitle={packageData.exclusions}
+                />
+              )}
+              
+              {packageData?.requirements && (
+                <InfoRow
+                  title="Requirements"
+                  subtitle={packageData.requirements}
+                />
+              )}
               <View style={styles.mapButtonContainer}>
                 <TouchableOpacity 
                   style={styles.viewRouteButton} 
@@ -379,9 +453,9 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
             </View>
 
             <TouchableOpacity
-              style={[styles.cta, (!packageData?.is_active || packageData?.is_expired) && styles.ctaDisabled]}
+              style={[styles.cta, (!packageData?.is_active || packageData?.status !== 'active' || (packageData?.expiration_date && new Date(packageData.expiration_date) < new Date())) && styles.ctaDisabled]}
               onPress={() => {
-                if (packageData?.is_expired) {
+                if (packageData?.expiration_date && new Date(packageData.expiration_date) < new Date()) {
                   Alert.alert(
                     'Package Expired',
                     'This tour package has expired and is no longer available for booking.',
@@ -389,7 +463,7 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                   );
                   return;
                 }
-                if (!packageData?.is_active) {
+                if (!packageData?.is_active || packageData?.status !== 'active') {
                   Alert.alert(
                     'Package Unavailable',
                     'This tour package is currently unavailable for booking.',
@@ -400,13 +474,13 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                 onClose?.();
                 onBook?.();
               }}
-              disabled={!packageData?.is_active || packageData?.is_expired}
+              disabled={!packageData?.is_active || packageData?.status !== 'active' || (packageData?.expiration_date && new Date(packageData.expiration_date) < new Date())}
               accessibilityRole="button"
-              accessibilityLabel={packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Book now' : 'Unavailable'}
+              accessibilityLabel={(packageData?.expiration_date && new Date(packageData.expiration_date) < new Date()) ? 'Expired' : (packageData?.is_active && packageData?.status === 'active') ? 'Book now' : 'Unavailable'}
             >
               <Ionicons name="calendar-outline" size={18} color="#fff" />
               <Text style={styles.ctaText}>
-                {packageData?.is_expired ? 'Expired' : packageData?.is_active ? 'Book Now' : 'Unavailable'}
+                {(packageData?.expiration_date && new Date(packageData.expiration_date) < new Date()) ? 'Expired' : (packageData?.is_active && packageData?.status === 'active') ? 'Book Now' : 'Unavailable'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -417,10 +491,10 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
 };
 
 /** Simple label–value row used in the Details card */
-const InfoRow = ({ title, subtitle }) => (
+const InfoRow = ({ title, subtitle, isExpired = false }) => (
   <View style={styles.infoRow}>
     <Text style={styles.infoTitle}>{title}</Text>
-    <Text style={styles.infoSubtitle}>{subtitle}</Text>
+    <Text style={[styles.infoSubtitle, isExpired && styles.expiredText]}>{subtitle}</Text>
   </View>
 );
 
@@ -690,13 +764,17 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     lineHeight: 20,
   },
+  expiredText: {
+    color: '#DC2626',
+    fontWeight: '600',
+  },
   aboutSubtitle: {
-  marginTop: 4,
-  marginBottom: 12,
-  fontSize: 14,
-  lineHeight: 20,
-  color: '#6B7280',
-},
+    marginTop: 4,
+    marginBottom: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7280',
+  },
 
   // Reviews
   ratingCompact: {

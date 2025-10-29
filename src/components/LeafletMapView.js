@@ -34,32 +34,73 @@ const LeafletMapView = ({
       id: marker.id
     })));
 
-    // Convert roads to JSON string
+    // Convert roads to JSON string with debugging
     const roadsJSON = JSON.stringify(roads.map(road => {
-      if (road.road_coordinates && Array.isArray(road.road_coordinates)) {
-        return {
-          coordinates: road.road_coordinates.map(coord => ({
-            lat: parseFloat(coord.lat || coord.latitude || 0),
-            lng: parseFloat(coord.lng || coord.longitude || 0)
-          })),
-          color: road.stroke_color || road.color || '#007AFF',
-          weight: road.stroke_width || road.weight || 4,
-          opacity: road.stroke_opacity || road.opacity || 0.7,
-          name: road.name || 'Road'
-        };
-      } else if (road.coordinates && Array.isArray(road.coordinates)) {
-        return {
-          coordinates: road.coordinates.map(coord => ({
-            lat: parseFloat(coord.lat || coord.latitude || 0),
-            lng: parseFloat(coord.lng || coord.longitude || 0)
-          })),
-          color: road.color || '#007AFF',
-          weight: road.weight || 4,
-          opacity: road.opacity || 0.7,
-          name: road.name || 'Road'
-        };
-      } else if (road.start && road.end) {
-        // Handle start/end object format for routing
+      console.log('Processing road for WebView:', {
+        name: road.name,
+        id: road.id,
+        hasRoadCoordinates: !!road.road_coordinates,
+        roadCoordinatesLength: road.road_coordinates?.length,
+        roadCoordinatesType: typeof road.road_coordinates,
+        hasCoordinates: !!road.coordinates,
+        coordinatesLength: road.coordinates?.length,
+        coordinatesType: typeof road.coordinates,
+        sampleCoord: road.road_coordinates?.[0] || road.coordinates?.[0],
+        fullRoad: road
+      });
+      
+      // Try road_coordinates first
+      if (road.road_coordinates && Array.isArray(road.road_coordinates) && road.road_coordinates.length > 0) {
+        const coordinates = road.road_coordinates.map(coord => {
+          if (Array.isArray(coord) && coord.length >= 2) {
+            return { lat: parseFloat(coord[0]), lng: parseFloat(coord[1]) };
+          } else if (coord && typeof coord === 'object' && coord.lat && coord.lng) {
+            return { lat: parseFloat(coord.lat), lng: parseFloat(coord.lng) };
+          } else if (coord && typeof coord === 'object' && coord.latitude && coord.longitude) {
+            return { lat: parseFloat(coord.latitude), lng: parseFloat(coord.longitude) };
+          }
+          return null;
+        }).filter(Boolean);
+        
+        if (coordinates.length > 0) {
+          return {
+            coordinates: coordinates,
+            color: road.stroke_color || road.color || '#007AFF',
+            weight: road.stroke_width || road.weight || 4,
+            opacity: road.stroke_opacity || road.opacity || 0.7,
+            name: road.name || 'Road'
+          };
+        }
+      }
+      
+
+      
+      // Try coordinates array
+      if (road.coordinates && Array.isArray(road.coordinates) && road.coordinates.length > 0) {
+        const coordinates = road.coordinates.map(coord => {
+          if (Array.isArray(coord) && coord.length >= 2) {
+            return { lat: parseFloat(coord[0]), lng: parseFloat(coord[1]) };
+          } else if (coord && typeof coord === 'object' && coord.lat && coord.lng) {
+            return { lat: parseFloat(coord.lat), lng: parseFloat(coord.lng) };
+          } else if (coord && typeof coord === 'object' && coord.latitude && coord.longitude) {
+            return { lat: parseFloat(coord.latitude), lng: parseFloat(coord.longitude) };
+          }
+          return null;
+        }).filter(Boolean);
+        
+        if (coordinates.length > 0) {
+          return {
+            coordinates: coordinates,
+            color: road.color || '#007AFF',
+            weight: road.weight || 4,
+            opacity: road.opacity || 0.7,
+            name: road.name || 'Road'
+          };
+        }
+      }
+      
+      // Handle start/end object format for routing
+      if (road.start && road.end) {
         return {
           start: {
             lat: parseFloat(road.start.lat),
@@ -74,7 +115,10 @@ const LeafletMapView = ({
           opacity: road.opacity || 0.7,
           name: road.name || 'Road'
         };
-      } else if (road.start_latitude && road.start_longitude && road.end_latitude && road.end_longitude) {
+      }
+      
+      // Handle start/end latitude/longitude format for routing
+      if (road.start_latitude && road.start_longitude && road.end_latitude && road.end_longitude) {
         return {
           start_latitude: parseFloat(road.start_latitude),
           start_longitude: parseFloat(road.start_longitude),
@@ -86,6 +130,8 @@ const LeafletMapView = ({
           name: road.name || 'Road'
         };
       }
+      
+      console.log('Road has no valid coordinates, skipping:', road.name);
       return null;
     }).filter(Boolean));
 
@@ -201,7 +247,17 @@ const LeafletMapView = ({
           var markers = ${markersJSON};
           var roads = ${roadsJSON};
           
-          console.log('Parsed roads:', roads);
+          console.log('Parsed roads for WebView:', roads.length, 'roads');
+          roads.forEach(function(road, index) {
+            console.log('Road', index + 1, ':', {
+              name: road.name,
+              hasCoordinates: !!road.coordinates,
+              coordinatesLength: road.coordinates?.length || 0,
+              color: road.color,
+              weight: road.weight,
+              opacity: road.opacity
+            });
+          });
 
           // Function to get marker color
           function getMarkerIcon(color, type, id) {
@@ -224,10 +280,14 @@ const LeafletMapView = ({
               '#FF6600': 'orange', '#ff6600': 'orange',
               '#800080': 'violet', '#ba1abc': 'violet',
               '#00AA00': 'green', '#00aa00': 'green',
-              '#0066CC': 'blue', '#0066cc': 'blue'
+              '#0066CC': 'blue', '#0066cc': 'blue',
+              '#20c31d': 'green', '#20C31D': 'green',
+              '#2E7D32': 'green', '#2e7d32': 'green',
+              '#C62828': 'red', '#c62828': 'red'
             };
             
-            var colorName = iconColors[color.toLowerCase()] || 'red';
+            var colorName = iconColors[color] || iconColors[color.toLowerCase()] || 'red';
+            console.log('Marker color mapping:', color, '->', colorName);
             
             // Create custom icon
             return L.icon({
@@ -318,9 +378,12 @@ const LeafletMapView = ({
           
           console.log('Processing roads:', roads.length);
           
+          // First pass: Add roads with predefined coordinates immediately
           roads.forEach(function(road) {
+            console.log('Processing road in WebView:', road.name, 'coordinates:', road.coordinates?.length || 0, 'road data:', road);
+            
             if (road.coordinates && road.coordinates.length > 0) {
-              // If road has predefined coordinates, use them
+              // If road has predefined coordinates, use them immediately
               var latlngs = road.coordinates.map(function(coord) {
                 return [coord.lat, coord.lng];
               });
@@ -333,10 +396,19 @@ const LeafletMapView = ({
                 opacity: road.opacity
               }).addTo(map);
               
+              console.log('Added road polyline immediately:', road.name, 'with', latlngs.length, 'points', 'color:', road.color);
+              
               if (road.name) {
                 polyline.bindPopup('<strong>' + road.name + '</strong>');
               }
-            } else if (road.start && road.end) {
+            } else {
+              console.log('Road has no coordinates to display:', road.name, 'road object:', road);
+            }
+          });
+          
+          // Second pass: Handle roads that need routing
+          roads.forEach(function(road) {
+            if (road.start && road.end) {
               // If road has start/end points, get route
               console.log('Creating route from start/end objects:', road.start, road.end);
               var routePromise = new Promise(function(resolve) {
@@ -387,31 +459,57 @@ const LeafletMapView = ({
             }
           });
           
-          // Wait for all routes to be loaded before fitting bounds
-          Promise.all(routePromises).then(function() {
-            // Auto-zoom to fit markers and roads after routes are loaded
-            var allCoords = [];
-            
-            // Add marker coordinates
-            markers.forEach(function(marker) {
-              if (marker.lat && marker.lng) {
-                allCoords.push([marker.lat, marker.lng]);
-              }
-            });
-            
-            // Add road coordinates
-            allCoords = allCoords.concat(allRoadCoords);
-            
-            if (allCoords.length > 1) {
-              var group = new L.featureGroup();
-              allCoords.forEach(function(coord) {
-                L.marker(coord).addTo(group);
-              });
-              map.fitBounds(group.getBounds(), { padding: [20, 20] });
-            } else if (allCoords.length === 1) {
-              map.setView(allCoords[0], 15);
+          // Fit bounds immediately for existing coordinates
+          var allCoords = [];
+          
+          // Add marker coordinates
+          markers.forEach(function(marker) {
+            if (marker.lat && marker.lng) {
+              allCoords.push([marker.lat, marker.lng]);
             }
           });
+          
+          // Add existing road coordinates
+          allCoords = allCoords.concat(allRoadCoords);
+          
+          if (allCoords.length > 1) {
+            var group = new L.featureGroup();
+            allCoords.forEach(function(coord) {
+              L.marker(coord).addTo(group);
+            });
+            map.fitBounds(group.getBounds(), { padding: [20, 20] });
+          } else if (allCoords.length === 1) {
+            map.setView(allCoords[0], 15);
+          }
+          
+          // Wait for routing to complete (if any) and adjust bounds if needed
+          if (routePromises.length > 0) {
+            Promise.all(routePromises).then(function() {
+              console.log('All routes loaded, adjusting bounds if needed');
+              // Only adjust bounds if we have new coordinates from routing
+              if (allRoadCoords.length > allCoords.length) {
+                var updatedCoords = [];
+                
+                // Add marker coordinates
+                markers.forEach(function(marker) {
+                  if (marker.lat && marker.lng) {
+                    updatedCoords.push([marker.lat, marker.lng]);
+                  }
+                });
+                
+                // Add all road coordinates (including new ones from routing)
+                updatedCoords = updatedCoords.concat(allRoadCoords);
+                
+                if (updatedCoords.length > 1) {
+                  var updatedGroup = new L.featureGroup();
+                  updatedCoords.forEach(function(coord) {
+                    L.marker(coord).addTo(updatedGroup);
+                  });
+                  map.fitBounds(updatedGroup.getBounds(), { padding: [20, 20] });
+                }
+              }
+            });
+          }
 
 
 
