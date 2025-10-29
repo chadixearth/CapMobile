@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -221,7 +222,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         .from('carriage-photos')
         .getPublicUrl(filename);
 
-      return publicUrl;
+      return {
+        url: publicUrl,
+        filename,
+        storage_path: filename,
+      };
     } catch (error) {
       console.error('Error uploading image:', error);
       throw error;
@@ -236,8 +241,8 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         uploadImageToSupabase(image.uri, index)
       );
       
-      const imageUrls = await Promise.all(uploadPromises);
-      return imageUrls;
+      const uploaded = await Promise.all(uploadPromises);
+      return uploaded;
     } catch (error) {
       console.error('Error uploading images:', error);
       throw error;
@@ -454,6 +459,11 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     if (isNaN(capacity) || capacity < 1 || capacity > 10) {
       errors.capacity = 'Capacity must be between 1 and 10';
     }
+
+    // Require at least one image
+    if (!selectedImages || selectedImages.length === 0) {
+      errors.images = 'At least one photo is required';
+    }
     
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -466,12 +476,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
     setAddingCarriage(true);
     try {
-      let imageUrls = [];
+      let uploadedImages = [];
       
       // Upload images if selected
       if (selectedImages.length > 0) {
         try {
-          imageUrls = await uploadAllImages(selectedImages);
+          uploadedImages = await uploadAllImages(selectedImages);
         } catch (error) {
           console.error('Error uploading images:', error);
           Alert.alert('Error', 'Failed to upload images. Please try again.');
@@ -487,7 +497,15 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         status: 'available', // New carriages should be available for rent
         eligibility: newCarriage.eligibility || 'eligible',
         notes: newCarriage.notes || '',
-        image_urls: imageUrls
+        image_urls: uploadedImages.map(i => i.url),
+        // Store structured photos array compatible with Django TourPackages
+        img: uploadedImages.length ? uploadedImages.map(i => ({
+          url: i.url,
+          caption: '',
+          filename: i.filename,
+          uploaded_at: new Date().toISOString(),
+          storage_path: i.storage_path,
+        })) : null
       };
       
       // Remove any empty fields
@@ -515,9 +533,58 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
       // Use the service function
       const result = await createCarriage(carriageData);
+      console.log('[CarriageCreate] Response:', JSON.stringify(result, null, 2));
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to add carriage');
+      }
+
+      // Fallbacks: if backend ignored img during create, patch it right after
+      try {
+        let newId = result?.data?.id || result?.data?.carriage?.id;
+        const hasImgInResponse = !!(result?.data?.img);
+
+        if (!newId) {
+          // Resolve the newly created carriage by plate_number
+          try {
+            const ownerResult = await getMyCarriages();
+            if (ownerResult.success && Array.isArray(ownerResult.data)) {
+              const match = ownerResult.data.find(c =>
+                (c.plate_number || '').toLowerCase() === carriageData.plate_number.toLowerCase()
+              );
+              if (match?.id) newId = match.id;
+            }
+          } catch (e) {
+            console.log('[CarriageCreate] Could not resolve new carriage by plate_number:', e?.message);
+          }
+        }
+
+        if (newId && uploadedImages.length && !hasImgInResponse) {
+          const photos = uploadedImages.map(i => ({
+            url: i.url,
+            caption: '',
+            filename: i.filename,
+            uploaded_at: new Date().toISOString(),
+            storage_path: i.storage_path,
+          }));
+          console.log('[CarriageCreate] Patching IMG for carriage:', newId);
+          try {
+            await carriageService.updateCarriage(newId, { img: photos });
+          } catch (apiErr) {
+            // If API rejects PATCH (e.g., 405), write directly via Supabase as a fallback
+            console.log('[CarriageCreate] API PATCH failed, falling back to Supabase update');
+            const { error: supaErr } = await supabase
+              .from('tartanilla_carriages')
+              .update({ img: photos, updated_at: new Date().toISOString() })
+              .eq('id', newId);
+            if (supaErr) {
+              console.log('[CarriageCreate] Supabase update failed:', supaErr.message);
+            }
+          }
+        }
+      } catch (e) {
+        console.log('[CarriageCreate] IMG patch failed:', e?.message);
+        // Non-blocking: continue UX even if img patch fails
       }
 
       // Reset form and close modal on success
@@ -1111,7 +1178,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
               <View style={styles.formGroup}>
                 <View style={styles.imageLabelContainer}>
-                  <Text style={styles.label}>Carriage Photos (Optional)</Text>
+                  <Text style={styles.label}>Carriage Photos (Required)</Text>
                   <Text style={styles.imageCountText}>
                     {selectedImages.length}/5 photos
                   </Text>
@@ -1171,6 +1238,10 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                     <Ionicons name="trash-outline" size={16} color="#dc3545" />
                     <Text style={styles.clearAllButtonText}>Clear All Photos</Text>
                   </TouchableOpacity>
+                )}
+
+                {formErrors.images && (
+                  <Text style={styles.errorText}>{formErrors.images}</Text>
                 )}
 
                 {uploadingImage && (
@@ -1324,6 +1395,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: MAROON,
   },
+  headerEditButton: {
+    marginLeft: 8,
+    padding: 4,
+    borderRadius: 6,
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1437,7 +1513,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3B82F6',
+    backgroundColor: MAROON,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,

@@ -1,5 +1,5 @@
 // screens/main/OwnerHomeScreen.jsx
-import React, { useMemo, useState, useLayoutEffect, useEffect } from 'react';
+import React, { useMemo, useState, useLayoutEffect, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { carriageService } from '../../services/tourpackage/fetchCarriage';
 import { getCurrentUser } from '../../services/authService';
+import { useFocusEffect } from '@react-navigation/native';
 import NotificationService from '../../services/notificationService';
 import { useNotifications } from '../../contexts/NotificationContext';
 import driverService from '../../services/carriages/fetchDriver';
@@ -33,8 +34,52 @@ const tartanillaImage = require('../../../assets/tartanilla.jpg');
 
 // Default image for tartanillas
 const getCarriageImage = (carriage) => {
-  if (carriage?.image_url) {
-    return { uri: carriage.image_url };
+  const pickFirstUrl = (val) => {
+    if (!val) return null;
+    // Try to parse JSON strings that contain arrays/objects
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if ((trimmed.startsWith('[') || trimmed.startsWith('{'))) {
+        try { return pickFirstUrl(JSON.parse(trimmed)); } catch (_) { /* fallthrough */ }
+      }
+      // Plain string URL
+      return val;
+    }
+    // If array of strings
+    if (Array.isArray(val)) {
+      for (const v of val) {
+        if (typeof v === 'string' && v) return v;
+        if (v && typeof v === 'object' && typeof v.url === 'string') return v.url;
+      }
+      return null;
+    }
+    // If JSON stringified array
+    if (typeof val === 'object') {
+      if (Array.isArray(val.urls)) return pickFirstUrl(val.urls);
+      if (typeof val.url === 'string') return val.url;
+    }
+    return null;
+  };
+
+  try {
+    // Try multiple possible fields in priority order
+    let url = null;
+    // image_urls may be an array or a JSON string
+    const iu = carriage?.image_urls;
+    if (typeof iu === 'string') {
+      try { url = pickFirstUrl(JSON.parse(iu)); } catch (_) { url = pickFirstUrl(iu); }
+    } else {
+      url = pickFirstUrl(iu);
+    }
+    url = url || pickFirstUrl(carriage?.img);
+    url = url || pickFirstUrl(carriage?.images);
+    url = url || pickFirstUrl(carriage?.photos);
+    url = url || pickFirstUrl(carriage?.photo_url);
+    url = url || pickFirstUrl(carriage?.image_url);
+    // Image is required; if still no URL, throw to surface issue rather than silently default
+    if (url) return { uri: url };
+  } catch (_) {
+    // ignore and fall back
   }
   return tartanillaImage;
 };
@@ -98,6 +143,25 @@ export default function OwnerHomeScreen({ navigation }) {
 
     fetchData();
   }, []);
+
+  // Refresh carriages whenever this screen gains focus (handles deletions elsewhere)
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+      (async () => {
+        try {
+          const currentUser = await getCurrentUser();
+          if (currentUser?.id) {
+            const ownerCarriages = await carriageService.getByOwner(currentUser.id);
+            if (isActive) setCarriages(ownerCarriages || []);
+          }
+        } catch (_) {
+          // ignore focus refresh errors
+        }
+      })();
+      return () => { isActive = false; };
+    }, [])
+  );
 
   // Fetch missing driver details when carriages change
   useEffect(() => {
@@ -419,17 +483,17 @@ export default function OwnerHomeScreen({ navigation }) {
                 <View style={styles.tartanillaRow}>
                   <Image source={getCarriageImage(item)} style={styles.tartanillaImg} />
                   <View style={styles.tartanillaInfo}>
-                    <Text style={styles.tcCode}>{item.carriage_code || item.code || `TC${String(item.id).slice(-4)}`}</Text>
+                    <Text style={styles.tcPlate}>{item.plate_number || `TC${String(item.id).slice(-4)}`}</Text>
 
-                    {/* Plate Number */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                      <Ionicons name="car-outline" size={16} color="#444" />
-                      <Text style={styles.tcPlate}> {item.plate_number || 'No plate number'}</Text>
+                    {/* Capacity */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <Ionicons name="people-outline" size={16} color="#444" />
+                      <Text style={styles.tcDriver} numberOfLines={1}> {item.capacity || 'N/A'} passengers</Text>
                     </View>
 
                     {/* Driver with people icon */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                      <Ionicons name="people-outline" size={16} color="#444" />
+                      <Ionicons name="person-outline" size={16} color="#444" />
                       <Text style={styles.tcDriver} numberOfLines={1}> {buildName(item.assigned_driver) || buildName(item.driver) || buildName(driverCache[item.assigned_driver_id]) || (item.assigned_driver_id ? 'Unknown Driver' : 'No driver assigned')}</Text>
                     </View>
 
@@ -444,7 +508,7 @@ export default function OwnerHomeScreen({ navigation }) {
                     style={styles.trashBtn}
                     onPress={() => openEditModal(item)}
                   >
-                    <Ionicons name="pencil-outline" size={18} color="#7D7D7D" />
+                    <Ionicons name="create-outline" size={18} color="#7D7D7D" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -465,7 +529,7 @@ export default function OwnerHomeScreen({ navigation }) {
                     <View style={styles.heroSection}>
                       <Image source={getCarriageImage(selected)} style={styles.heroImage} />
                       <View style={styles.heroOverlay}>
-                        <Text style={styles.heroCode}>{selected.carriage_code || selected.code || `TC${String(selected.id).slice(-4)}`}</Text>
+                        <Text style={styles.heroCode}>{selected.plate_number || `TC${String(selected.id).slice(-4)}`}</Text>
                         {selected.status && (
                           <View style={[styles.heroStatusBadge, getStatusStyle(selected.status)]}>
                             <Ionicons name={getStatusIcon(selected.status)} size={14} color={getStatusColor(selected.status)} />
@@ -505,10 +569,6 @@ export default function OwnerHomeScreen({ navigation }) {
                           <Text style={styles.cardTitle}>Vehicle Information</Text>
                         </View>
                         <View style={styles.cardContent}>
-                          <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Carriage Code</Text>
-                            <Text style={styles.infoValue}>{selected.carriage_code || selected.code || `TC${String(selected.id).slice(-4)}`}</Text>
-                          </View>
                           <View style={styles.infoRow}>
                             <Text style={styles.infoLabel}>Plate Number</Text>
                             <Text style={styles.infoValue}>{selected.plate_number || 'Not assigned'}</Text>
@@ -768,7 +828,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS,
     borderBottomRightRadius: RADIUS,
   },
-  tcCode: {
+  tcPlate: {
     color: '#fff',
     backgroundColor: MAROON,
     paddingHorizontal: 10,
@@ -777,7 +837,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     alignSelf: 'flex-start',
   },
-  tcPlate: { color: '#2C2C2C', fontSize: 12, fontWeight: '600' },
   tcDriver: { color: '#2C2C2C', fontSize: 12 },
   seeBtn: {
     marginTop: 6,
