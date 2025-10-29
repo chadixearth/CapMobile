@@ -523,7 +523,20 @@ export async function registerUser(email, password, role, additionalData = {}) {
  * @returns {Promise<{ success: boolean, user?: object, session?: object, error?: string }>}
  */
 export async function loginUser(email, password, allowedRoles = null) {
-  console.log('[authService] loginUser called with:', { email, allowedRoles });
+  console.log('[authService] loginUser called with:', { 
+    email, 
+    allowedRoles,
+    hasPassword: !!password,
+    passwordLength: password?.length || 0
+  });
+  
+  // Validation
+  if (!email || !password) {
+    return {
+      success: false,
+      error: 'Email and password are required.'
+    };
+  }
   
   // Clear any existing session before login attempt
   await clearStoredSession();
