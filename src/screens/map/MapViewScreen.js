@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TouchableOpacity, RefreshControl, Modal, FlatList } from 'react-native';
-import LeafletMapView from '../../components/LeafletMapView'; // WebView-based Leaflet map
-import BackButton from '../../components/BackButton';
+import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import LeafletMapView from '../../components/LeafletMapView';
 import PointImageModal from '../../components/PointImageModal';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
 import { getRoutesByPickup, navigateToNearestRoad } from '../../services/rideHailingService';
-import { apiRequest } from '../../services/authService';
 import { fetchRouteSummaries as fetchRouteSummariesService, processMapPointsWithColors, processRoadHighlightsWithColors, buildRouteSummariesFromPickups } from '../../services/routeManagementService';
 import { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap, groupRoadHighlightsByPickup } from '../../services/roadHighlightsService';
+import LocationService from '../../services/locationService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -17,7 +17,7 @@ const DEFAULT_REGION = {
 };
 
 const MapViewScreen = ({ navigation, route }) => {
-  const { mode, onLocationSelect, location, locations } = route?.params || {};
+  const { mode, onLocationSelect, location, locations, type } = route?.params || {};
   const [mapData, setMapData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -41,8 +41,12 @@ const MapViewScreen = ({ navigation, route }) => {
   const [allRoads, setAllRoads] = useState([]);
   const [roadHighlightsData, setRoadHighlightsData] = useState(null);
   const [pickupDropoffGroups, setPickupDropoffGroups] = useState({});
+  const [selectedId, setSelectedId] = useState(null);
+  const [driverLocations, setDriverLocations] = useState([]);
+  const [showDrivers, setShowDrivers] = useState(true);
   const hasLoadedCache = useRef(false);
   const loadTimeoutRef = useRef(null);
+  const driverLocationInterval = useRef(null);
 
   useEffect(() => {
     // Set a timeout for initial loading
@@ -68,6 +72,7 @@ const MapViewScreen = ({ navigation, route }) => {
     }, 8000); // 8 second timeout
     
     loadMapDataWithCache();
+    startDriverLocationTracking();
     
     // Set up background update listener
     global.mapUpdateCallback = (newData) => {
@@ -79,6 +84,9 @@ const MapViewScreen = ({ navigation, route }) => {
       // Cleanup
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
+      }
+      if (driverLocationInterval.current) {
+        clearInterval(driverLocationInterval.current);
       }
       global.mapUpdateCallback = null;
     };
@@ -101,6 +109,50 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   }, [roads, allRoads, mode, mapData]);
   
+
+
+  const startDriverLocationTracking = () => {
+    // Fetch driver locations immediately
+    fetchDriverLocations();
+    
+    // Set up interval to fetch driver locations every 10 seconds
+    driverLocationInterval.current = setInterval(() => {
+      fetchDriverLocations();
+    }, 10000);
+  };
+
+  const fetchDriverLocations = async () => {
+    try {
+      const locations = await LocationService.getDriverLocations();
+      console.log('Fetched driver locations:', locations.length);
+      
+      const activeDrivers = locations.filter(driver => {
+        // Check if driver has valid coordinates
+        if (!driver.latitude || !driver.longitude) {
+          console.log('Driver missing coordinates:', driver.driver_id || driver.user_id);
+          return false;
+        }
+        
+        // Check if driver location is recent (within last 15 minutes)
+        const lastUpdate = new Date(driver.updated_at);
+        const now = new Date();
+        const minutesAgo = (now - lastUpdate) / (1000 * 60);
+        const isRecent = minutesAgo <= 15;
+        
+        if (!isRecent) {
+          console.log(`Driver ${driver.driver_id || driver.user_id} location too old: ${Math.round(minutesAgo)} minutes ago`);
+        }
+        
+        return isRecent;
+      });
+      
+      console.log(`Active drivers: ${activeDrivers.length} out of ${locations.length}`);
+      setDriverLocations(activeDrivers);
+    } catch (error) {
+      console.error('Error fetching driver locations:', error);
+    }
+  };
+
   const fetchRouteSummaries = async () => {
     const summaries = await fetchRouteSummariesService();
     console.log('Route summaries from service:', summaries?.length || 0);
@@ -113,25 +165,29 @@ const MapViewScreen = ({ navigation, route }) => {
       setInitialLoading(true);
       setMapLoadTimeout(false);
       
+      console.log('[MapViewScreen] Starting to load map data...');
+      
       // Get cache info
       const info = await getMapCacheInfo();
       setCacheInfo(info);
       
       // Force fresh data from server
       const data = await fetchMapData({ forceRefresh: true });
-      console.log('Fetched map data:', {
+      console.log('[MapViewScreen] Fetched map data:', {
         hasData: !!data,
         pointsCount: data?.points?.length || 0,
-        roadsCount: data?.roads?.length || 0
+        roadsCount: data?.roads?.length || 0,
+        routesCount: data?.routes?.length || 0,
+        zonesCount: data?.zones?.length || 0
       });
       
       // Fetch route summaries to get proper colors
       const routeSummaries = await fetchRouteSummaries();
-      console.log('Fetched route summaries:', routeSummaries.length);
+      console.log('[MapViewScreen] Fetched route summaries:', routeSummaries.length);
       
       // Fetch road highlights with pickup/dropoff points
       const roadHighlightsResult = await getAllRoadHighlightsWithPoints();
-      console.log('Fetched road highlights with points:', {
+      console.log('[MapViewScreen] Fetched road highlights with points:', {
         success: roadHighlightsResult.success,
         roadHighlights: roadHighlightsResult.roadHighlights?.length || 0,
         pickupPoints: roadHighlightsResult.pickupPoints?.length || 0,
@@ -150,19 +206,24 @@ const MapViewScreen = ({ navigation, route }) => {
       }
       
       if (data) {
-        console.log('Raw map data received:', {
-          points: data.points?.length || 0,
-          roads: data.roads?.length || 0,
-          routes: data.routes?.length || 0,
-          zones: data.zones?.length || 0,
-          samplePoint: data.points?.[0],
-          sampleRoad: data.roads?.[0]
-        });
-        
+        console.log('[MapViewScreen] Processing map data...');
         processMapData(data, routeSummaries, roadHighlightsResult);
         hasLoadedCache.current = true;
       } else {
-        console.warn('No map data received');
+        console.warn('[MapViewScreen] No map data received from server');
+        // Use fallback data
+        processMapData({
+          points: [],
+          roads: [],
+          routes: [],
+          zones: [],
+          config: {
+            center_latitude: 10.3157,
+            center_longitude: 123.8854,
+            zoom_level: 13
+          },
+          total_items: {}
+        }, routeSummaries, roadHighlightsResult);
       }
       
       if (loadTimeoutRef.current) {
@@ -172,11 +233,13 @@ const MapViewScreen = ({ navigation, route }) => {
       setInitialLoading(false);
       setLoading(false);
     } catch (err) {
+      console.error('[MapViewScreen] Error loading map data:', err);
       
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
       }
       
+      // Use fallback data on error
       processMapData({
         points: [],
         roads: [],
@@ -327,7 +390,38 @@ const MapViewScreen = ({ navigation, route }) => {
     } else {
       // Show ALL markers immediately (regular + pickup + dropoff)
       console.log('Setting markers for display:', allPointsToShow.length, 'markers');
-      setMarkers(allPointsToShow);
+      
+      // Add driver markers if enabled
+      let finalMarkers = [...allPointsToShow];
+      if (showDrivers && driverLocations.length > 0) {
+        console.log('Adding driver markers:', driverLocations.length);
+        const driverMarkers = driverLocations.map(driver => {
+          const driverId = driver.driver_id || driver.user_id;
+          const lastUpdate = new Date(driver.updated_at);
+          const minutesAgo = Math.round((new Date() - lastUpdate) / (1000 * 60));
+          
+          return {
+            latitude: parseFloat(driver.latitude),
+            longitude: parseFloat(driver.longitude),
+            title: `🐎 Driver ${driverId}`,
+            description: `Tartanilla Driver - Available\nLast seen: ${minutesAgo} min ago`,
+            pointType: 'driver',
+            iconColor: '#FF6B35',
+            id: `driver-${driverId}`,
+            isDriver: true,
+            speed: driver.speed || 0,
+            heading: driver.heading || 0,
+            lastUpdate: driver.updated_at,
+            driverId: driverId
+          };
+        });
+        
+        console.log('Created driver markers:', driverMarkers.length);
+        finalMarkers = [...finalMarkers, ...driverMarkers];
+      }
+      
+      console.log('Setting final markers:', finalMarkers.length, '(including', driverLocations.length, 'drivers)');
+      setMarkers(finalMarkers);
     }
     
     // Process and show road highlights with pickup/dropoff points
@@ -506,7 +600,11 @@ const MapViewScreen = ({ navigation, route }) => {
       // Fetch road highlights with pickup/dropoff points
       const roadHighlightsResult = await getAllRoadHighlightsWithPoints();
       
+      // Refresh driver locations
+      await fetchDriverLocations();
+      
       if (data) {
+        console.log('[MapViewScreen] Refreshing map data...');
         processMapData(data, routeSummaries, roadHighlightsResult);
         
         if (roadHighlightsResult.success) {
@@ -525,9 +623,10 @@ const MapViewScreen = ({ navigation, route }) => {
         setCacheInfo(info);
       }
     } catch (err) {
+      console.error('[MapViewScreen] Error refreshing map data:', err);
       Alert.alert(
         'Error',
-        'Failed to refresh map data',
+        'Failed to refresh map data: ' + err.message,
         [{ text: 'OK' }]
       );
     } finally {
@@ -535,6 +634,8 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   }, []);
   
+
+
   const handleMarkerPress = async (marker) => {
     if (mode === 'selectPickup' && onLocationSelect) {
       Alert.alert(
@@ -557,16 +658,63 @@ const MapViewScreen = ({ navigation, route }) => {
           }
         ]
       );
+    } else if (type && marker) {
+      setSelectedId(marker.id);
+      navigation.navigate('Home', { selectedTerminal: marker, type });
+    } else if (marker.pointType === 'driver' || marker.isDriver) {
+      // Handle driver marker press
+      const driverId = marker.driverId || marker.id.replace('driver-', '');
+      const driverInfo = driverLocations.find(d => 
+        (d.driver_id && d.driver_id.toString() === driverId.toString()) || 
+        (d.user_id && d.user_id.toString() === driverId.toString())
+      );
+      const lastUpdate = driverInfo ? new Date(driverInfo.updated_at) : null;
+      const minutesAgo = lastUpdate ? Math.round((new Date() - lastUpdate) / (1000 * 60)) : null;
+      
+      Alert.alert(
+        '🐎 Tartanilla Driver Available',
+        `Driver ID: ${driverId}\n` +
+        `Status: Online & Available\n` +
+        `Last seen: ${minutesAgo ? `${minutesAgo} minutes ago` : 'Just now'}\n` +
+        `Speed: ${driverInfo?.speed || 0} km/h\n` +
+        `Location sharing: Active`,
+        [
+          { text: 'Book Ride', onPress: () => {
+            // Navigate to ride hailing screen with driver location
+            navigation.navigate('RideHailing', { 
+              driverLocation: {
+                latitude: marker.latitude,
+                longitude: marker.longitude,
+                driverId: driverId
+              }
+            });
+          }},
+          { text: 'Navigate', onPress: async () => {
+            const result = await navigateToNearestRoad(marker.latitude, marker.longitude);
+            if (result.usedNearestRoad) {
+              console.log(`Navigating to driver via nearest road: ${result.roadName}`);
+            }
+          }},
+          { text: 'OK' }
+        ]
+      );
     } else if (marker.pointType === 'pickup') {
+      console.log('🎯 Pickup point clicked:', marker.title, 'ID:', marker.id);
+      
       // Show pickup point with associated drop-off points using grouped data
       const pickupGroup = pickupDropoffGroups[marker.id];
+      console.log('🎯 Pickup group found:', !!pickupGroup, 'roads:', pickupGroup?.roads?.length || 0);
       
       if (pickupGroup && pickupGroup.roads.length > 0) {
+        console.log('🎯 Using grouped data for pickup:', marker.title);
+        
         // Get associated dropoff points for this pickup
         const associatedDropoffIds = pickupGroup.roads.map(road => road.dropoff_point_id).filter(Boolean);
         const associatedDropoffs = roadHighlightsData?.dropoffPoints?.filter(dropoff => 
           associatedDropoffIds.includes(dropoff.id)
         ) || [];
+        
+        console.log('🎯 Associated dropoffs:', associatedDropoffs.length, 'IDs:', associatedDropoffIds);
         
         // Show pickup marker with group color
         const pickupMarker = {
@@ -588,8 +736,46 @@ const MapViewScreen = ({ navigation, route }) => {
         // Show all markers (pickup + associated dropoffs)
         setMarkers([pickupMarker, ...dropoffMarkers]);
         
-        // Show associated road highlights
-        setRoads(pickupGroup.roads);
+        // Process and show associated road highlights with proper coordinates
+        const processedRoads = pickupGroup.roads.map(road => {
+          console.log('🛣️ Processing road for display:', road.name, 'coordinates:', road.road_coordinates?.length || 0);
+          
+          // Ensure coordinates are properly formatted
+          let coordinates = road.road_coordinates || road.coordinates || [];
+          
+          // Parse coordinates if they're in string format
+          if (typeof coordinates === 'string') {
+            try {
+              coordinates = JSON.parse(coordinates);
+            } catch (e) {
+              console.warn('Failed to parse road coordinates:', e);
+              coordinates = [];
+            }
+          }
+          
+          return {
+            id: road.id,
+            name: road.name || 'Route',
+            road_coordinates: coordinates,
+            coordinates: coordinates, // Also set coordinates for WebView compatibility
+            stroke_color: road.stroke_color || pickupGroup.color,
+            color: road.stroke_color || pickupGroup.color, // WebView uses 'color'
+            stroke_width: road.stroke_width || 4,
+            weight: road.stroke_width || 4, // WebView uses 'weight'
+            stroke_opacity: road.stroke_opacity || 0.8,
+            opacity: road.stroke_opacity || 0.8, // WebView uses 'opacity'
+            highlight_type: road.highlight_type || 'route',
+            pickup_point_id: road.pickup_point_id,
+            dropoff_point_id: road.dropoff_point_id
+          };
+        });
+        
+        console.log('🛣️ Setting processed roads for display:', processedRoads.length, 'roads');
+        processedRoads.forEach((road, i) => {
+          console.log(`🛣️ Road ${i + 1}:`, road.name, 'coords:', road.coordinates?.length || 0, 'color:', road.color);
+        });
+        
+        setRoads(processedRoads);
         
         Alert.alert(
           marker.title,
@@ -602,6 +788,7 @@ const MapViewScreen = ({ navigation, route }) => {
               }
             }},
             { text: 'Show All', onPress: () => {
+              console.log('🔄 Resetting to show all markers and roads');
               setMarkers(allMarkers);
               setRoads(allRoads);
             }},
@@ -609,13 +796,23 @@ const MapViewScreen = ({ navigation, route }) => {
           ]
         );
       } else {
+        console.log('🎯 No grouped data, falling back to API call for pickup:', marker.title);
+        
         // Fallback to API call if no grouped data available
         try {
           setLoading(true);
           const routeResult = await getRoutesByPickup(marker.id);
           
+          console.log('🎯 API route result:', routeResult.success, 'data:', !!routeResult.data);
+          
           if (routeResult.success && routeResult.data) {
             const { available_destinations = [], road_highlights = [], color } = routeResult.data;
+            
+            console.log('🎯 API returned:', {
+              destinations: available_destinations.length,
+              roadHighlights: road_highlights.length,
+              color: color
+            });
             
             // Show pickup marker
             const pickupMarker = {
@@ -637,10 +834,46 @@ const MapViewScreen = ({ navigation, route }) => {
             // Show all markers (pickup + dropoffs)
             setMarkers([pickupMarker, ...dropoffMarkers]);
             
-            // Show road highlights
+            // Show road highlights with proper processing
             if (road_highlights.length > 0) {
-              const processedRoads = processRoadHighlightsForMap(road_highlights);
+              console.log('🛣️ Processing API road highlights:', road_highlights.length);
+              
+              const processedRoads = road_highlights.map(road => {
+                console.log('🛣️ Processing API road:', road.name, 'coordinates:', road.road_coordinates?.length || 0);
+                
+                // Ensure coordinates are properly formatted
+                let coordinates = road.road_coordinates || road.coordinates || [];
+                
+                // Parse coordinates if they're in string format
+                if (typeof coordinates === 'string') {
+                  try {
+                    coordinates = JSON.parse(coordinates);
+                  } catch (e) {
+                    console.warn('Failed to parse road coordinates:', e);
+                    coordinates = [];
+                  }
+                }
+                
+                return {
+                  id: road.id,
+                  name: road.name || 'Route',
+                  road_coordinates: coordinates,
+                  coordinates: coordinates, // Also set coordinates for WebView compatibility
+                  stroke_color: road.stroke_color || color || '#007AFF',
+                  color: road.stroke_color || color || '#007AFF', // WebView uses 'color'
+                  stroke_width: road.stroke_width || 4,
+                  weight: road.stroke_width || 4, // WebView uses 'weight'
+                  stroke_opacity: road.stroke_opacity || 0.8,
+                  opacity: road.stroke_opacity || 0.8, // WebView uses 'opacity'
+                  highlight_type: road.highlight_type || 'route'
+                };
+              });
+              
+              console.log('🛣️ Setting API processed roads:', processedRoads.length);
               setRoads(processedRoads);
+            } else {
+              console.log('🛣️ No road highlights from API, clearing roads');
+              setRoads([]);
             }
             
             Alert.alert(
@@ -654,6 +887,7 @@ const MapViewScreen = ({ navigation, route }) => {
                   }
                 }},
                 { text: 'Show All', onPress: () => {
+                  console.log('🔄 Resetting to show all markers and roads');
                   setMarkers(allMarkers);
                   setRoads(allRoads);
                 }},
@@ -661,6 +895,7 @@ const MapViewScreen = ({ navigation, route }) => {
               ]
             );
           } else {
+            console.log('🎯 No route data from API');
             Alert.alert(
               marker.title,
               'No specific routes available from this pickup point.',
@@ -676,6 +911,7 @@ const MapViewScreen = ({ navigation, route }) => {
             );
           }
         } catch (error) {
+          console.error('🎯 Error loading routes for pickup:', error);
           Alert.alert(
             'Error',
             'Failed to load routes. Please try again.',
@@ -763,9 +999,9 @@ const MapViewScreen = ({ navigation, route }) => {
     if (initialLoading && !mapLoadTimeout) {
       return (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#6B2E2B" />
           <Text style={styles.loadingText}>Loading map...</Text>
-          <Text style={styles.loadingSubText}>Preparing your map experience</Text>
+          <Text style={styles.loadingSubText}>Fetching map data from server</Text>
         </View>
       );
     }
@@ -775,6 +1011,12 @@ const MapViewScreen = ({ navigation, route }) => {
         <View style={styles.centerContainer}>
           <Text style={styles.errorText}>Failed to load map data</Text>
           <Text style={styles.errorSubText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={loadMapDataWithCache}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -814,6 +1056,52 @@ const MapViewScreen = ({ navigation, route }) => {
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
 
+          
+          {/* Driver Toggle Button */}
+          <TouchableOpacity 
+            style={[styles.floatingButton, showDrivers && styles.floatingButtonActive]}
+            onPress={() => {
+              const newShowDrivers = !showDrivers;
+              setShowDrivers(newShowDrivers);
+              console.log('Driver visibility toggled:', newShowDrivers);
+              
+              // Immediately refresh markers to show/hide drivers
+              if (newShowDrivers && driverLocations.length > 0) {
+                // Add driver markers to current markers
+                const driverMarkers = driverLocations.map(driver => {
+                  const driverId = driver.driver_id || driver.user_id;
+                  const lastUpdate = new Date(driver.updated_at);
+                  const minutesAgo = Math.round((new Date() - lastUpdate) / (1000 * 60));
+                  
+                  return {
+                    latitude: parseFloat(driver.latitude),
+                    longitude: parseFloat(driver.longitude),
+                    title: `🐎 Driver ${driverId}`,
+                    description: `Tartanilla Driver - Available\nLast seen: ${minutesAgo} min ago`,
+                    pointType: 'driver',
+                    iconColor: '#FF6B35',
+                    id: `driver-${driverId}`,
+                    isDriver: true,
+                    speed: driver.speed || 0,
+                    heading: driver.heading || 0,
+                    lastUpdate: driver.updated_at,
+                    driverId: driverId
+                  };
+                });
+                
+                setMarkers(prev => {
+                  // Remove existing driver markers and add new ones
+                  const nonDriverMarkers = prev.filter(m => !m.isDriver && m.pointType !== 'driver');
+                  return [...nonDriverMarkers, ...driverMarkers];
+                });
+              } else {
+                // Remove driver markers
+                setMarkers(prev => prev.filter(m => !m.isDriver && m.pointType !== 'driver'));
+              }
+            }}
+          >
+            <Text style={[styles.floatingButtonText, showDrivers && { color: '#fff' }]}>🐎</Text>
+          </TouchableOpacity>
           
           {/* Reset View Button */}
           <TouchableOpacity 
@@ -898,6 +1186,10 @@ const MapViewScreen = ({ navigation, route }) => {
                   <Text style={styles.legendText}>Landmarks</Text>
                 </View>
                 <View style={styles.legendItem}>
+                  <View style={[styles.legendIcon, { backgroundColor: '#FF6B35' }]} />
+                  <Text style={styles.legendText}>🐎 Tartanilla Drivers (Live)</Text>
+                </View>
+                <View style={styles.legendItem}>
                   <View style={[styles.legendLine]} />
                   <Text style={styles.legendText}>Routes</Text>
                 </View>
@@ -925,6 +1217,11 @@ const MapViewScreen = ({ navigation, route }) => {
                 <View style={styles.statItem}>
                   <Text style={styles.statValue}>{Object.keys(pickupDropoffGroups).length}</Text>
                   <Text style={styles.statLabel}>Groups</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{driverLocations.length}</Text>
+                  <Text style={styles.statLabel}>Drivers</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
@@ -964,24 +1261,26 @@ const MapViewScreen = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Map View</Text>
-          {mapData?.lastUpdated && (
-            <Text style={styles.headerSubtitle}>
-              {cacheInfo?.isExpired ? 'Updating...' : 'Up to date'}
-            </Text>
-          )}
+      <View style={styles.mapWrapper}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Map View</Text>
+            {mapData?.lastUpdated && (
+              <Text style={styles.headerSubtitle}>
+                {cacheInfo?.isExpired ? 'Updating...' : 'Up to date'}
+              </Text>
+            )}
+          </View>
+          <View style={styles.headerSpacer} />
         </View>
-        <View style={styles.headerSpacer} />
+        
+        {/* Map Content */}
+        {renderContent()}
       </View>
-      
-      {/* Map Content */}
-      {renderContent()}
       
       {/* Point Image Modal */}
       <PointImageModal
@@ -996,8 +1295,9 @@ const MapViewScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#fff',
   },
+
   
   // Header styles
   header: {
@@ -1041,7 +1341,7 @@ const styles = StyleSheet.create({
   // Map styles
   mapWrapper: {
     flex: 1,
-    position: 'relative',
+    backgroundColor: '#F8F9FA',
   },
   fullMapContainer: {
     flex: 1,
@@ -1273,6 +1573,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

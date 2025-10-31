@@ -29,10 +29,10 @@ export default function NotificationScreen({ navigation }) {
   });
 
   const categories = [
-    { id: 'all', label: 'All', icon: 'notifications' },
-    { id: 'tours', label: 'Tours', icon: 'map' },
-    { id: 'rides', label: 'Rides', icon: 'car' },
-    { id: 'general', label: 'General', icon: 'information-circle' }
+    { id: 'all', label: 'All' },
+    { id: 'tours', label: 'Tours' },
+    { id: 'rides', label: 'Rides' },
+    { id: 'general', label: 'General' }
   ];
 
   const categorizeNotification = (notification) => {
@@ -134,47 +134,23 @@ export default function NotificationScreen({ navigation }) {
 
       {/* Categories */}
       <View style={styles.categoriesContainer}>
-        {categories.map((category) => {
-          const categoryCount = category.id === 'all' 
-            ? notifications.length 
-            : notifications.filter(n => categorizeNotification(n) === category.id).length;
-          
-          return (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryBtn,
-                selectedCategory === category.id && styles.categoryBtnActive
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <Ionicons 
-                name={category.icon} 
-                size={16} 
-                color={selectedCategory === category.id ? '#fff' : MAROON} 
-              />
-              <Text style={[
-                styles.categoryText,
-                selectedCategory === category.id && styles.categoryTextActive
-              ]}>
-                {category.label}
-              </Text>
-              {categoryCount > 0 && (
-                <View style={[
-                  styles.categoryBadge,
-                  selectedCategory === category.id && styles.categoryBadgeActive
-                ]}>
-                  <Text style={[
-                    styles.categoryBadgeText,
-                    selectedCategory === category.id && styles.categoryBadgeTextActive
-                  ]}>
-                    {categoryCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+        {categories.map((category) => (
+          <TouchableOpacity
+            key={category.id}
+            style={[
+              styles.categoryBtn,
+              selectedCategory === category.id && styles.categoryBtnActive
+            ]}
+            onPress={() => setSelectedCategory(category.id)}
+          >
+            <Text style={[
+              styles.categoryText,
+              selectedCategory === category.id && styles.categoryTextActive
+            ]}>
+              {category.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Action buttons */}
@@ -348,52 +324,28 @@ const styles = StyleSheet.create({
   /* Categories */
   categoriesContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginBottom: 12,
-    gap: 8,
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    padding: 4,
   },
   categoryBtn: {
     flex: 1,
-    flexDirection: 'row',
+    paddingVertical: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: MAROON,
-    backgroundColor: '#fff',
-    gap: 4,
+    borderRadius: 8,
   },
   categoryBtnActive: {
     backgroundColor: MAROON,
   },
   categoryText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-    color: MAROON,
+    color: '#666',
   },
   categoryTextActive: {
     color: '#fff',
-  },
-  categoryBadge: {
-    backgroundColor: MAROON,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  categoryBadgeActive: {
-    backgroundColor: '#fff',
-  },
-  categoryBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  categoryBadgeTextActive: {
-    color: MAROON,
   },
 
   /* Action Bar */

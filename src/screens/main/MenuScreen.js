@@ -17,6 +17,9 @@ import TARTRACKHeader from '../../components/TARTRACKHeader';
 import ProfileItem from '../../components/ProfileItem';
 import * as Routes from '../../constants/routes';
 import Button from '../../components/Button';
+import HelpCenter from '../../components/HelpCenter';
+import TermsModal from '../../components/TermsModal';
+import PrivacyModal from '../../components/PrivacyModal';
 import { getCurrentUser, getUserProfile } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -275,8 +278,8 @@ export default function MenuScreen({ navigation }) {
             </>
           )}
 
-          {/* Driver/Owner-only */}
-          {(role === 'driver' || role === 'owner') && (
+          {/* Owner-only */}
+          {role === 'owner' && (
             <>
               <Divider />
               <ProfileItem
@@ -284,33 +287,30 @@ export default function MenuScreen({ navigation }) {
                 label={`My Carriages ${hasData ? `(${userCarriages.length})` : ''}`}
                 onPress={() => navigation.navigate('MyCarriages')}
               />
-              {/* Earnings only for drivers */}
-              {role === 'driver' && (
-                <>
-                  <Divider />
-                  <ProfileItem
-                    icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
-                    label="Earnings"
-                    onPress={navigateToEarningsDetail}
-                  />
-                </>
-              )}
-              {role === 'driver' && (
-                <>
-                  <Divider />
-                  <ProfileItem
-                    icon={<Ionicons name="map-outline" size={22} color={MAROON} />}
-                    label="My Tour Packages"
-                    onPress={() => navigation.navigate('MyTourPackages')}
-                  />
-                  <Divider />
-                  <ProfileItem
-                    icon={<Ionicons name="calendar-outline" size={22} color={MAROON} />}
-                    label="My Schedule"
-                    onPress={() => navigation.navigate('DriverSchedule')}
-                  />
-                </>
-              )}
+            </>
+          )}
+
+          {/* Driver-only */}
+          {role === 'driver' && (
+            <>
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
+                label="Earnings"
+                onPress={navigateToEarningsDetail}
+              />
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="map-outline" size={22} color={MAROON} />}
+                label="My Tour Packages"
+                onPress={() => navigation.navigate('MyTourPackages')}
+              />
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="calendar-outline" size={22} color={MAROON} />}
+                label="My Schedule"
+                onPress={() => navigation.navigate('DriverSchedule')}
+              />
             </>
           )}
 
@@ -523,110 +523,14 @@ export default function MenuScreen({ navigation }) {
         </Pressable>
       </Modal>
 
-      {/* Help Modal */}
-      <Modal visible={helpVisible} transparent animationType="slide" onRequestClose={() => setHelpVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setHelpVisible(false)}>
-          <View style={styles.contentModal} onStartShouldSetResponder={() => true}>
-            <View style={styles.contentHeader}>
-              <Text style={styles.contentTitle}>Help Center</Text>
-              <TouchableOpacity onPress={() => setHelpVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={MUTED} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.contentSubtitle}>Getting Started</Text>
-              <Text style={styles.contentText}>
-                <Text style={styles.boldText}>Q: How do I book a tartanilla ride?</Text>{"\n"}
-                A: Simply open the app, select your pickup location, choose your destination, and confirm your booking.
-              </Text>
-              <Text style={styles.contentSubtitle}>Booking & Rides</Text>
-              <Text style={styles.contentText}>
-                <Text style={styles.boldText}>Q: Can I cancel my booking?</Text>{"\n"}
-                A: Yes, you can cancel your booking before the driver arrives. Cancellation fees may apply.
-              </Text>
-              <Text style={styles.contentSubtitle}>Payments</Text>
-              <Text style={styles.contentText}>
-                <Text style={styles.boldText}>Q: What payment methods are accepted?</Text>{"\n"}
-                A: We accept cash payments, GCash, PayMaya, and major credit/debit cards.
-              </Text>
-              <Text style={styles.contentSubtitle}>Contact Support</Text>
-              <Text style={styles.contentText}>
-                📧 Email: support@tartrack.ph{"\n"}
-                📞 Phone: +63 32 123 4567{"\n"}
-                💬 In-app chat support
-              </Text>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
+      {/* Help Center Modal */}
+      <HelpCenter visible={helpVisible} onClose={() => setHelpVisible(false)} />
 
       {/* Terms Modal */}
-      <Modal visible={termsVisible} transparent animationType="slide" onRequestClose={() => setTermsVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setTermsVisible(false)}>
-          <View style={styles.contentModal} onStartShouldSetResponder={() => true}>
-            <View style={styles.contentHeader}>
-              <Text style={styles.contentTitle}>Terms & Conditions</Text>
-              <TouchableOpacity onPress={() => setTermsVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={MUTED} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.lastUpdated}>Last updated: January 2024</Text>
-              <Text style={styles.contentSubtitle}>1. Acceptance of Terms</Text>
-              <Text style={styles.contentText}>
-                By accessing and using the TarTrack mobile application, you accept and agree to be bound by the terms and provision of this agreement.
-              </Text>
-              <Text style={styles.contentSubtitle}>2. Service Description</Text>
-              <Text style={styles.contentText}>
-                TarTrack provides a platform that connects users with tartanilla transportation services in Cebu City. We facilitate bookings between passengers and verified drivers.
-              </Text>
-              <Text style={styles.contentSubtitle}>3. User Responsibilities</Text>
-              <Text style={styles.contentText}>
-                Users must provide accurate information during registration, maintain the confidentiality of their account credentials, and use the service in accordance with applicable laws.
-              </Text>
-              <Text style={styles.contentSubtitle}>4. Contact Information</Text>
-              <Text style={styles.contentText}>
-                For questions regarding these terms, please contact us at legal@tartrack.ph or +63 32 123 4567.
-              </Text>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
+      <TermsModal visible={termsVisible} onClose={() => setTermsVisible(false)} />
 
       {/* Privacy Modal */}
-      <Modal visible={privacyVisible} transparent animationType="slide" onRequestClose={() => setPrivacyVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setPrivacyVisible(false)}>
-          <View style={styles.contentModal} onStartShouldSetResponder={() => true}>
-            <View style={styles.contentHeader}>
-              <Text style={styles.contentTitle}>Privacy Policy</Text>
-              <TouchableOpacity onPress={() => setPrivacyVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={MUTED} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.lastUpdated}>Last updated: January 2024</Text>
-              <Text style={styles.contentSubtitle}>1. Information We Collect</Text>
-              <Text style={styles.contentText}>
-                We collect information you provide directly to us, such as when you create an account, make a booking, or contact us for support.
-              </Text>
-              <Text style={styles.contentSubtitle}>2. How We Use Your Information</Text>
-              <Text style={styles.contentText}>
-                We use the information we collect to provide, maintain, and improve our services, process transactions, and communicate with you.
-              </Text>
-              <Text style={styles.contentSubtitle}>3. Data Security</Text>
-              <Text style={styles.contentText}>
-                We implement appropriate technical and organizational measures to protect your personal information against unauthorized access.
-              </Text>
-              <Text style={styles.contentSubtitle}>4. Contact Us</Text>
-              <Text style={styles.contentText}>
-                📧 Email: privacy@tartrack.ph{"\n"}
-                📞 Phone: +63 32 123 4567{"\n"}
-                📍 Address: Cebu City, Philippines
-              </Text>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
+      <PrivacyModal visible={privacyVisible} onClose={() => setPrivacyVisible(false)} />
     </View>
   );
 }
@@ -825,12 +729,10 @@ const styles = StyleSheet.create({
   
   // Content modal styles
   contentModal: {
-    marginHorizontal: 20,
-    marginTop: 60,
-    marginBottom: 40,
+    width: '90%',
+    height: '80%',
     backgroundColor: '#fff',
     borderRadius: 16,
-    maxHeight: '85%',
     shadowColor: '#000',
     shadowOpacity: 0.12,
     shadowRadius: 16,
@@ -856,7 +758,7 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 16,
   },
   contentSubtitle: {
     fontSize: 16,

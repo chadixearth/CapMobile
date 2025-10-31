@@ -19,6 +19,7 @@
     "expo": "~53.0.0",
     "expo-blur": "~14.1.5",
     "expo-dev-client": "~5.2.4",
+    "expo-file-system": "^19.0.17",
     "expo-image-picker": "~16.1.0",
     "expo-linear-gradient": "~14.1.5",
     "expo-location": "~18.1.0",
@@ -33,7 +34,8 @@
     "react-native-svg": "^15.12.1",
     "react-native-vector-icons": "^10.3.0",
     "react-native-webview": "13.13.5",
-    "xdate": "^0.8.3"
+    "xdate": "^0.8.3",
+    "react-native-view-shot": "4.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0"

@@ -28,6 +28,7 @@ import { supabase } from '../../services/supabase';
 
 import { getDriverEarningsStats } from '../../services/Earnings/EarningsService';
 import BreakevenNotificationManager from '../../services/breakeven';
+import { exportBreakevenImage } from '../../services/pdfExportService';
 
 import {
   getBreakeven,
@@ -253,6 +254,7 @@ export default function EarningsScreen({ navigation, route }) {
   const [stats, setStats] = useState(null);
   const [errorText, setErrorText] = useState('');
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0);
+  const [exportingPDF, setExportingPDF] = useState(false);
 
   // History state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -935,6 +937,24 @@ export default function EarningsScreen({ navigation, route }) {
     setHistoryMode('detail');
   };
 
+  // Export handler
+  const handleExportPDF = async () => {
+    if (exportingPDF) return;
+    
+    setExportingPDF(true);
+    try {
+      const result = await exportBreakevenImage();
+      
+      if (!result.success) {
+        setErrorText('Failed to export report: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      setErrorText('Failed to export report: ' + error.message);
+    } finally {
+      setExportingPDF(false);
+    }
+  };
+
   // Profit for the tile
   const currentProfit = useMemo(
     () => (revenuePeriod || 0) - (totalExpenses || 0),
@@ -1279,6 +1299,23 @@ export default function EarningsScreen({ navigation, route }) {
             <TouchableOpacity onPress={onResetExpenses} style={styles.btnOutline} activeOpacity={0.85}>
               <Ionicons name="refresh" size={14} color={colors.primary} />
               <Text style={styles.btnOutlineText}>Reset expenses</Text>
+            </TouchableOpacity>
+            
+            {/* PDF Export Button */}
+            <TouchableOpacity
+              style={[styles.pdfExportBtn, exportingPDF && styles.pdfExportBtnDisabled]}
+              onPress={handleExportPDF}
+              disabled={exportingPDF}
+              activeOpacity={0.85}
+            >
+              {exportingPDF ? (
+                <Animated.View style={{ opacity: pulseAnim }}>
+                  <Ionicons name="refresh" size={14} color={colors.textSecondary} />
+                </Animated.View>
+              ) : (
+                <Ionicons name="document-text-outline" size={14} color={colors.primary} />
+              )}
+              <Text style={styles.btnOutlineText}>Export</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1654,6 +1691,19 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   btnOutlineText: { color: colors.primary, fontWeight: '800', fontSize: 12 },
+  pdfExportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: '#fff',
+  },
+  pdfExportBtnDisabled: {
+    opacity: 0.6,
+  },
   summaryHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   historyBtn: {
     flexDirection: 'row',

@@ -182,33 +182,75 @@ function findNearestPoint(points, latitude, longitude) {
 
 // Process road highlights data for map display
 export function processRoadHighlightsForMap(roadHighlights) {
-  if (!Array.isArray(roadHighlights)) return [];
+  if (!Array.isArray(roadHighlights)) {
+    console.warn('processRoadHighlightsForMap: roadHighlights is not an array:', typeof roadHighlights);
+    return [];
+  }
   
-  return roadHighlights.map(road => {
+  console.log('🛣️ Processing', roadHighlights.length, 'road highlights for map display');
+  
+  return roadHighlights.map((road, index) => {
+    console.log(`🛣️ Processing road ${index + 1}:`, road.name, 'ID:', road.id);
+    
     let coordinates = road.coordinates || road.road_coordinates;
     
     // Parse coordinates if they're in string format
     if (typeof coordinates === 'string') {
       try {
         coordinates = JSON.parse(coordinates);
+        console.log(`🛣️ Parsed string coordinates for ${road.name}:`, coordinates.length, 'points');
       } catch (e) {
-        console.warn('Failed to parse road coordinates:', e);
+        console.warn('Failed to parse road coordinates for', road.name, ':', e);
         coordinates = [];
       }
     }
     
-    return {
+    // Validate coordinates array
+    if (!Array.isArray(coordinates)) {
+      console.warn(`🛣️ Invalid coordinates for ${road.name}:`, typeof coordinates);
+      coordinates = [];
+    }
+    
+    // Validate coordinate format
+    const validCoordinates = coordinates.filter(coord => {
+      if (!Array.isArray(coord) || coord.length < 2) {
+        console.warn(`🛣️ Invalid coordinate format in ${road.name}:`, coord);
+        return false;
+      }
+      const [lat, lng] = coord;
+      if (isNaN(lat) || isNaN(lng)) {
+        console.warn(`🛣️ Invalid lat/lng in ${road.name}:`, lat, lng);
+        return false;
+      }
+      return true;
+    });
+    
+    console.log(`🛣️ Road ${road.name}: ${validCoordinates.length}/${coordinates.length} valid coordinates`);
+    
+    const processedRoad = {
       id: road.id,
       name: road.name || 'Route',
-      road_coordinates: coordinates || [],
+      road_coordinates: validCoordinates,
+      coordinates: validCoordinates, // Also set for WebView compatibility
       stroke_color: road.color || road.stroke_color || '#007AFF',
+      color: road.color || road.stroke_color || '#007AFF', // WebView uses 'color'
       stroke_width: road.weight || road.stroke_width || 4,
-      stroke_opacity: road.opacity || road.stroke_opacity || 0.7,
+      weight: road.weight || road.stroke_width || 4, // WebView uses 'weight'
+      stroke_opacity: road.opacity || road.stroke_opacity || 0.8,
+      opacity: road.opacity || road.stroke_opacity || 0.8, // WebView uses 'opacity'
       highlight_type: road.highlight_type || 'route',
       pickup_point_id: road.pickup_point_id,
       dropoff_point_id: road.dropoff_point_id
     };
-  });
+    
+    console.log(`🛣️ Processed road ${road.name}:`, {
+      coordinates: processedRoad.coordinates.length,
+      color: processedRoad.color,
+      weight: processedRoad.weight
+    });
+    
+    return processedRoad;
+  }).filter(road => road.coordinates.length > 0); // Only return roads with valid coordinates
 }
 
 // Calculate distance between two points

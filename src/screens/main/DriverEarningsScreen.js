@@ -219,9 +219,7 @@ export default function DriverEarningsScreen({ navigation }) {
     // FIX: Only use custom range if both from & to exist
     if (customDateRange?.from && customDateRange?.to) {
       filters.date_from = customDateRange.from;
-      const endDate = new Date(customDateRange.to);
-      endDate.setDate(endDate.getDate() + 1); // exclusive upper bound
-      filters.date_to = toLocalYMD(endDate);
+      filters.date_to = customDateRange.to;
       return filters;
     }
 
@@ -423,7 +421,7 @@ export default function DriverEarningsScreen({ navigation }) {
     if (selectedPeriod === 'month') {
       if (pf && pt) return <Text style={styles.rangeText}>{formatRangeDisplay(pf, pt)}</Text>;
       const start = startOfMonth(new Date());
-      const endIncl = addDays(startOfNextMonth(new Date()), -1);
+      const endIncl = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0); // Last day of current month
       return (
         <Text style={styles.rangeText}>
           {formatRangeDisplay(toLocalYMD(start), toLocalYMD(endIncl))}

@@ -161,8 +161,30 @@ class LocationService {
       } else {
         // Get all driver locations via API
         const { apiRequest } = await import('./authService');
+        console.log('[LocationService] Fetching all driver locations from API...');
         const result = await apiRequest('/location/drivers/');
-        return result.success && Array.isArray(result.data) ? result.data : [];
+        console.log('[LocationService] API response:', {
+          success: result.success,
+          dataType: typeof result.data,
+          isArray: Array.isArray(result.data),
+          dataLength: result.data?.length,
+          sampleData: result.data?.[0]
+        });
+        
+        if (result.success && result.data) {
+          // Handle nested data structure
+          let locations = [];
+          if (Array.isArray(result.data.data)) {
+            locations = result.data.data;
+          } else if (Array.isArray(result.data)) {
+            locations = result.data;
+          }
+          
+          console.log('[LocationService] Processed locations:', locations.length);
+          return locations;
+        }
+        
+        return [];
       }
     } catch (error) {
       console.error('Error getting driver locations:', error);

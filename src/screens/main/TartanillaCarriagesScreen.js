@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, A
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import driverService from '../../services/carriages/fetchDriver';
 import { apiBaseUrl } from '../../services/networkConfig';
@@ -195,8 +194,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       const filename = `carriage_${timestamp}_${index}.jpg`;
       
       // Read file as base64
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      const base64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(blob);
       });
       
       // Convert base64 to Uint8Array

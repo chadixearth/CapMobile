@@ -35,7 +35,7 @@ export default function MainTabs() {
         headerShown: true,
       })}
     >
-      <Tab.Screen name={Routes.HOME} component={TouristHomeScreen} options={{ header: () => <TARTRACKHeader /> }} />
+      <Tab.Screen name={Routes.HOME} component={TouristHomeScreen} options={{ headerShown: false }} />
       <Tab.Screen name={Routes.TERMINALS} component={TerminalsScreen} options={{ header: () => <TARTRACKHeader /> }} />
       <Tab.Screen name={Routes.BOOK} component={BookScreen} options={{ header: () => <TARTRACKHeader /> }} />
       <Tab.Screen name={Routes.GOODS_SERVICES} component={GoodsServicesScreen} options={{ header: () => <TARTRACKHeader /> }} />

@@ -13,6 +13,11 @@ import { _dateHelpers } from '../services/Earnings/EarningsService';
 
 const { width } = Dimensions.get('window');
 
+const getMonthName = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', { month: 'long' });
+};
+
 export default function CalendarModal({
   visible,
   onClose,
@@ -122,12 +127,20 @@ export default function CalendarModal({
       setTempSelection({ from: weekStart, to: weekEnd });
       updateMarkedDates(selectedDateString);
     } else if (mode === 'month') {
-      const [year, month] = selectedDateString.split('-').map(Number);
-      const startOfMonth = new Date(year, month - 1, 1);
-      const endOfMonth = new Date(year, month, 0);
+      const selectedDate = new Date(selectedDateString);
+      const year = selectedDate.getFullYear();
+      const month = selectedDate.getMonth();
       
-      const monthStart = startOfMonth.toISOString().split('T')[0];
-      const monthEnd = endOfMonth.toISOString().split('T')[0];
+      const startOfMonth = new Date(year, month, 1);
+      const endOfMonth = new Date(year, month + 1, 0); // Last day of the month
+      
+      const monthStart = _dateHelpers.toLocalYMD(startOfMonth);
+      const monthEnd = _dateHelpers.toLocalYMD(endOfMonth);
+      
+      console.log('[MONTH] Selected date:', selectedDateString);
+      console.log('[MONTH] Start of month:', monthStart);
+      console.log('[MONTH] End of month:', monthEnd);
+      console.log('[MONTH] Month range:', monthStart, 'to', monthEnd);
       
       setTempSelection({ from: monthStart, to: monthEnd });
       updateMarkedDates(selectedDateString);
@@ -226,6 +239,13 @@ export default function CalendarModal({
           <Calendar
             onDayPress={handleDayPress}
             markedDates={markedDates}
+            renderHeader={(date) => {
+              const monthName = new Date(date).toLocaleString('en-US', { month: 'long' });
+              const year = new Date(date).getFullYear();
+              return (
+                <Text style={styles.calendarHeader}>{monthName} {year}</Text>
+              );
+            }}
             theme={{
               backgroundColor: '#ffffff',
               calendarBackground: '#ffffff',
@@ -254,7 +274,7 @@ export default function CalendarModal({
             {hasExistingSelection ? (
               <View>
                 <Text style={styles.currentSelectionText}>
-                  Current: {new Date(customDateRange.from).toLocaleDateString()} - {new Date(customDateRange.to).toLocaleDateString()}
+                  Current: {getMonthName(customDateRange.from)} - {getMonthName(customDateRange.to)}
                 </Text>
                 <TouchableOpacity style={styles.selectNewButton} onPress={handleSelectNew}>
                   <Text style={styles.selectNewButtonText}>Select New {mode === 'day' ? 'Date' : mode === 'week' ? 'Week' : mode === 'month' ? 'Month' : 'Year'}</Text>
@@ -363,5 +383,12 @@ const styles = StyleSheet.create({
     color: '#6B2E2B',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  calendarHeader: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2d4150',
+    textAlign: 'center',
+    paddingVertical: 10,
   },
 });

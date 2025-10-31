@@ -18,7 +18,10 @@ import {
 } from '../../services/rideHailingService';
 import LocationService from '../../services/locationService';
 import { getRoadHighlights, findNearestRoadPoint } from '../../services/roadHighlightsService';
+import { getRoutesByPickup } from '../../services/rideHailingService';
 import BackButton from '../../components/BackButton';
+import LeafletMapView from '../../components/LeafletMapView';
+import { fetchMapData } from '../../services/map/fetchMap';
 
 export default function RideHailingScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -31,9 +34,15 @@ export default function RideHailingScreen({ navigation }) {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [findingNearestRoad, setFindingNearestRoad] = useState(false);
   const [nearestRoad, setNearestRoad] = useState(null);
+  const [showMap, setShowMap] = useState(false);
+  const [mapData, setMapData] = useState(null);
+  const [pickupLocation, setPickupLocation] = useState(null);
+  const [dropoffLocation, setDropoffLocation] = useState(null);
+  const [selectingLocation, setSelectingLocation] = useState(null);
 
   useEffect(() => {
     initializeScreen();
+    loadMapData();
   }, []);
 
   const initializeScreen = async () => {
@@ -56,6 +65,15 @@ export default function RideHailingScreen({ navigation }) {
       Alert.alert('Error', 'Failed to load ride information');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMapData = async () => {
+    try {
+      const data = await fetchMapData({ forceRefresh: false });
+      setMapData(data);
+    } catch (error) {
+      console.error('Error loading map data:', error);
     }
   };
 
@@ -131,6 +149,77 @@ export default function RideHailingScreen({ navigation }) {
     } finally {
       setFindingNearestRoad(false);
     }
+  };
+
+  const handleMapLocationSelect = async (location, type) => {
+    if (type === 'pickup') {
+      setPickupLocation(location);
+      setPickupAddress(location.name || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+      
+      // Load road highlights for pickup point
+      if ((location.pointType === 'pickup' || location.point_type === 'pickup') && location.id) {
+        try {
+          const routeResult = await getRoutesByPickup(location.id);
+          console.log('Route result for pickup:', location.id, routeResult);
+          if (routeResult.success && routeResult.data?.road_highlights) {
+            const { processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
+            const processedRoads = processRoadHighlightsForMap(routeResult.data.road_highlights);
+            console.log('Processed roads:', processedRoads);
+            setMapData(prev => ({ ...prev, roads: processedRoads }));
+          }
+        } catch (error) {
+          console.error('Error loading road highlights:', error);
+        }
+      }
+    } else if (type === 'dropoff') {
+      setDropoffLocation(location);
+      setDropoffAddress(location.name || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+    }
+    setSelectingLocation(null);
+    setShowMap(false);
+  };
+
+  const handleMapPress = (location) => {
+    if (selectingLocation) {
+      Alert.alert(
+        'Confirm Selection',
+        `Select this location as ${selectingLocation} point?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Select',
+            onPress: () => handleMapLocationSelect(location, selectingLocation)
+          }
+        ]
+      );
+    }
+  };
+
+  const handleMarkerPress = (marker) => {
+    if (selectingLocation) {
+      Alert.alert(
+        'Confirm Selection',
+        `Select ${marker.title} as ${selectingLocation} location?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Select',
+            onPress: () => handleMapLocationSelect({
+              id: marker.id,
+              name: marker.title,
+              latitude: marker.latitude,
+              longitude: marker.longitude,
+              pointType: marker.pointType
+            }, selectingLocation)
+          }
+        ]
+      );
+    }
+  };
+
+  const openMapForSelection = (type) => {
+    setSelectingLocation(type);
+    setShowMap(true);
   };
 
   const handleRequestRide = async () => {
@@ -274,8 +363,14 @@ export default function RideHailingScreen({ navigation }) {
                 <Ionicons name="trail-sign" size={20} color="#2E7D32" />
               )}
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.locationButton, styles.mapButton]}
+              onPress={() => openMapForSelection('pickup')}
+            >
+              <Ionicons name="map" size={20} color="#007AFF" />
+            </TouchableOpacity>
           </View>
-          <Text style={styles.locationHint}>Tap 📍 for current location or 🛣️ for nearest road</Text>
+          <Text style={styles.locationHint}>Tap 📍 for GPS, 🛣️ for nearest road, or 🗺️ to select on map</Text>
           {nearestRoad && (
             <Text style={styles.nearestRoadInfo}>
               Nearest road: {nearestRoad.name} ({Math.round(nearestRoad.distance)}m away)
@@ -285,12 +380,21 @@ export default function RideHailingScreen({ navigation }) {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Destination</Text>
-          <TextInput
-            style={styles.addressInput}
-            value={dropoffAddress}
-            onChangeText={setDropoffAddress}
-            placeholder="Enter destination"
-          />
+          <View style={styles.locationInputContainer}>
+            <TextInput
+              style={[styles.addressInput, styles.locationInput]}
+              value={dropoffAddress}
+              onChangeText={setDropoffAddress}
+              placeholder="Enter destination"
+            />
+            <TouchableOpacity
+              style={[styles.locationButton, styles.mapButton]}
+              onPress={() => openMapForSelection('dropoff')}
+            >
+              <Ionicons name="map" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.locationHint}>Tap 🗺️ to select destination on map</Text>
         </View>
 
         <View style={styles.sectionCard}>
@@ -323,9 +427,72 @@ export default function RideHailingScreen({ navigation }) {
           <Ionicons name="car" size={20} color="#fff" />
           <Text style={styles.requestButtonText}>Request Ride (₱{passengerCount * 10})</Text>
         </TouchableOpacity>
-
-
       </ScrollView>
+
+      {/* Map Modal */}
+      {showMap && (
+        <View style={styles.mapModal}>
+          <View style={styles.mapHeader}>
+            <Text style={styles.mapTitle}>
+              Select {selectingLocation === 'pickup' ? 'Pickup' : 'Drop-off'} Location
+            </Text>
+            <TouchableOpacity onPress={() => setShowMap(false)}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.mapContainer}>
+            <LeafletMapView
+              region={{
+                latitude: mapData?.config?.center_latitude || 10.3157,
+                longitude: mapData?.config?.center_longitude || 123.8854,
+                latitudeDelta: 0.06,
+                longitudeDelta: 0.06,
+              }}
+              markers={[
+                ...(mapData?.points || []).map(point => ({
+                  latitude: parseFloat(point.latitude),
+                  longitude: parseFloat(point.longitude),
+                  title: point.name,
+                  description: point.description || '',
+                  pointType: point.point_type,
+                  iconColor: point.stroke_color || point.icon_color || '#FF0000',
+                  id: point.id,
+                })),
+                ...(pickupLocation ? [{
+                  latitude: pickupLocation.latitude,
+                  longitude: pickupLocation.longitude,
+                  title: 'Pickup Location',
+                  description: 'Selected pickup point',
+                  pointType: 'pickup',
+                  iconColor: '#2E7D32',
+                  id: 'selected-pickup'
+                }] : []),
+                ...(dropoffLocation ? [{
+                  latitude: dropoffLocation.latitude,
+                  longitude: dropoffLocation.longitude,
+                  title: 'Drop-off Location',
+                  description: 'Selected drop-off point',
+                  pointType: 'dropoff',
+                  iconColor: '#C62828',
+                  id: 'selected-dropoff'
+                }] : [])
+              ]}
+              roads={mapData?.roads || []}
+              routes={mapData?.routes || []}
+              onMarkerPress={handleMarkerPress}
+              onMapPress={handleMapPress}
+            />
+          </View>
+          <View style={styles.mapInstructions}>
+            <Text style={styles.instructionText}>
+              {selectingLocation === 'pickup' 
+                ? 'Tap on a terminal marker or anywhere on the map to select pickup location'
+                : 'Tap anywhere on the map to select drop-off location'
+              }
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -441,6 +608,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E8',
     borderColor: '#C8E6C9',
   },
+  mapButton: {
+    backgroundColor: '#E3F2FD',
+    borderColor: '#BBDEFB',
+  },
   locationHint: {
     fontSize: 12,
     color: '#666',
@@ -537,5 +708,43 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  mapModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    zIndex: 1000,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#6B2E2B',
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 16,
+  },
+  mapTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  mapContainer: {
+    flex: 1,
+  },
+  mapInstructions: {
+    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

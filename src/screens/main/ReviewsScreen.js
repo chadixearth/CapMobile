@@ -194,17 +194,17 @@ export default function ReviewsScreen({ navigation }) {
         <Text style={styles.headerTitle}>Reviews</Text>
       </View>
 
-      {/* Tabs - Only show for drivers/owners who can receive reviews */}
-      {(user?.role === 'driver' || user?.role === 'owner') && (
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'received' && styles.activeTab]}
-            onPress={() => setActiveTab('received')}
-          >
-            <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
-              Received
-            </Text>
-          </TouchableOpacity>
+      {/* Tabs */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'received' && styles.activeTab]}
+          onPress={() => setActiveTab('received')}
+        >
+          <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
+            Received
+          </Text>
+        </TouchableOpacity>
+        {user?.role === 'tourist' && (
           <TouchableOpacity
             style={[styles.tab, activeTab === 'given' && styles.activeTab]}
             onPress={() => setActiveTab('given')}
@@ -213,8 +213,8 @@ export default function ReviewsScreen({ navigation }) {
               Given
             </Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+      </View>
 
       {/* Content */}
       <ScrollView

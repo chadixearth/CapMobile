@@ -22,116 +22,77 @@ const LeafletMapView = ({
       zoom: region?.zoom || 13
     };
 
-    // Convert markers to JSON string
-    const markersJSON = JSON.stringify(markers.map(marker => ({
-      lat: parseFloat(marker.latitude || 0),
-      lng: parseFloat(marker.longitude || 0),
-      title: marker.title || marker.name || 'Location',
-      description: marker.description || '',
-      color: marker.iconColor || marker.color || '#FF0000',
-      type: marker.pointType || marker.type || 'default',
-      image_urls: marker.image_urls || [],
-      id: marker.id
-    })));
+    console.log('🗺️ Generating map HTML with:', {
+      markersCount: markers.length,
+      roadsCount: roads.length,
+      center
+    });
 
-    // Convert roads to JSON string with debugging
+    // Convert markers to JSON string
+    const markersJSON = JSON.stringify(markers.map(marker => {
+      const processedMarker = {
+        lat: parseFloat(marker.latitude || 0),
+        lng: parseFloat(marker.longitude || 0),
+        title: marker.title || marker.name || 'Location',
+        description: marker.description || '',
+        color: marker.iconColor || marker.color || '#FF0000',
+        type: marker.pointType || marker.type || 'default',
+        image_urls: marker.image_urls || [],
+        id: marker.id
+      };
+      
+      // Debug driver markers
+      if (processedMarker.type === 'driver' || processedMarker.id === 'driver_location') {
+        console.log('🐎 Processing driver marker:', processedMarker);
+      }
+      
+      return processedMarker;
+    }));
+
+    console.log('🎯 Processed markers for WebView:', markers.length, 'markers');
+
+    // Convert roads to JSON string with proper coordinate handling
     const roadsJSON = JSON.stringify(roads.map(road => {
-      console.log('Processing road for WebView:', {
+      console.log('🗺️ Processing road for WebView:', {
         name: road.name,
         id: road.id,
         hasRoadCoordinates: !!road.road_coordinates,
-        roadCoordinatesLength: road.road_coordinates?.length,
-        roadCoordinatesType: typeof road.road_coordinates,
         hasCoordinates: !!road.coordinates,
+        roadCoordinatesLength: road.road_coordinates?.length,
         coordinatesLength: road.coordinates?.length,
-        coordinatesType: typeof road.coordinates,
-        sampleCoord: road.road_coordinates?.[0] || road.coordinates?.[0],
-        fullRoad: road
+        sampleCoord: road.road_coordinates?.[0] || road.coordinates?.[0]
       });
       
-      // Try road_coordinates first
-      if (road.road_coordinates && Array.isArray(road.road_coordinates) && road.road_coordinates.length > 0) {
-        const coordinates = road.road_coordinates.map(coord => {
+      // Try both coordinate formats
+      let coordinates = road.coordinates || road.road_coordinates;
+      
+      if (coordinates && Array.isArray(coordinates) && coordinates.length > 0) {
+        const processedCoordinates = coordinates.map(coord => {
+          // Handle {lat, lng} format
+          if (coord && typeof coord === 'object' && coord.lat !== undefined && coord.lng !== undefined) {
+            return { lat: parseFloat(coord.lat), lng: parseFloat(coord.lng) };
+          }
+          // Handle [lat, lng] array format
           if (Array.isArray(coord) && coord.length >= 2) {
             return { lat: parseFloat(coord[0]), lng: parseFloat(coord[1]) };
-          } else if (coord && typeof coord === 'object' && coord.lat && coord.lng) {
-            return { lat: parseFloat(coord.lat), lng: parseFloat(coord.lng) };
-          } else if (coord && typeof coord === 'object' && coord.latitude && coord.longitude) {
-            return { lat: parseFloat(coord.latitude), lng: parseFloat(coord.longitude) };
           }
           return null;
-        }).filter(Boolean);
+        }).filter(coord => coord && !isNaN(coord.lat) && !isNaN(coord.lng));
         
-        if (coordinates.length > 0) {
+        if (processedCoordinates.length > 0) {
+          console.log('🗺️ Successfully processed coordinates for:', road.name, processedCoordinates.length, 'points');
           return {
-            coordinates: coordinates,
-            color: road.stroke_color || road.color || '#007AFF',
-            weight: road.stroke_width || road.weight || 4,
-            opacity: road.stroke_opacity || road.opacity || 0.7,
-            name: road.name || 'Road'
+            coordinates: processedCoordinates,
+            color: road.color || road.stroke_color || '#007AFF',
+            weight: road.weight || road.stroke_width || 4,
+            opacity: road.opacity || road.stroke_opacity || 0.8,
+            name: road.name || 'Road',
+            id: road.id
           };
         }
       }
       
-
-      
-      // Try coordinates array
-      if (road.coordinates && Array.isArray(road.coordinates) && road.coordinates.length > 0) {
-        const coordinates = road.coordinates.map(coord => {
-          if (Array.isArray(coord) && coord.length >= 2) {
-            return { lat: parseFloat(coord[0]), lng: parseFloat(coord[1]) };
-          } else if (coord && typeof coord === 'object' && coord.lat && coord.lng) {
-            return { lat: parseFloat(coord.lat), lng: parseFloat(coord.lng) };
-          } else if (coord && typeof coord === 'object' && coord.latitude && coord.longitude) {
-            return { lat: parseFloat(coord.latitude), lng: parseFloat(coord.longitude) };
-          }
-          return null;
-        }).filter(Boolean);
-        
-        if (coordinates.length > 0) {
-          return {
-            coordinates: coordinates,
-            color: road.color || '#007AFF',
-            weight: road.weight || 4,
-            opacity: road.opacity || 0.7,
-            name: road.name || 'Road'
-          };
-        }
-      }
-      
-      // Handle start/end object format for routing
-      if (road.start && road.end) {
-        return {
-          start: {
-            lat: parseFloat(road.start.lat),
-            lng: parseFloat(road.start.lng)
-          },
-          end: {
-            lat: parseFloat(road.end.lat),
-            lng: parseFloat(road.end.lng)
-          },
-          color: road.color || '#007AFF',
-          weight: road.weight || 4,
-          opacity: road.opacity || 0.7,
-          name: road.name || 'Road'
-        };
-      }
-      
-      // Handle start/end latitude/longitude format for routing
-      if (road.start_latitude && road.start_longitude && road.end_latitude && road.end_longitude) {
-        return {
-          start_latitude: parseFloat(road.start_latitude),
-          start_longitude: parseFloat(road.start_longitude),
-          end_latitude: parseFloat(road.end_latitude),
-          end_longitude: parseFloat(road.end_longitude),
-          color: road.stroke_color || road.color || '#007AFF',
-          weight: road.stroke_width || road.weight || 4,
-          opacity: road.stroke_opacity || road.opacity || 0.7,
-          name: road.name || 'Road'
-        };
-      }
-      
-      console.log('Road has no valid coordinates, skipping:', road.name);
+      console.log('🗺️ Road has no valid coordinates, skipping:', road.name);
       return null;
     }).filter(Boolean));
 
@@ -205,6 +166,23 @@ const LeafletMapView = ({
             font-weight: 600;
             color: #333;
           }
+          /* Custom marker styling */
+          .custom-marker-icon {
+            border: none !important;
+            background: transparent !important;
+          }
+          .custom-marker-icon div {
+            transition: transform 0.2s ease;
+          }
+          .custom-marker-icon:hover div {
+            transform: scale(1.1);
+          }
+          /* Driver marker animation */
+          @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+          }
         </style>
       </head>
       <body>
@@ -243,102 +221,135 @@ const LeafletMapView = ({
             crossOrigin: true
           }).addTo(map);
 
-          // Parse data
+          // Parse data and log immediately
           var markers = ${markersJSON};
           var roads = ${roadsJSON};
           
-          console.log('Parsed roads for WebView:', roads.length, 'roads');
+          console.log('🚀 WebView started with data:');
+          console.log('📍 Markers:', markers.length);
+          console.log('🛣️ Roads:', roads.length);
+          
+          // Send status to React Native
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'webViewStatus',
+              markers: markers.length,
+              roads: roads.length
+            }));
+          }
+          
+          console.log('🛣️ Parsed roads for WebView:', roads.length, 'roads');
           roads.forEach(function(road, index) {
-            console.log('Road', index + 1, ':', {
-              name: road.name,
-              hasCoordinates: !!road.coordinates,
-              coordinatesLength: road.coordinates?.length || 0,
-              color: road.color,
-              weight: road.weight,
-              opacity: road.opacity
-            });
+            console.log('🛣️ Road', index + 1, ':', road.name, '- Coordinates:', road.coordinates?.length || 0, '- Color:', road.color);
+            if (road.coordinates && road.coordinates.length > 0) {
+              console.log('   🛣️ First coord:', road.coordinates[0], 'Last coord:', road.coordinates[road.coordinates.length - 1]);
+            }
           });
 
-          // Function to get marker color
+          // Custom markers with icons
           function getMarkerIcon(color, type, id) {
-            // Use horse icon for driver markers
-            if (id === 'driver_location') {
-              return L.divIcon({
-                html: '<div style="background-color: #FF9800; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"><span style="font-size: 16px;">🐎</span></div>',
-                className: 'custom-div-icon',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15],
-                popupAnchor: [0, -15]
-              });
+            var iconHtml = '';
+            var iconSize = [24, 24];
+            var iconAnchor = [12, 12];
+            
+            console.log('getMarkerIcon called with - color:', color, 'type:', type, 'id:', id);
+            
+            if (type === 'driver' || id === 'driver_location') {
+              console.log('🐎 Creating HORSE ICON for driver marker');
+              // Horse icon for drivers - make it more prominent
+              iconHtml = '<div style="background-color: ' + color + '; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 3px 10px rgba(0,0,0,0.4); animation: pulse 2s infinite;">🐎</div>';
+              iconSize = [32, 32];
+              iconAnchor = [16, 16];
+            } else {
+              console.log('Creating regular marker icon for type:', type);
+              // Regular colored circle for other markers
+              iconHtml = '<div style="background-color: ' + color + '; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.2);"></div>';
             }
             
-            var iconColors = {
-              '#FF0000': 'red', '#ff0000': 'red',
-              '#00FF00': 'green', '#00ff00': 'green', '#00ff33': 'green',
-              '#0000FF': 'blue', '#0000ff': 'blue', '#007bff': 'blue',
-              '#FFFF00': 'gold', '#ffff00': 'gold',
-              '#FF6600': 'orange', '#ff6600': 'orange',
-              '#800080': 'violet', '#ba1abc': 'violet',
-              '#00AA00': 'green', '#00aa00': 'green',
-              '#0066CC': 'blue', '#0066cc': 'blue',
-              '#20c31d': 'green', '#20C31D': 'green',
-              '#2E7D32': 'green', '#2e7d32': 'green',
-              '#C62828': 'red', '#c62828': 'red'
-            };
-            
-            var colorName = iconColors[color] || iconColors[color.toLowerCase()] || 'red';
-            console.log('Marker color mapping:', color, '->', colorName);
-            
-            // Create custom icon
-            return L.icon({
-              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-' + colorName + '.png',
-              shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-              iconSize: [25, 41],
-              iconAnchor: [12, 41],
-              popupAnchor: [1, -34],
-              shadowSize: [41, 41]
+            return L.divIcon({
+              html: iconHtml,
+              iconSize: iconSize,
+              iconAnchor: iconAnchor,
+              className: 'custom-marker-icon'
             });
           }
 
           // Add markers to map
-          markers.forEach(function(marker) {
-            if (marker.lat && marker.lng) {
-              var leafletMarker = L.marker([marker.lat, marker.lng], {
-                icon: getMarkerIcon(marker.color, marker.type, marker.id)
-              }).addTo(map);
-              
-              // Add click handler for marker selection
-              leafletMarker.on('click', function(e) {
-                if (window.ReactNativeWebView) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'markerClick',
-                    marker: {
-                      latitude: marker.lat,
-                      longitude: marker.lng,
-                      title: marker.title,
-                      description: marker.description,
-                      pointType: marker.type,
-                      iconColor: marker.color,
-                      image_urls: marker.image_urls || [],
-                      id: marker.id
-                    }
-                  }));
+          console.log('📍 Adding', markers.length, 'markers to map');
+          var addedMarkers = 0;
+          
+          markers.forEach(function(marker, index) {
+            console.log('Processing marker', index + 1, ':', marker.title, 'at', marker.lat, marker.lng, 'type:', marker.type, 'id:', marker.id);
+            
+            // Debug driver markers specifically
+            if (marker.type === 'driver' || marker.id === 'driver_location') {
+              console.log('🐎 DRIVER MARKER DETECTED:', marker.title, 'type:', marker.type, 'id:', marker.id);
+            }
+            
+            if (marker.lat && marker.lng && !isNaN(marker.lat) && !isNaN(marker.lng)) {
+              try {
+                var leafletMarker = L.marker([marker.lat, marker.lng], {
+                  icon: getMarkerIcon(marker.color, marker.type, marker.id)
+                }).addTo(map);
+                
+                addedMarkers++;
+                console.log('✅ Added marker:', marker.title, 'at', marker.lat, marker.lng);
+                
+                // Add click handler for marker selection
+                leafletMarker.on('click', function(e) {
+                  if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'markerClick',
+                      marker: {
+                        latitude: marker.lat,
+                        longitude: marker.lng,
+                        title: marker.title,
+                        description: marker.description,
+                        pointType: marker.type,
+                        iconColor: marker.color,
+                        image_urls: marker.image_urls || [],
+                        id: marker.id,
+                        isDriver: marker.type === 'driver'
+                      }
+                    }));
+                  }
+                });
+                
+                if (marker.title || marker.description) {
+                  var popupContent = '<div style="text-align: center; min-width: 150px;">';
+                  if (marker.type === 'driver' || marker.id === 'driver_location') {
+                    popupContent += '<div style="font-size: 24px; margin-bottom: 8px;">🐎</div>';
+                    popupContent += '<div style="color: #FF6B35; font-weight: bold; margin-bottom: 5px;">Your Driver</div>';
+                  }
+                  if (marker.title) {
+                    popupContent += '<strong>' + marker.title + '</strong>';
+                  }
+                  if (marker.description) {
+                    popupContent += '<br><div style="font-size: 12px; color: #666; margin-top: 4px;">' + marker.description + '</div>';
+                  }
+                  if (marker.type === 'driver' || marker.id === 'driver_location') {
+                    popupContent += '<br><small style="color: #FF6B35; font-weight: 500;">Driver is on the way to pick you up</small>';
+                  }
+                  popupContent += '</div>';
+                  leafletMarker.bindPopup(popupContent);
                 }
-              });
-              
-              if (marker.title || marker.description) {
-                var popupContent = '<div>';
-                if (marker.title) {
-                  popupContent += '<strong>' + marker.title + '</strong>';
-                }
-                if (marker.description) {
-                  popupContent += '<br>' + marker.description;
-                }
-                popupContent += '</div>';
-                leafletMarker.bindPopup(popupContent);
+              } catch (error) {
+                console.error('❌ Error adding marker:', marker.title, error);
               }
+            } else {
+              console.warn('⚠️ Skipping invalid marker:', marker.title, 'coords:', marker.lat, marker.lng);
             }
           });
+          
+          console.log('📍 Total markers added:', addedMarkers, 'out of', markers.length);
+          
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'markerStatus',
+              added: addedMarkers,
+              total: markers.length
+            }));
+          }
 
           // Function to get route between two points using OSRM
           function getRoute(start, end, callback) {
@@ -372,95 +383,78 @@ const LeafletMapView = ({
               });
           }
 
-          // Add roads/polylines to map and collect bounds
+          // Add roads/polylines to map
           var allRoadCoords = [];
-          var routePromises = [];
           
-          console.log('Processing roads:', roads.length);
+          console.log('🛣️ Processing roads in WebView:', roads.length, 'roads');
           
-          // First pass: Add roads with predefined coordinates immediately
-          roads.forEach(function(road) {
-            console.log('Processing road in WebView:', road.name, 'coordinates:', road.coordinates?.length || 0, 'road data:', road);
+          console.log('🛣️ Adding', roads.length, 'roads to map');
+          var addedRoads = 0;
+          
+          roads.forEach(function(road, index) {
+            console.log('🛣️ Processing road', index + 1, ':', road.name);
             
-            if (road.coordinates && road.coordinates.length > 0) {
-              // If road has predefined coordinates, use them immediately
-              var latlngs = road.coordinates.map(function(coord) {
-                return [coord.lat, coord.lng];
-              });
-              
-              allRoadCoords = allRoadCoords.concat(latlngs);
-              
-              var polyline = L.polyline(latlngs, {
-                color: road.color,
-                weight: road.weight,
-                opacity: road.opacity
-              }).addTo(map);
-              
-              console.log('Added road polyline immediately:', road.name, 'with', latlngs.length, 'points', 'color:', road.color);
-              
-              if (road.name) {
-                polyline.bindPopup('<strong>' + road.name + '</strong>');
-              }
-            } else {
-              console.log('Road has no coordinates to display:', road.name, 'road object:', road);
-            }
-          });
-          
-          // Second pass: Handle roads that need routing
-          roads.forEach(function(road) {
-            if (road.start && road.end) {
-              // If road has start/end points, get route
-              console.log('Creating route from start/end objects:', road.start, road.end);
-              var routePromise = new Promise(function(resolve) {
-                getRoute(road.start, road.end, function(coordinates) {
-                  allRoadCoords = allRoadCoords.concat(coordinates);
-                  
-                  var polyline = L.polyline(coordinates, {
-                    color: road.color,
-                    weight: road.weight,
-                    opacity: road.opacity
-                  }).addTo(map);
-                  
-                  if (road.name) {
-                    polyline.bindPopup('<strong>' + road.name + '</strong>');
+            // Try both coordinate formats
+            var coordinates = road.coordinates || road.road_coordinates;
+            console.log('🛣️ Road coordinates:', coordinates ? coordinates.length : 0, 'points');
+            
+            if (coordinates && coordinates.length > 0) {
+              try {
+                var latlngs = coordinates.map(function(coord) {
+                  // Handle both [lat, lng] and {lat, lng} formats
+                  if (Array.isArray(coord)) {
+                    return [coord[0], coord[1]];
+                  } else if (coord.lat !== undefined && coord.lng !== undefined) {
+                    return [coord.lat, coord.lng];
+                  } else {
+                    console.warn('🛣️ Invalid coordinate format:', coord);
+                    return null;
                   }
+                }).filter(function(coord) { return coord !== null; });
+                
+                if (latlngs.length > 0) {
+                  allRoadCoords = allRoadCoords.concat(latlngs);
                   
-                  resolve();
-                });
-              });
-              
-              routePromises.push(routePromise);
-            } else if (road.start_latitude && road.start_longitude && road.end_latitude && road.end_longitude) {
-              // Handle direct lat/lng coordinates for routing
-              var start = { lat: parseFloat(road.start_latitude), lng: parseFloat(road.start_longitude) };
-              var end = { lat: parseFloat(road.end_latitude), lng: parseFloat(road.end_longitude) };
-              
-              console.log('Creating route from lat/lng:', start, end);
-              
-              var routePromise = new Promise(function(resolve) {
-                getRoute(start, end, function(coordinates) {
-                  allRoadCoords = allRoadCoords.concat(coordinates);
-                  
-                  var polyline = L.polyline(coordinates, {
+                  var polyline = L.polyline(latlngs, {
                     color: road.color || road.stroke_color || '#007AFF',
                     weight: road.weight || road.stroke_width || 4,
-                    opacity: road.opacity || road.stroke_opacity || 0.7
+                    opacity: road.opacity || road.stroke_opacity || 0.8
                   }).addTo(map);
+                  
+                  addedRoads++;
+                  console.log('✅ ROAD ADDED:', road.name, 'with', latlngs.length, 'points', 'color:', road.color || road.stroke_color);
                   
                   if (road.name) {
                     polyline.bindPopup('<strong>' + road.name + '</strong>');
                   }
-                  
-                  resolve();
-                });
-              });
-              
-              routePromises.push(routePromise);
+                } else {
+                  console.log('❌ ROAD SKIPPED - NO VALID COORDINATES:', road.name);
+                }
+              } catch (error) {
+                console.error('❌ Error adding road:', road.name, error);
+              }
+            } else {
+              console.log('❌ ROAD SKIPPED - NO COORDINATES:', road.name);
             }
           });
           
-          // Fit bounds immediately for existing coordinates
+          console.log('🛣️ Total roads added:', addedRoads, 'out of', roads.length);
+          
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'roadStatus',
+              added: addedRoads,
+              total: roads.length
+            }));
+          }
+          
+          // Fit bounds for all coordinates
           var allCoords = [];
+          
+          // Add test markers at known locations
+          L.marker([10.3157, 123.8854]).addTo(map).bindPopup('Test Marker 1');
+          L.marker([10.3187, 123.9064]).addTo(map).bindPopup('Test Marker 2');
+          console.log('✅ Added 2 test markers');
           
           // Add marker coordinates
           markers.forEach(function(marker) {
@@ -469,8 +463,12 @@ const LeafletMapView = ({
             }
           });
           
-          // Add existing road coordinates
+          // Add road coordinates
           allCoords = allCoords.concat(allRoadCoords);
+          
+          console.log('📐 Total coordinates for bounds:', allCoords.length);
+          console.log('📐 Marker coords:', allCoords.length - allRoadCoords.length);
+          console.log('📐 Road coords:', allRoadCoords.length);
           
           if (allCoords.length > 1) {
             var group = new L.featureGroup();
@@ -480,35 +478,6 @@ const LeafletMapView = ({
             map.fitBounds(group.getBounds(), { padding: [20, 20] });
           } else if (allCoords.length === 1) {
             map.setView(allCoords[0], 15);
-          }
-          
-          // Wait for routing to complete (if any) and adjust bounds if needed
-          if (routePromises.length > 0) {
-            Promise.all(routePromises).then(function() {
-              console.log('All routes loaded, adjusting bounds if needed');
-              // Only adjust bounds if we have new coordinates from routing
-              if (allRoadCoords.length > allCoords.length) {
-                var updatedCoords = [];
-                
-                // Add marker coordinates
-                markers.forEach(function(marker) {
-                  if (marker.lat && marker.lng) {
-                    updatedCoords.push([marker.lat, marker.lng]);
-                  }
-                });
-                
-                // Add all road coordinates (including new ones from routing)
-                updatedCoords = updatedCoords.concat(allRoadCoords);
-                
-                if (updatedCoords.length > 1) {
-                  var updatedGroup = new L.featureGroup();
-                  updatedCoords.forEach(function(coord) {
-                    L.marker(coord).addTo(updatedGroup);
-                  });
-                  map.fitBounds(updatedGroup.getBounds(), { padding: [20, 20] });
-                }
-              }
-            });
           }
 
 
@@ -542,7 +511,13 @@ const LeafletMapView = ({
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'mapReady') {
-        console.log('Leaflet map is ready');
+        console.log('🗺️ Leaflet map is ready');
+      } else if (data.type === 'webViewStatus') {
+        console.log('🗺️ WebView Status - Markers:', data.markers, 'Roads:', data.roads);
+      } else if (data.type === 'markerStatus') {
+        console.log('📍 Marker Status:', data.added, '/', data.total, 'markers added');
+      } else if (data.type === 'roadStatus') {
+        console.log('🛣️ Road Status:', data.added, '/', data.total, 'roads added');
       } else if (data.type === 'mapClick' && onMapPress) {
         onMapPress({ nativeEvent: data });
       } else if (data.type === 'markerClick' && onMarkerPress) {
@@ -582,7 +557,8 @@ const LeafletMapView = ({
           console.warn('WebView HTTP error:', nativeEvent);
         }}
         onConsoleMessage={(event) => {
-          console.log('WebView console:', event.nativeEvent.message);
+          const message = event.nativeEvent.message;
+          console.log('🗺️ WebView:', message);
         }}
         mixedContentMode="compatibility"
         allowsInlineMediaPlayback={true}

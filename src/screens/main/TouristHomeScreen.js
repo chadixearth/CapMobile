@@ -46,9 +46,7 @@ const TERMINALS = [
 const CEBU_CITY_REGION = { latitude: 10.295, longitude: 123.89, latitudeDelta: 0.008, longitudeDelta: 0.008, zoom: 15 };
 
 export default function TouristHomeScreen({ navigation }) {
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
+
 
   const [search, setSearch] = useState('');
   const [pickup, setPickup] = useState(null);
