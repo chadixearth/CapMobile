@@ -15,6 +15,8 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { getCurrentUser } from '../../services/authService';
 import { supabase } from '../../services/supabase';
 import {
@@ -85,6 +87,7 @@ function formatRangeDisplay(fromYMD, toYMD) {
 
 /* -------------------------------- Component -------------------------------- */
 export default function DriverEarningsScreen({ navigation }) {
+  const { unreadCount } = useNotifications();
   const [user, setUser] = useState(null);
   const [earningsData, setEarningsData] = useState(null);
   const [detailedEarnings, setDetailedEarnings] = useState([]);
@@ -363,28 +366,6 @@ export default function DriverEarningsScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </View>
-      
-      <View style={styles.calendarControls}>
-        <TouchableOpacity 
-          style={[styles.calendarButton, customDateRange && styles.calendarButtonActive]} 
-          onPress={handleCalendarOpen}
-        >
-          <Ionicons 
-            name={customDateRange ? "calendar" : "calendar-outline"} 
-            size={20} 
-            color={customDateRange ? "#fff" : "#6B2E2B"} 
-          />
-        </TouchableOpacity>
-        
-        {customDateRange && (
-          <TouchableOpacity 
-            style={styles.resetButton} 
-            onPress={handleResetCustomDate}
-          >
-            <Ionicons name="refresh-outline" size={16} color="#666" />
-          </TouchableOpacity>
-        )}
-      </View>
     </View>
   );
 
@@ -589,15 +570,27 @@ export default function DriverEarningsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" marginTop="20" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Earnings</Text>
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+
 
         {/* FIX: Use the guarded opener so “All” can’t open the calendar */}
         <TouchableOpacity onPress={handleCalendarOpen}>
           {/* <Ionicons name="calendar" size={24} color="#6B2E2B" /> */}
+        </TouchableOpacity>
+      </View>
+
+      {/* Floating title card */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="cash-outline" size={24} color="#6B2E2B" />
+          <Text style={styles.titleText}>Earnings</Text>
+        </View>
+        <TouchableOpacity onPress={handleCalendarOpen} style={[styles.calendarIconButton, customDateRange && styles.calendarIconButtonActive]}>
+          <Ionicons name="calendar-outline" size={20} color={customDateRange ? "#fff" : "#6B2E2B"} />
         </TouchableOpacity>
       </View>
 
@@ -693,18 +686,61 @@ const styles = StyleSheet.create({
     color: '#6B2E2B',
     fontWeight: '600',
   },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16,
-    backgroundColor: '#6B2E2B', borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+  hero: {
+    backgroundColor: '#6B2E2B',
+    paddingTop: 6,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', top:20, paddingBottom:20 },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  titleCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  calendarIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F8F8',
+  },
+  calendarIconButtonActive: {
+    backgroundColor: '#6B2E2B',
+  },
+  titleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+
   content: { flex: 1, paddingHorizontal: 16 },
 
   /* Period selector */
-  periodSelectorContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 12, gap: 8 },
+  periodSelectorContainer: { marginVertical: 12 },
   periodSelector: {
-    flex: 1, flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 4,
+    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 4,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3,
   },
   calendarButton: {
