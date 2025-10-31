@@ -698,6 +698,51 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     }
   };
 
+  // Helper function to get carriage image (similar to OwnerHomeScreen)
+  const getCarriageImage = (carriage) => {
+    const pickFirstUrl = (val) => {
+      if (!val) return null;
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if ((trimmed.startsWith('[') || trimmed.startsWith('{'))) {
+          try { return pickFirstUrl(JSON.parse(trimmed)); } catch (_) { /* fallthrough */ }
+        }
+        return val;
+      }
+      if (Array.isArray(val)) {
+        for (const v of val) {
+          if (typeof v === 'string' && v) return v;
+          if (v && typeof v === 'object' && typeof v.url === 'string') return v.url;
+        }
+        return null;
+      }
+      if (typeof val === 'object') {
+        if (Array.isArray(val.urls)) return pickFirstUrl(val.urls);
+        if (typeof val.url === 'string') return val.url;
+      }
+      return null;
+    };
+
+    try {
+      let url = null;
+      const iu = carriage?.image_urls;
+      if (typeof iu === 'string') {
+        try { url = pickFirstUrl(JSON.parse(iu)); } catch (_) { url = pickFirstUrl(iu); }
+      } else {
+        url = pickFirstUrl(iu);
+      }
+      url = url || pickFirstUrl(carriage?.img);
+      url = url || pickFirstUrl(carriage?.images);
+      url = url || pickFirstUrl(carriage?.photos);
+      url = url || pickFirstUrl(carriage?.photo_url);
+      url = url || pickFirstUrl(carriage?.image_url);
+      if (url) return { uri: url };
+    } catch (_) {
+      // ignore and fall back
+    }
+    return require('../../../assets/tartanilla.jpg');
+  };
+
   const renderCarriageCard = (carriage) => {
     const statusConfig = {
       available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
@@ -730,111 +775,301 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       );
     };
 
-    const driverName = buildName(carriage.assigned_driver) || buildName(cached) || (carriage.assigned_driver_id ? 'Unknown Driver' : 'Unassigned');
-    const driverEmail = carriage.assigned_driver?.email || cached?.email || (carriage.assigned_driver_id ? 'No email' : '');
+    const driverName = buildName(carriage.assigned_driver) || buildName(cached) || (carriage.assigned_driver_id ? 'Unknown Driver' : 'No driver assigned');
+    const driverEmail = carriage.assigned_driver?.email || cached?.email || '';
     const driverPhone = carriage.assigned_driver?.phone || carriage.assigned_driver?.mobile || carriage.assigned_driver?.phone_number || cached?.phone || cached?.mobile || cached?.phone_number || '';
     const hasDriverSelected = !!(carriage.assigned_driver_id || carriage.assigned_driver);
     const assignmentStatus = hasDriverSelected && carriage.status === 'waiting_driver_acceptance' ? 'Waiting for driver acceptance' : null;
 
     return (
-      <View key={carriage.id} style={styles.carriageCard}>
-        <View style={styles.cardHeader}>
-          <View style={styles.plateSection}>
-            <View style={styles.plateIcon}>
-              <Ionicons name="car" size={20} color={MAROON} />
-            </View>
-            <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
-            <Ionicons name={status.icon} size={14} color={status.color} />
-            <Text style={[styles.statusText, { color: status.color }]}>{status.text}</Text>
-          </View>
-        </View>
+      <View key={carriage.id} style={styles.tartanillaRow}>
+        <Image source={getCarriageImage(carriage)} style={styles.tartanillaImg} />
+        <View style={styles.tartanillaInfo}>
+          <Text style={styles.tcPlate}>{carriage.plate_number}</Text>
 
-        <View style={styles.cardBody}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoItem}>
-              <View style={styles.infoHeader}>
-                <Ionicons name="person-outline" size={16} color="#666" />
-                <Text style={styles.infoLabel}>Driver</Text>
-              </View>
-              <Text style={styles.infoValue} numberOfLines={1}>{driverName}</Text>
-              {driverEmail && <Text style={styles.infoSubtext} numberOfLines={1}>{driverEmail}</Text>}
-              {driverPhone && <Text style={styles.infoSubtext} numberOfLines={1}>📱 {driverPhone}</Text>}
-            </View>
-            
-            <View style={styles.infoItem}>
-              <View style={styles.infoHeader}>
-                <Ionicons name="people-outline" size={16} color="#666" />
-                <Text style={styles.infoLabel}>Capacity</Text>
-              </View>
-              <Text style={styles.infoValue}>{carriage.capacity || 'N/A'}</Text>
-              <Text style={styles.infoSubtext}>persons</Text>
+          {/* Capacity */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Ionicons name="people-outline" size={16} color="#444" />
+            <Text style={styles.tcDriver} numberOfLines={1}> {carriage.capacity || 'N/A'} passengers</Text>
+          </View>
+
+          {/* Driver with people icon */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Ionicons name="person-outline" size={16} color="#444" />
+            <Text style={styles.tcDriver} numberOfLines={1}> {driverName}</Text>
+          </View>
+
+          {/* Status Badge */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+            <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
+              <Ionicons name={status.icon} size={12} color={status.color} />
+              <Text style={[styles.statusText, { color: status.color, fontSize: 10 }]}>{status.text}</Text>
             </View>
           </View>
 
           {assignmentStatus && (
             <View style={styles.alertBox}>
-              <Ionicons name="information-circle-outline" size={16} color="#F59E0B" />
-              <Text style={styles.alertText}>{assignmentStatus}</Text>
+              <Ionicons name="information-circle-outline" size={14} color="#F59E0B" />
+              <Text style={[styles.alertText, { fontSize: 11 }]}>{assignmentStatus}</Text>
             </View>
           )}
 
-          {carriage.notes && (
-            <View style={styles.notesSection}>
-              <Text style={styles.notesLabel}>Notes</Text>
-              <Text style={styles.notesText} numberOfLines={2}>{carriage.notes}</Text>
-            </View>
-          )}
-
-          {!isDriver && (
-            <View style={styles.actionButtons}>
-              {!hasDriverSelected && (
-                <TouchableOpacity 
-                  style={styles.assignButton}
-                  onPress={() => openDriverModal(carriage)}
-                  disabled={assigningDriver}
-                >
-                  <Ionicons name="person-add-outline" size={16} color="#fff" />
-                  <Text style={styles.buttonText}>Assign Driver</Text>
-                </TouchableOpacity>
-              )}
-              {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
-                <TouchableOpacity 
-                  style={styles.changeButton}
-                  onPress={() => openDriverModal(carriage)}
-                  disabled={assigningDriver}
-                >
-                  <Ionicons name="sync-outline" size={16} color="#fff" />
-                  <Text style={styles.buttonText}>Change Driver</Text>
-                </TouchableOpacity>
-              )}
-              {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity 
-                    style={styles.reassignButton}
-                    onPress={() => openDriverModal(carriage)}
-                    disabled={assigningDriver}
-                  >
-                    <Ionicons name="swap-horizontal-outline" size={16} color="#fff" />
-                    <Text style={styles.buttonText}>Reassign</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => openEditModal(carriage)}
-                    disabled={savingEdit}
-                  >
-                    <Ionicons name="pencil-outline" size={16} color={MAROON} />
-                    <Text style={[styles.buttonText, { color: MAROON }]}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
+          <View style={{ alignItems: 'flex-end' }}>
+            <TouchableOpacity style={styles.seeBtn} onPress={() => openSheet(carriage)}>
+              <Text style={styles.seeBtnText}>See Details</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {!isDriver && (
+          <View style={styles.actionButtonsContainer}>
+            {!hasDriverSelected && (
+              <TouchableOpacity 
+                style={styles.actionBtn}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name="person-add-outline" size={16} color={MAROON} />
+              </TouchableOpacity>
+            )}
+            {hasDriverSelected && carriage.status === 'waiting_driver_acceptance' && (
+              <TouchableOpacity 
+                style={styles.actionBtn}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name="sync-outline" size={16} color={MAROON} />
+              </TouchableOpacity>
+            )}
+            {hasDriverSelected && carriage.status !== 'waiting_driver_acceptance' && (
+              <TouchableOpacity 
+                style={styles.actionBtn}
+                onPress={() => openDriverModal(carriage)}
+                disabled={assigningDriver}
+              >
+                <Ionicons name="swap-horizontal-outline" size={16} color={MAROON} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => openEditModal(carriage)}
+              disabled={savingEdit}
+            >
+              <Ionicons name="create-outline" size={16} color={MAROON} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
+
+  // Add bottom sheet modal for details (similar to OwnerHomeScreen)
+  const openSheet = (item) => {
+    setSelected(item);
+    setVisible(true);
+  };
+
+  const closeSheet = () => {
+    setVisible(false);
+    setSelected(null);
+  };
+
+  const [selected, setSelected] = useState(null);
+  const [visible, setVisible] = useState(false);
+
+  // Helper functions for status styling (matching OwnerHomeScreen)
+  const getStatusStyle = (status) => {
+    const statusStyles = {
+      available: { backgroundColor: '#ECFDF5' },
+      in_use: { backgroundColor: '#FEF2F2' },
+      maintenance: { backgroundColor: '#FFFBEB' },
+      waiting_driver_acceptance: { backgroundColor: '#FFFBEB' },
+      driver_assigned: { backgroundColor: '#EFF6FF' },
+      not_usable: { backgroundColor: '#FEF2F2' },
+      suspended: { backgroundColor: '#FFFBEB' },
+      out_of_service: { backgroundColor: '#FEF2F2' },
+    };
+    return statusStyles[status?.toLowerCase()] || { backgroundColor: '#F9FAFB' };
+  };
+
+  const getStatusColor = (status) => {
+    const statusColors = {
+      available: '#10B981',
+      in_use: '#EF4444',
+      maintenance: '#F59E0B',
+      waiting_driver_acceptance: '#F59E0B',
+      driver_assigned: '#3B82F6',
+      not_usable: '#EF4444',
+      suspended: '#F59E0B',
+      out_of_service: '#EF4444',
+    };
+    return statusColors[status?.toLowerCase()] || '#6B7280';
+  };
+
+  const getStatusIcon = (status) => {
+    const statusIcons = {
+      available: 'checkmark-circle',
+      in_use: 'time',
+      maintenance: 'build',
+      waiting_driver_acceptance: 'hourglass-outline',
+      driver_assigned: 'person-circle',
+      not_usable: 'close-circle',
+      suspended: 'pause-circle',
+      out_of_service: 'close-circle',
+    };
+    return statusIcons[status?.toLowerCase()] || 'help-circle';
+  };
+
+  const getStatusText = (status) => {
+    const statusTexts = {
+      available: 'Available',
+      in_use: 'In Use',
+      maintenance: 'Maintenance',
+      waiting_driver_acceptance: 'Pending Driver',
+      driver_assigned: 'Driver Assigned',
+      not_usable: 'Not Usable',
+      suspended: 'Suspended',
+      out_of_service: 'Out of Service',
+    };
+    return statusTexts[status?.toLowerCase()] || 'Unknown';
+  };
+
+  const buildName = (d) => {
+    if (!d) return null;
+    return (
+      d.name ||
+      d.full_name || d.fullName ||
+      (d.first_name || d.last_name ? `${d.first_name || ''} ${d.last_name || ''}`.trim() : null) ||
+      d.user?.name ||
+      (d.user && (d.user.first_name || d.user.last_name) ? `${d.user.first_name || ''} ${d.user.last_name || ''}`.trim() : null) ||
+      d.username ||
+      d.email || (typeof d.email === 'string' ? d.email : null) ||
+      null
+    );
+  };
+
+  const renderDetailsModal = () => (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={closeSheet}>
+      <View style={styles.detailsModalOverlay}>
+        <TouchableOpacity style={styles.detailsBackdrop} activeOpacity={1} onPress={closeSheet} />
+        <View style={styles.detailsSheet}>
+          {selected && (
+            <>
+              <View style={styles.detailsHandle} />
+              <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+                {/* Hero Section */}
+                <View style={styles.detailsHeroSection}>
+                  <Image source={getCarriageImage(selected)} style={styles.detailsHeroImage} />
+                  <View style={styles.detailsHeroOverlay}>
+                    <Text style={styles.detailsHeroCode}>{selected.plate_number || `TC${String(selected.id).slice(-4)}`}</Text>
+                    {selected.status && (
+                      <View style={[styles.detailsHeroStatusBadge, getStatusStyle(selected.status)]}>
+                        <Ionicons name={getStatusIcon(selected.status)} size={14} color={getStatusColor(selected.status)} />
+                        <Text style={[styles.detailsHeroStatusText, { color: getStatusColor(selected.status) }]}>
+                          {getStatusText(selected.status)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Quick Stats */}
+                <View style={styles.detailsQuickStats}>
+                  <View style={styles.detailsStatCard}>
+                    <Ionicons name="people" size={20} color={MAROON} />
+                    <Text style={styles.detailsStatNumber}>{selected.capacity || 'N/A'}</Text>
+                    <Text style={styles.detailsStatLabel}>Capacity</Text>
+                  </View>
+                  <View style={styles.detailsStatCard}>
+                    <Ionicons name="car" size={20} color={MAROON} />
+                    <Text style={styles.detailsStatNumber}>{selected.plate_number ? '✓' : '✗'}</Text>
+                    <Text style={styles.detailsStatLabel}>Plate</Text>
+                  </View>
+                  <View style={styles.detailsStatCard}>
+                    <Ionicons name="person" size={20} color={MAROON} />
+                    <Text style={styles.detailsStatNumber}>{buildName(selected.assigned_driver) || buildName(driverCache[selected.assigned_driver_id]) ? '✓' : '✗'}</Text>
+                    <Text style={styles.detailsStatLabel}>Driver</Text>
+                  </View>
+                </View>
+
+                {/* Details Cards */}
+                <View style={styles.detailsContainer}>
+                  {/* Vehicle Info Card */}
+                  <View style={styles.detailsInfoCard}>
+                    <View style={styles.detailsCardHeader}>
+                      <Ionicons name="car-outline" size={20} color={MAROON} />
+                      <Text style={styles.detailsCardTitle}>Vehicle Information</Text>
+                    </View>
+                    <View style={styles.detailsCardContent}>
+                      <View style={styles.detailsInfoRow}>
+                        <Text style={styles.detailsInfoLabel}>Plate Number</Text>
+                        <Text style={styles.detailsInfoValue}>{selected.plate_number || 'Not assigned'}</Text>
+                      </View>
+                      <View style={styles.detailsInfoRow}>
+                        <Text style={styles.detailsInfoLabel}>Passenger Capacity</Text>
+                        <Text style={styles.detailsInfoValue}>{selected.capacity || 'N/A'} passengers</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Driver Info Card */}
+                  <View style={styles.detailsInfoCard}>
+                    <View style={styles.detailsCardHeader}>
+                      <Ionicons name="person-outline" size={20} color={MAROON} />
+                      <Text style={styles.detailsCardTitle}>Driver Information</Text>
+                    </View>
+                    <View style={styles.detailsCardContent}>
+                      {buildName(selected.assigned_driver) || buildName(driverCache[selected.assigned_driver_id]) ? (
+                        <>
+                          <View style={styles.detailsDriverProfile}>
+                            <View style={styles.detailsDriverAvatar}>
+                              <Ionicons name="person" size={24} color={MAROON} />
+                            </View>
+                            <View style={styles.detailsDriverInfo}>
+                              <Text style={styles.detailsDriverName}>{buildName(selected.assigned_driver) || buildName(driverCache[selected.assigned_driver_id])}</Text>
+                              {(selected.assigned_driver?.email || driverCache[selected.assigned_driver_id]?.email) && (
+                                <Text style={styles.detailsDriverContact}>✉️ {selected.assigned_driver?.email || driverCache[selected.assigned_driver_id]?.email}</Text>
+                              )}
+                              {(selected.assigned_driver?.phone || driverCache[selected.assigned_driver_id]?.phone) && (
+                                <Text style={styles.detailsDriverContact}>📱 {selected.assigned_driver?.phone || driverCache[selected.assigned_driver_id]?.phone}</Text>
+                              )}
+                            </View>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.detailsNoDriverState}>
+                          <Ionicons name="person-add-outline" size={32} color="#ccc" />
+                          <Text style={styles.detailsNoDriverText}>No driver assigned</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Notes Card (if exists) */}
+                  {selected.notes && (
+                    <View style={styles.detailsInfoCard}>
+                      <View style={styles.detailsCardHeader}>
+                        <Ionicons name="document-text-outline" size={20} color={MAROON} />
+                        <Text style={styles.detailsCardTitle}>Notes</Text>
+                      </View>
+                      <View style={styles.detailsCardContent}>
+                        <Text style={styles.detailsNotesText}>{selected.notes}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.detailsCloseBtn} onPress={closeSheet}>
+                  <Ionicons name="close" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.detailsCloseText}>Close</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
   const renderDriverModal = () => (
     <Modal
@@ -947,97 +1182,143 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       visible={showEditModal}
       onRequestClose={() => !savingEdit && setShowEditModal(false)}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Carriage</Text>
-            <TouchableOpacity onPress={() => !savingEdit && setShowEditModal(false)} disabled={savingEdit}>
-              <Ionicons name="close" size={24} color="#666" />
+      <View style={styles.editModalOverlay}>
+        <View style={styles.editModalContent}>
+          {/* Header */}
+          <View style={styles.editModalHeader}>
+            <View style={styles.editModalTitleContainer}>
+              <View style={styles.editModalIconContainer}>
+                <Ionicons name="create-outline" size={20} color={MAROON} />
+              </View>
+              <Text style={styles.editModalTitle}>Edit Carriage</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.editModalCloseButton}
+              onPress={() => !savingEdit && setShowEditModal(false)} 
+              disabled={savingEdit}
+            >
+              <Ionicons name="close" size={20} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
-          <ScrollView style={styles.modalBody}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Plate Number</Text>
-              <TextInput style={[styles.input, { backgroundColor: '#f5f5f5' }]} value={editingCarriage?.plate_number || ''} editable={false} />
+
+          <ScrollView style={styles.editModalBody} showsVerticalScrollIndicator={false}>
+            {/* Plate Number - Read Only */}
+            <View style={styles.editFormSection}>
+              <Text style={styles.editLabel}>Plate Number</Text>
+              <View style={styles.editReadOnlyContainer}>
+                <Ionicons name="car-outline" size={16} color="#9CA3AF" />
+                <Text style={styles.editReadOnlyText}>{editingCarriage?.plate_number || 'N/A'}</Text>
+              </View>
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Capacity *</Text>
-              <View style={styles.capacityContainer}>
+
+            {/* Capacity */}
+            <View style={styles.editFormSection}>
+              <Text style={styles.editLabel}>Passenger Capacity</Text>
+              <View style={styles.editCapacityContainer}>
                 <TouchableOpacity 
-                  style={styles.capacityButton}
+                  style={[styles.editCapacityButton, savingEdit && styles.editButtonDisabled]}
                   onPress={() => setEditForm(prev => ({ ...prev, capacity: String(Math.max(1, (parseInt(prev.capacity) || 4) - 1)) }))}
                   disabled={savingEdit}
                 >
-                  <Ionicons name="remove" size={20} color="#666" />
+                  <Ionicons name="remove" size={18} color={MAROON} />
                 </TouchableOpacity>
-                <TextInput
-                  style={[styles.input, styles.capacityInput, formErrors.capacity && styles.inputError]}
-                  value={editForm.capacity}
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, capacity: text }))}
-                  keyboardType="numeric"
-                  editable={!savingEdit}
-                />
+                <View style={styles.editCapacityDisplay}>
+                  <Text style={styles.editCapacityNumber}>{editForm.capacity}</Text>
+                  <Text style={styles.editCapacityLabel}>passengers</Text>
+                </View>
                 <TouchableOpacity 
-                  style={styles.capacityButton}
+                  style={[styles.editCapacityButton, savingEdit && styles.editButtonDisabled]}
                   onPress={() => setEditForm(prev => ({ ...prev, capacity: String(Math.min(10, (parseInt(prev.capacity) || 4) + 1)) }))}
                   disabled={savingEdit}
                 >
-                  <Ionicons name="add" size={20} color="#666" />
+                  <Ionicons name="add" size={18} color={MAROON} />
                 </TouchableOpacity>
               </View>
-              {formErrors.capacity && <Text style={styles.errorText}>{formErrors.capacity}</Text>}
+              {formErrors.capacity && <Text style={styles.editErrorText}>{formErrors.capacity}</Text>}
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Status *</Text>
-              <View style={styles.statusOptions}>
+
+            {/* Status */}
+            <View style={styles.editFormSection}>
+              <Text style={styles.editLabel}>Status</Text>
+              <View style={styles.editStatusGrid}>
                 {['available', 'in_use', 'maintenance', 'out_of_service'].map((status) => {
                   const statusConfig = {
-                    available: { icon: 'checkmark-circle', color: '#10B981', bgColor: '#ECFDF5', text: 'Available' },
-                    in_use: { icon: 'time', color: '#EF4444', bgColor: '#FEF2F2', text: 'In Use' },
-                    maintenance: { icon: 'build', color: '#F59E0B', bgColor: '#FFFBEB', text: 'Maintenance' },
-                    out_of_service: { icon: 'close-circle', color: '#EF4444', bgColor: '#FEF2F2', text: 'Out of Service' },
+                    available: { icon: 'checkmark-circle', color: '#10B981', text: 'Available' },
+                    in_use: { icon: 'time', color: '#EF4444', text: 'In Use' },
+                    maintenance: { icon: 'build', color: '#F59E0B', text: 'Maintenance' },
+                    out_of_service: { icon: 'close-circle', color: '#EF4444', text: 'Out of Service' },
                   };
+                  const isSelected = editForm.status === status;
                   return (
                     <TouchableOpacity
                       key={status}
                       style={[
-                        styles.statusOption,
-                        editForm.status === status && styles.statusOptionSelected,
-                        { backgroundColor: (statusConfig[status]?.bgColor || '#f5f5f5') }
+                        styles.editStatusCard,
+                        isSelected && styles.editStatusCardSelected,
+                        savingEdit && styles.editButtonDisabled
                       ]}
                       onPress={() => setEditForm(prev => ({ ...prev, status }))}
                       disabled={savingEdit}
                     >
-                      <Ionicons name={(statusConfig[status]?.icon || 'help-circle')} size={16} color={(statusConfig[status]?.color || '#666')} style={styles.statusIcon} />
-                      <Text style={[styles.statusOptionText, { color: (statusConfig[status]?.color || '#666') }, editForm.status === status && styles.statusOptionTextSelected]}>
-                        {status === 'out_of_service' ? 'Out of Service' : (statusConfig[status]?.text || 'Unknown')}
+                      <Ionicons 
+                        name={statusConfig[status]?.icon || 'help-circle'} 
+                        size={20} 
+                        color={isSelected ? '#fff' : (statusConfig[status]?.color || '#666')} 
+                      />
+                      <Text style={[
+                        styles.editStatusText,
+                        { color: isSelected ? '#fff' : (statusConfig[status]?.color || '#666') }
+                      ]}>
+                        {statusConfig[status]?.text || 'Unknown'}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-              {formErrors.status && <Text style={styles.errorText}>{formErrors.status}</Text>}
+              {formErrors.status && <Text style={styles.editErrorText}>{formErrors.status}</Text>}
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Notes (Optional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Any additional notes about this carriage"
-                value={editForm.notes}
-                onChangeText={(text) => setEditForm(prev => ({ ...prev, notes: text }))}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                editable={!savingEdit}
-              />
+
+            {/* Notes */}
+            <View style={styles.editFormSection}>
+              <Text style={styles.editLabel}>Notes</Text>
+              <View style={styles.editNotesContainer}>
+                <TextInput
+                  style={[styles.editNotesInput, savingEdit && styles.editInputDisabled]}
+                  placeholder="Add any notes about this carriage..."
+                  placeholderTextColor="#9CA3AF"
+                  value={editForm.notes}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, notes: text }))}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  editable={!savingEdit}
+                />
+              </View>
             </View>
           </ScrollView>
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton, savingEdit && styles.buttonDisabled]} onPress={() => setShowEditModal(false)} disabled={savingEdit}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+
+          {/* Footer */}
+          <View style={styles.editModalFooter}>
+            <TouchableOpacity 
+              style={[styles.editCancelButton, savingEdit && styles.editButtonDisabled]} 
+              onPress={() => setShowEditModal(false)} 
+              disabled={savingEdit}
+            >
+              <Text style={styles.editCancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.saveButton, savingEdit && styles.buttonDisabled]} onPress={handleUpdateCarriage} disabled={savingEdit}>
-              {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
+            <TouchableOpacity 
+              style={[styles.editSaveButton, savingEdit && styles.editButtonDisabled]} 
+              onPress={handleUpdateCarriage} 
+              disabled={savingEdit}
+            >
+              {savingEdit ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                  <Text style={styles.editSaveButtonText}>Save Changes</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -1048,29 +1329,34 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   // Main render function
   return (
     <View style={styles.container}>
-      <TARTRACKHeader
-        title="My Tartanilla Carriages"
-        onNotificationPress={() => navigation.navigate('NotificationScreen')} 
-      />
-      
-      <View style={styles.headerContainer}>
-        <Text style={styles.heading}>Carriage Management</Text>
-        <Text style={styles.subheading}>
-          {user?.role === 'driver' ? 'View your assigned carriages' : 'Manage your tartanilla carriages and drivers'}
-        </Text>
+      {/* Header */}
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      </View>
+
+      {/* Floating title card */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="car-outline" size={24} color="#6B2E2B" />
+          <Text style={styles.titleText}>My Carriages</Text>
+        </View>
+        {(user?.role === 'owner' || user?.role === 'driver-owner') && (
+          <TouchableOpacity
+            onPress={() => setShowAddModal(true)}
+            style={styles.addButtonHeader}
+          >
+            <Ionicons name="add" size={20} color="#6B2E2B" />
+          </TouchableOpacity>
+        )}
       </View>
       
       {/* Driver Assignment Modal */}
       {renderDriverModal()}
       
-      {(user?.role === 'owner' || user?.role === 'driver-owner') && (
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={() => setShowAddModal(true)}
-        >
-          <Ionicons name="add" size={24} color="#fff" />
-        </TouchableOpacity>
-      )}
+
       
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -1078,19 +1364,17 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           <Text style={styles.loadingText}>Loading carriages...</Text>
         </View>
       ) : (
-        <ScrollView
-          style={styles.scrollView}
+        <FlatList
+          data={carriages}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={({ item }) => renderCarriageCard(item)}
+          contentContainerStyle={styles.content}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          contentContainerStyle={styles.scrollViewContent}
-        >
-          {carriages.length === 0 ? (
-            renderEmptyState()
-          ) : (
-            carriages.map((carriage) => renderCarriageCard(carriage))
-          )}
-        </ScrollView>
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={renderEmptyState}
+        />
       )}
       
       {/* Add Carriage Modal */}
@@ -1283,27 +1567,68 @@ export default function TartanillaCarriagesScreen({ navigation }) {
 
       {/* Edit Carriage Modal */}
       {renderEditModal()}
+      
+      {/* Details Modal */}
+      {renderDetailsModal()}
     </View>
   );
 }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F8F8F8',
   },
-  headerContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+  hero: {
+    backgroundColor: MAROON,
+    paddingTop: 6,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
-  heading: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: MAROON,
-    marginBottom: 4,
+  titleCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
+  titleText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+  addButtonHeader: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8DCD8',
+  },
+  content: {
+    padding: 16,
+  },
+
   waiting_driver_acceptance: {
     icon: 'hourglass-outline',
     color: '#ff8f00',
@@ -1358,187 +1683,113 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 40,
   },
-  // Modern Card Styles
-  carriageCard: {
+  // Tartanilla card styles (matching OwnerHomeScreen design)
+  tartanillaRow: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ECECEC',
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 120,
+    position: 'relative',
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    overflow: 'hidden',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 1,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fafbfc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+  tartanillaImg: {
+    width: 120,
+    height: '100%',
+    resizeMode: 'cover',
   },
-  plateSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  tartanillaInfo: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#e4e4e4ff',
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
   },
-  plateIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f8f9fa',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  plateNumber: {
-    fontSize: 18,
+  tcPlate: {
+    color: '#fff',
+    backgroundColor: MAROON,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
     fontWeight: '700',
-    color: MAROON,
+    alignSelf: 'flex-start',
+    fontSize: 14,
   },
-  headerEditButton: {
-    marginLeft: 8,
-    padding: 4,
-    borderRadius: 6,
+  tcDriver: { 
+    color: '#2C2C2C', 
+    fontSize: 12 
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
     marginLeft: 4,
-  },
-  cardBody: {
-    padding: 20,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  infoItem: {
-    flex: 1,
-    marginRight: 16,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6c757d',
-    marginLeft: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#212529',
-    marginBottom: 2,
-  },
-  infoSubtext: {
-    fontSize: 12,
-    color: '#6c757d',
-    lineHeight: 16,
   },
   alertBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fffbeb',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderLeftWidth: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginTop: 6,
+    borderLeftWidth: 2,
     borderLeftColor: '#F59E0B',
   },
   alertText: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#92400e',
-    marginLeft: 8,
+    marginLeft: 6,
     fontWeight: '500',
   },
-  notesSection: {
-    marginBottom: 16,
-  },
-  notesLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6c757d',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  notesText: {
-    fontSize: 14,
-    color: '#495057',
-    lineHeight: 20,
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-  },
-  actionButtons: {
-    marginTop: 8,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  assignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: MAROON,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  changeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  reassignButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: MAROON,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    flex: 1,
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
+  seeBtn: {
+    marginTop: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: MAROON,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    flex: 1,
+    borderColor: '#E8E8E8',
   },
-  buttonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-    marginLeft: 6,
+  seeBtnText: { 
+    color: '#3D3D3D', 
+    fontWeight: '600', 
+    fontSize: 12 
+  },
+  actionButtonsContainer: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   // Modal Styles
   modalOverlay: {
@@ -1830,5 +2081,418 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6c757d',
     marginLeft: 8,
+  },
+  
+  // Details Modal Styles (matching OwnerHomeScreen)
+  detailsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  detailsBackdrop: { 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  detailsSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: '15%',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  detailsHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  detailsHeroSection: {
+    position: 'relative',
+    height: 160,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  detailsHeroImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  detailsHeroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailsHeroCode: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  detailsHeroStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  detailsHeroStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  detailsQuickStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  detailsStatCard: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  detailsStatNumber: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1F1F1F',
+    marginTop: 8,
+  },
+  detailsStatLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  detailsContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  detailsInfoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    overflow: 'hidden',
+  },
+  detailsCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  detailsCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F1F1F',
+    marginLeft: 8,
+  },
+  detailsCardContent: {
+    padding: 16,
+  },
+  detailsInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8F9FA',
+  },
+  detailsInfoLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    flex: 1,
+  },
+  detailsInfoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F1F1F',
+    flex: 1,
+    textAlign: 'right',
+  },
+  detailsDriverProfile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailsDriverAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  detailsDriverInfo: {
+    flex: 1,
+  },
+  detailsDriverName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F1F1F',
+    marginBottom: 4,
+  },
+  detailsDriverContact: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  detailsNoDriverState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  detailsNoDriverText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  detailsNotesText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+  },
+  detailsCloseBtn: {
+    backgroundColor: MAROON,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  detailsCloseText: { 
+    color: '#fff', 
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  
+  // Modern Edit Modal Styles
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: width * 0.92,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  editModalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editModalIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  editModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  editModalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editModalBody: {
+    paddingHorizontal: 24,
+    maxHeight: 400,
+  },
+  editFormSection: {
+    marginBottom: 24,
+  },
+  editLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  editReadOnlyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  editReadOnlyText: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginLeft: 10,
+    fontWeight: '500',
+  },
+  editCapacityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 8,
+  },
+  editCapacityButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  editCapacityDisplay: {
+    alignItems: 'center',
+    marginHorizontal: 32,
+  },
+  editCapacityNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: MAROON,
+  },
+  editCapacityLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  editStatusGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  editStatusCard: {
+    flex: 1,
+    minWidth: '45%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  editStatusCardSelected: {
+    backgroundColor: MAROON,
+    borderColor: MAROON,
+  },
+  editStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  editNotesContainer: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  editNotesInput: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#374151',
+    minHeight: 80,
+  },
+  editInputDisabled: {
+    opacity: 0.6,
+  },
+  editButtonDisabled: {
+    opacity: 0.5,
+  },
+  editErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 8,
+    marginLeft: 4,
+  },
+  editModalFooter: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 12,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  editCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  editSaveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: MAROON,
+    gap: 8,
+  },
+  editSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

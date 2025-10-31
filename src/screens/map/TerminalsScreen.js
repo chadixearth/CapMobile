@@ -24,11 +24,22 @@ const TerminalsScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
   const [terminals, setTerminals] = useState([]);
   const [mapData, setMapData] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     fetchActiveRides();
     loadMapData();
+    loadCurrentUser();
   }, []);
+
+  const loadCurrentUser = async () => {
+    try {
+      const user = await getCurrentUser();
+      setCurrentUser(user);
+    } catch (error) {
+      console.error('Error loading current user:', error);
+    }
+  };
 
   const loadMapData = async () => {
     try {
@@ -110,27 +121,29 @@ const TerminalsScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.toggleContainer}>
         <TouchableOpacity 
-          style={[styles.toggleButton, !showRides && styles.activeToggle]}
+          style={[styles.toggleButton, !showRides && styles.activeToggle, currentUser?.role === 'owner' && styles.singleToggle]}
           onPress={() => setShowRides(false)}
         >
           <Ionicons name="location-outline" size={20} color={!showRides ? '#fff' : '#6B2E2B'} />
           <Text style={[styles.toggleText, !showRides && styles.activeToggleText]}>Terminals</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.toggleButton, showRides && styles.activeToggle]}
-          onPress={() => setShowRides(true)}
-        >
-          <Ionicons name="car-outline" size={20} color={showRides ? '#fff' : '#6B2E2B'} />
-          <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>My Rides</Text>
-          {activeRides.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{activeRides.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {currentUser?.role !== 'owner' && (
+          <TouchableOpacity 
+            style={[styles.toggleButton, showRides && styles.activeToggle]}
+            onPress={() => setShowRides(true)}
+          >
+            <Ionicons name="car-outline" size={20} color={showRides ? '#fff' : '#6B2E2B'} />
+            <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>My Rides</Text>
+            {activeRides.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{activeRides.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
-      {showRides ? (
+      {showRides && currentUser?.role !== 'owner' ? (
         <View style={styles.ridesContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -250,6 +263,9 @@ const styles = StyleSheet.create({
   },
   activeToggleText: {
     color: '#fff',
+  },
+  singleToggle: {
+    flex: 1,
   },
   badge: {
     position: 'absolute',

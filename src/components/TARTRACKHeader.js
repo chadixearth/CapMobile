@@ -32,9 +32,9 @@ const TARTRACKHeader = ({
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, containerStyle]}>
       <View style={[styles.header, headerStyle]}>
-        {/* Left: Back button OR logo */}
+        {/* Left: Back button and/or logo */}
         <View style={styles.leftCluster}>
-          {showBack ? (
+          {showBack && (
             <TouchableOpacity
               style={styles.leftBtn}
               onPress={onBackPress}
@@ -44,13 +44,12 @@ const TARTRACKHeader = ({
             >
               <Ionicons name="arrow-back" size={26} color={tint} />
             </TouchableOpacity>
-          ) : (
-            <Image
-              source={logoSource || defaultLogo}
-              style={styles.logo}
-              resizeMode="contain"
-            />
           )}
+          <Image
+            source={logoSource || defaultLogo}
+            style={[styles.logo, showBack && styles.logoWithBack]}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Right: (optional) Message + Notification */}
@@ -126,6 +125,11 @@ const styles = StyleSheet.create({
   logo: {
     width: 160,
     height: 37,
+  },
+  logoWithBack: {
+    width: 120,
+    height: 28,
+    marginLeft: 8,
   },
 
   /* Right */
