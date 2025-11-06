@@ -28,6 +28,7 @@ import { supabase } from '../../services/supabase';
 
 import { getDriverEarningsStats } from '../../services/Earnings/EarningsService';
 import BreakevenNotificationManager from '../../services/breakeven';
+import NotificationScheduler from '../../services/notificationScheduler';
 import { exportBreakevenImage } from '../../services/pdfExportService';
 
 import {
@@ -226,6 +227,7 @@ export default function EarningsScreen({ navigation, route }) {
   const driverId = useDriverId(route);
 
   const latestReqRef = useRef(0);
+  const notificationSchedulerInitialized = useRef(false);
 
   // UI
   const [frequency, setFrequency] = useState('Daily'); // Daily | Weekly | Monthly
@@ -465,10 +467,14 @@ export default function EarningsScreen({ navigation, route }) {
             EXPENSES_META_KEY(driverId, 'today'),
             JSON.stringify({ updatedAt: Date.now() })
           );
-          // Clear notification check data for new day
-          await AsyncStorage.removeItem(`last_notification_check_${driverId}`);
           // Clear dismissed notifications for new day
           BreakevenNotificationManager.clearBreakevenState(driverId);
+          
+          // Restart notification scheduler for new day
+          if (notificationSchedulerInitialized.current) {
+            NotificationScheduler.stopScheduledNotifications(driverId);
+            NotificationScheduler.startScheduledNotifications(driverId);
+          }
         } catch {}
 
         // Refresh tiles/summary with the new daily window
@@ -670,6 +676,25 @@ export default function EarningsScreen({ navigation, route }) {
     [fetchBreakevenBlock]
   );
 
+  // Initialize notification scheduler for daily notifications
+  useEffect(() => {
+    if (driverId && frequency === 'Daily' && !notificationSchedulerInitialized.current) {
+      NotificationScheduler.initialize();
+      NotificationScheduler.startScheduledNotifications(driverId);
+      notificationSchedulerInitialized.current = true;
+      
+      console.log('[DriverBreakevenScreen] Notification scheduler initialized for driver:', driverId);
+    }
+    
+    // Cleanup when component unmounts or driver changes
+    return () => {
+      if (notificationSchedulerInitialized.current) {
+        NotificationScheduler.stopScheduledNotifications(driverId);
+        notificationSchedulerInitialized.current = false;
+      }
+    };
+  }, [driverId, frequency]);
+
   // Load chart data when frequency changes
   const loadChartData = useCallback(async () => {
     if (!driverId) return;
@@ -741,42 +766,22 @@ export default function EarningsScreen({ navigation, route }) {
         );
       }
 
-      // Check for breakeven notifications (only for Daily frequency and significant changes)
+      // Store current breakeven data for scheduled notifications (Daily only)
       if (frequency === 'Daily' && d && t > 0) {
         try {
           const currentData = {
             expenses: t,
             revenue_period: Number(d.revenue_period || 0),
             total_bookings: Number(d.total_bookings || 0),
-            bookings_needed: Number(d.bookings_needed || 0)
+            bookings_needed: Number(d.bookings_needed || 0),
+            timestamp: Date.now()
           };
           
-          // Only check notifications if there's a significant change (avoid spam)
-          const lastCheck = await AsyncStorage.getItem(`last_notification_check_${driverId}`);
-          const lastCheckData = lastCheck ? JSON.parse(lastCheck) : null;
-          const now = Date.now();
+          // Store data for scheduled notifications (no immediate notification)
+          await AsyncStorage.setItem(`breakeven_last_${driverId}`, JSON.stringify(currentData));
           
-          // Check if enough time has passed (minimum 30 minutes) or significant data change
-          const timeDiff = lastCheckData ? (now - lastCheckData.timestamp) : Infinity;
-          const significantChange = !lastCheckData || 
-            Math.abs(currentData.expenses - (lastCheckData.expenses || 0)) >= 50 ||
-            Math.abs(currentData.revenue_period - (lastCheckData.revenue_period || 0)) >= 100 ||
-            currentData.total_bookings !== (lastCheckData.total_bookings || 0);
-          
-          if (timeDiff > 30 * 60 * 1000 || significantChange) { // 30 minutes
-            await BreakevenNotificationManager.checkBreakevenMilestones(
-              driverId,
-              currentData
-            );
-            
-            // Store last check data
-            await AsyncStorage.setItem(`last_notification_check_${driverId}`, JSON.stringify({
-              ...currentData,
-              timestamp: now
-            }));
-          }
         } catch (error) {
-          console.warn('Breakeven notification check failed:', error);
+          console.warn('Failed to store breakeven data for notifications:', error);
         }
       }
     }, 200);

@@ -29,6 +29,7 @@ import { createRideBooking, getRoutesByPickup } from '../../services/rideHailing
 import { getCurrentUser } from '../../services/authService';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { useScreenAutoRefresh } from '../../services/dataInvalidationService';
+import { useAuth } from '../../hooks/useAuth';
 
 const API_BASE_URL = apiBaseUrl();
 import { tourPackageService } from '../../services/tourpackage/fetchPackage';
@@ -46,7 +47,7 @@ const TERMINALS = [
 const CEBU_CITY_REGION = { latitude: 10.295, longitude: 123.89, latitudeDelta: 0.008, longitudeDelta: 0.008, zoom: 15 };
 
 export default function TouristHomeScreen({ navigation }) {
-
+  const { role } = useAuth();
 
   const [search, setSearch] = useState('');
   const [pickup, setPickup] = useState(null);
@@ -933,13 +934,14 @@ export default function TouristHomeScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Floating action buttons */}
-      <View style={styles.fabContainer}>
-
-        <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
-          <Ionicons name="car" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {/* Floating action buttons - Only show for tourists */}
+      {role === 'tourist' && (
+        <View style={styles.fabContainer}>
+          <TouchableOpacity style={styles.fab} onPress={openRideSheet} activeOpacity={0.9}>
+            <Ionicons name="car" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ========= Bottom Sheet Modal ========= */}
       <Modal visible={sheetVisible} transparent animationType="none" onRequestClose={() => setSheetVisible(false)}>

@@ -451,10 +451,7 @@ const LeafletMapView = ({
           // Fit bounds for all coordinates
           var allCoords = [];
           
-          // Add test markers at known locations
-          L.marker([10.3157, 123.8854]).addTo(map).bindPopup('Test Marker 1');
-          L.marker([10.3187, 123.9064]).addTo(map).bindPopup('Test Marker 2');
-          console.log('✅ Added 2 test markers');
+
           
           // Add marker coordinates
           markers.forEach(function(marker) {

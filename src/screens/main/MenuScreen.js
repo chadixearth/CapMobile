@@ -101,9 +101,9 @@ export default function MenuScreen({ navigation }) {
   const doLogout = async () => {
     setLoggingOut(true);
     try {
-      // Check for active rides before logout
+      // Check for active rides before logout (only for tourists)
       const currentUser = await getCurrentUser();
-      if (currentUser?.id) {
+      if (currentUser?.id && role === 'tourist') {
         const activeRidesResult = await getMyActiveRides(currentUser.id);
         if (activeRidesResult.success && activeRidesResult.data && activeRidesResult.data.length > 0) {
           Alert.alert(

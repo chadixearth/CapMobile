@@ -10,6 +10,20 @@ class BreakevenNotificationManager {
     deficitWarningThreshold: 200, // Warn when deficit exceeds this amount
   };
   static dismissedNotifications = new Set(); // Track dismissed notifications
+  static scheduledTimes = [12, 22]; // 12 PM (noon) and 10 PM
+  static lastNotificationTimes = new Map(); // Track last notification time for each driver
+
+  /**
+   * Mark that notification was sent at this time
+   */
+  static markNotificationSent(driverId) {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const today = now.toDateString();
+    const notifKey = `${driverId}_${today}_${currentHour}`;
+    
+    this.lastNotificationTimes.set(notifKey, now.getTime());
+  }
 
   /**
    * Check if driver has reached breakeven milestones and send notifications
@@ -34,68 +48,18 @@ class BreakevenNotificationManager {
         return; // Skip if dismissed for today
       }
 
-      // Get previous state from storage if not provided
-      if (!previousData) {
-        try {
-          const stored = await AsyncStorage.getItem(`breakeven_last_${driverId}`);
-          previousData = stored ? JSON.parse(stored) : null;
-        } catch (e) {
-          previousData = null;
-        }
-      }
+      // This method is now only called by the notification scheduler
+      // Send daily breakeven summary notification
+      await this.sendDailyBreakevenSummary(driverId, {
+        expenses,
+        revenue,
+        profit,
+        ridesCompleted,
+        ridesNeeded
+      });
 
-      const previousProfit = previousData ? (parseFloat(previousData.revenue || 0) - parseFloat(previousData.expenses || 0)) : -1;
-      const wasBreakeven = previousProfit >= 0;
-      const wasProfitable = previousProfit > 0;
-
-      // Check for breakeven achievement
-      if (profit >= 0 && !wasBreakeven) {
-        await this.sendBreakevenAchievedNotification(driverId, {
-          expenses,
-          revenue,
-          ridesCompleted,
-          ridesNeeded
-        });
-      }
-
-      // Check for profit achievement
-      if (profit > 0 && !wasProfitable) {
-        await this.sendProfitAchievedNotification(driverId, {
-          profit,
-          revenue,
-          expenses
-        });
-      }
-
-      // Check for profit milestones
-      if (profit > 0) {
-        const currentMilestone = this.notificationThresholds.profitMilestones.find(
-          milestone => profit >= milestone && (previousProfit < milestone || previousProfit <= 0)
-        );
-        
-        if (currentMilestone) {
-          await this.sendProfitMilestoneNotification(driverId, {
-            milestone: currentMilestone,
-            actualProfit: profit
-          });
-        }
-      }
-
-      // Check for deficit warning (only once per day)
-      if (profit < 0 && ridesCompleted > 0) {
-        const deficit = Math.abs(profit);
-        if (deficit >= this.notificationThresholds.deficitWarningThreshold) {
-          const lastDeficitWarning = await AsyncStorage.getItem(`deficit_warning_${driverId}_${today}`);
-          if (!lastDeficitWarning) {
-            await this.sendDeficitWarningNotification(driverId, {
-              deficit,
-              ridesRemaining: Math.max(0, ridesNeeded - ridesCompleted),
-              expenses
-            });
-            await AsyncStorage.setItem(`deficit_warning_${driverId}_${today}`, Date.now().toString());
-          }
-        }
-      }
+      // Mark notification as sent for this time slot
+      this.markNotificationSent(driverId);
 
       // Store current state for next comparison
       try {
@@ -115,12 +79,42 @@ class BreakevenNotificationManager {
   }
 
   /**
-   * Send breakeven achieved notification
+   * Send daily breakeven summary notification
    */
-  static async sendBreakevenAchievedNotification(driverId, data) {
+  static async sendDailyBreakevenSummary(driverId, data) {
     try {
-      const title = '🎯 Breakeven Achieved!';
-      const message = `Great job! You've reached your breakeven point with ₱${data.revenue.toLocaleString()} revenue covering ₱${data.expenses.toLocaleString()} expenses. You completed ${data.ridesCompleted} out of ${data.ridesNeeded} needed rides.`;
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      let title, message;
+      
+      if (currentHour === 12) {
+        // 12 PM - Midday update
+        if (data.profit >= 0) {
+          title = '🎯 Midday Update: On Track!';
+          message = `Great progress! You've earned ₱${data.revenue.toLocaleString()} so far today. You're ${data.profit >= 0 ? 'at breakeven' : '₱' + Math.abs(data.profit).toLocaleString() + ' from breakeven'}. Keep it up!`;
+        } else {
+          const remaining = Math.abs(data.profit);
+          const ridesLeft = Math.max(0, data.ridesNeeded - data.ridesCompleted);
+          title = '📊 Midday Update';
+          message = `You've completed ${data.ridesCompleted} rides today. Need ₱${remaining.toLocaleString()} more to reach breakeven (about ${ridesLeft} more rides). You're making progress!`;
+        }
+      } else if (currentHour === 22) {
+        // 10 PM - End of day summary
+        if (data.profit > 0) {
+          title = '🌟 Daily Summary: Profitable Day!';
+          message = `Excellent work today! You earned ₱${data.profit.toLocaleString()} profit with ${data.ridesCompleted} rides. Revenue: ₱${data.revenue.toLocaleString()}, Expenses: ₱${data.expenses.toLocaleString()}.`;
+        } else if (data.profit === 0) {
+          title = '🎯 Daily Summary: Breakeven Achieved!';
+          message = `Perfect! You hit breakeven today with ${data.ridesCompleted} rides. Revenue: ₱${data.revenue.toLocaleString()} exactly covered your expenses.`;
+        } else {
+          const deficit = Math.abs(data.profit);
+          title = '📊 Daily Summary';
+          message = `Today's summary: ${data.ridesCompleted} rides, ₱${data.revenue.toLocaleString()} revenue. You're ₱${deficit.toLocaleString()} from breakeven. Tomorrow's a new opportunity!`;
+        }
+      } else {
+        return; // Don't send notifications at other times
+      }
       
       await NotificationService.sendNotification(
         [driverId],
@@ -132,95 +126,13 @@ class BreakevenNotificationManager {
 
       // Show local notification immediately
       await NotificationService.sendLocalNotification(title, message, {
-        type: 'breakeven',
+        type: 'breakeven_summary',
+        time: currentHour === 12 ? 'midday' : 'evening',
         driverId
       });
 
     } catch (error) {
-      console.error('Error sending breakeven achieved notification:', error);
-    }
-  }
-
-  /**
-   * Send profit achieved notification
-   */
-  static async sendProfitAchievedNotification(driverId, data) {
-    try {
-      const title = '💰 You\'re Now Profitable!';
-      const message = `Excellent! You're now earning profit of ₱${data.profit.toLocaleString()}. Your revenue (₱${data.revenue.toLocaleString()}) exceeds your expenses (₱${data.expenses.toLocaleString()}). Keep up the great work!`;
-      
-      await NotificationService.sendNotification(
-        [driverId],
-        title,
-        message,
-        'profit',
-        'driver'
-      );
-
-      // Show local notification immediately
-      await NotificationService.sendLocalNotification(title, message, {
-        type: 'profit',
-        driverId
-      });
-
-    } catch (error) {
-      console.error('Error sending profit achieved notification:', error);
-    }
-  }
-
-  /**
-   * Send profit milestone notification
-   */
-  static async sendProfitMilestoneNotification(driverId, data) {
-    try {
-      const title = `🏆 ₱${data.milestone.toLocaleString()} Profit Milestone!`;
-      const message = `Amazing achievement! You've reached ₱${data.milestone.toLocaleString()} in profit (actual: ₱${data.actualProfit.toLocaleString()}). Your hard work is paying off!`;
-      
-      await NotificationService.sendNotification(
-        [driverId],
-        title,
-        message,
-        'milestone',
-        'driver'
-      );
-
-      // Show local notification immediately
-      await NotificationService.sendLocalNotification(title, message, {
-        type: 'milestone',
-        milestone: data.milestone,
-        driverId
-      });
-
-    } catch (error) {
-      console.error('Error sending profit milestone notification:', error);
-    }
-  }
-
-  /**
-   * Send deficit warning notification
-   */
-  static async sendDeficitWarningNotification(driverId, data) {
-    try {
-      const title = '📊 Breakeven Update';
-      const message = `You're ₱${data.deficit.toLocaleString()} away from breakeven. Complete about ${data.ridesRemaining} more rides to cover your ₱${data.expenses.toLocaleString()} expenses. You're making progress!`;
-      
-      await NotificationService.sendNotification(
-        [driverId],
-        title,
-        message,
-        'update',
-        'driver'
-      );
-
-      // Show local notification immediately
-      await NotificationService.sendLocalNotification(title, message, {
-        type: 'deficit_warning',
-        deficit: data.deficit,
-        driverId
-      });
-
-    } catch (error) {
-      console.error('Error sending deficit warning notification:', error);
+      console.error('Error sending daily breakeven summary:', error);
     }
   }
 
@@ -293,6 +205,15 @@ class BreakevenNotificationManager {
       const today = new Date().toDateString();
       const dismissKey = `${driverId}_${today}`;
       this.dismissedNotifications.delete(dismissKey);
+      
+      // Clear old notification times (keep only today's)
+      const keysToDelete = [];
+      for (const [key] of this.lastNotificationTimes) {
+        if (!key.includes(today)) {
+          keysToDelete.push(key);
+        }
+      }
+      keysToDelete.forEach(key => this.lastNotificationTimes.delete(key));
     } catch (error) {
       console.warn('Failed to clear breakeven state:', error);
     }
@@ -305,6 +226,11 @@ class BreakevenNotificationManager {
     const today = new Date().toDateString();
     const dismissKey = `${driverId}_${today}`;
     this.dismissedNotifications.add(dismissKey);
+    
+    // Also clear notification times for today to prevent further notifications
+    const currentHour = new Date().getHours();
+    const notifKey = `${driverId}_${today}_${currentHour}`;
+    this.lastNotificationTimes.set(notifKey, Date.now());
   }
 
   /**

@@ -211,19 +211,26 @@ export function processRoadHighlightsForMap(roadHighlights) {
       coordinates = [];
     }
     
-    // Validate coordinate format
-    const validCoordinates = coordinates.filter(coord => {
-      if (!Array.isArray(coord) || coord.length < 2) {
-        console.warn(`🛣️ Invalid coordinate format in ${road.name}:`, coord);
-        return false;
+    // Validate and convert coordinate format
+    const validCoordinates = coordinates.map(coord => {
+      // Handle {lat, lng} object format
+      if (coord && typeof coord === 'object' && coord.lat !== undefined && coord.lng !== undefined) {
+        const lat = parseFloat(coord.lat);
+        const lng = parseFloat(coord.lng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return [lat, lng];
+        }
       }
-      const [lat, lng] = coord;
-      if (isNaN(lat) || isNaN(lng)) {
-        console.warn(`🛣️ Invalid lat/lng in ${road.name}:`, lat, lng);
-        return false;
+      // Handle [lat, lng] array format
+      if (Array.isArray(coord) && coord.length >= 2) {
+        const lat = parseFloat(coord[0]);
+        const lng = parseFloat(coord[1]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return [lat, lng];
+        }
       }
-      return true;
-    });
+      return null;
+    }).filter(coord => coord !== null);
     
     console.log(`🛣️ Road ${road.name}: ${validCoordinates.length}/${coordinates.length} valid coordinates`);
     
@@ -314,12 +321,21 @@ export function findNearestRoadPoint(roads, latitude, longitude, maxDistance = I
     }
 
     coordinates.forEach((coord, coordIndex) => {
-      if (!Array.isArray(coord) || coord.length < 2) {
+      let roadLat, roadLng;
+      
+      // Handle {lat, lng} object format
+      if (coord && typeof coord === 'object' && coord.lat !== undefined && coord.lng !== undefined) {
+        roadLat = parseFloat(coord.lat);
+        roadLng = parseFloat(coord.lng);
+      }
+      // Handle [lat, lng] array format
+      else if (Array.isArray(coord) && coord.length >= 2) {
+        roadLat = parseFloat(coord[0]);
+        roadLng = parseFloat(coord[1]);
+      } else {
         console.warn(`Invalid coord ${coordIndex} for road ${road.name}:`, coord);
         return;
       }
-      
-      const [roadLat, roadLng] = coord;
       if (!roadLat || !roadLng) {
         console.warn(`Invalid lat/lng for road ${road.name}:`, roadLat, roadLng);
         return;

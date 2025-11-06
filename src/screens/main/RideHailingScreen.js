@@ -71,9 +71,34 @@ export default function RideHailingScreen({ navigation }) {
   const loadMapData = async () => {
     try {
       const data = await fetchMapData({ forceRefresh: false });
-      setMapData(data);
+      
+      // Load all road highlights with pickup and dropoff points
+      const { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
+      const roadData = await getAllRoadHighlightsWithPoints();
+      
+      if (roadData.success) {
+        const processedRoads = processRoadHighlightsForMap(roadData.roadHighlights);
+        
+        // Combine all points (pickup, dropoff, and existing points)
+        const allPoints = [
+          ...(data?.points || []),
+          ...(roadData.pickupPoints || []),
+          ...(roadData.dropoffPoints || [])
+        ];
+        
+        setMapData({ 
+          ...data, 
+          points: allPoints,
+          roads: processedRoads,
+          allRoadHighlights: roadData.roadHighlights
+        });
+      } else {
+        setMapData(data);
+      }
     } catch (error) {
       console.error('Error loading map data:', error);
+      const data = await fetchMapData({ forceRefresh: false });
+      setMapData(data);
     }
   };
 
@@ -156,7 +181,7 @@ export default function RideHailingScreen({ navigation }) {
       setPickupLocation(location);
       setPickupAddress(location.name || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
       
-      // Load road highlights for pickup point
+      // Highlight specific routes for selected pickup point
       if ((location.pointType === 'pickup' || location.point_type === 'pickup') && location.id) {
         try {
           const routeResult = await getRoutesByPickup(location.id);
@@ -164,8 +189,19 @@ export default function RideHailingScreen({ navigation }) {
           if (routeResult.success && routeResult.data?.road_highlights) {
             const { processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
             const processedRoads = processRoadHighlightsForMap(routeResult.data.road_highlights);
-            console.log('Processed roads:', processedRoads);
-            setMapData(prev => ({ ...prev, roads: processedRoads }));
+            console.log('Processed roads for pickup:', processedRoads);
+            // Combine with existing roads, highlighting the selected routes
+            const allRoads = mapData?.allRoadHighlights || [];
+            const enhancedRoads = allRoads.map(road => {
+              const isSelectedRoute = processedRoads.find(pr => pr.id === road.id);
+              if (isSelectedRoute) {
+                return { ...road, stroke_color: routeResult.data.color, weight: 6, opacity: 1.0 };
+              }
+              return { ...road, stroke_color: '#CCCCCC', weight: 2, opacity: 0.4 };
+            });
+            const { processRoadHighlightsForMap: processForMap } = await import('../../services/roadHighlightsService');
+            const finalRoads = processForMap(enhancedRoads);
+            setMapData(prev => ({ ...prev, roads: finalRoads }));
           }
         } catch (error) {
           console.error('Error loading road highlights:', error);
@@ -486,7 +522,7 @@ export default function RideHailingScreen({ navigation }) {
           <View style={styles.mapInstructions}>
             <Text style={styles.instructionText}>
               {selectingLocation === 'pickup' 
-                ? 'Tap on a terminal marker or anywhere on the map to select pickup location'
+                ? 'Blue lines show available routes. Tap on a terminal marker or anywhere on the map to select pickup location'
                 : 'Tap anywhere on the map to select drop-off location'
               }
             </Text>

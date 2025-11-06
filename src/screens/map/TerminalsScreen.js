@@ -8,6 +8,7 @@ import { getMyActiveRides } from '../../services/rideHailingService';
 import { getCurrentUser } from '../../services/authService';
 import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
+import { useAuth } from '../../hooks/useAuth';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -17,6 +18,7 @@ const DEFAULT_REGION = {
 };
 
 const TerminalsScreen = ({ navigation, route }) => {
+  const { role } = useAuth();
   const type = route?.params?.type || 'pickup';
   const [selectedId, setSelectedId] = useState(null);
   const [activeRides, setActiveRides] = useState([]);
@@ -26,9 +28,12 @@ const TerminalsScreen = ({ navigation, route }) => {
   const [mapData, setMapData] = useState(null);
 
   useEffect(() => {
-    fetchActiveRides();
+    // Only fetch active rides for tourists
+    if (role === 'tourist') {
+      fetchActiveRides();
+    }
     loadMapData();
-  }, []);
+  }, [role]);
 
   const loadMapData = async () => {
     try {
@@ -110,27 +115,29 @@ const TerminalsScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.toggleContainer}>
         <TouchableOpacity 
-          style={[styles.toggleButton, !showRides && styles.activeToggle]}
+          style={[styles.toggleButton, !showRides && styles.activeToggle, role !== 'tourist' && styles.singleToggle]}
           onPress={() => setShowRides(false)}
         >
           <Ionicons name="location-outline" size={20} color={!showRides ? '#fff' : '#6B2E2B'} />
           <Text style={[styles.toggleText, !showRides && styles.activeToggleText]}>Terminals</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.toggleButton, showRides && styles.activeToggle]}
-          onPress={() => setShowRides(true)}
-        >
-          <Ionicons name="car-outline" size={20} color={showRides ? '#fff' : '#6B2E2B'} />
-          <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>My Rides</Text>
-          {activeRides.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{activeRides.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {role === 'tourist' && (
+          <TouchableOpacity 
+            style={[styles.toggleButton, showRides && styles.activeToggle]}
+            onPress={() => setShowRides(true)}
+          >
+            <Ionicons name="car-outline" size={20} color={showRides ? '#fff' : '#6B2E2B'} />
+            <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>My Rides</Text>
+            {activeRides.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{activeRides.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
-      {showRides ? (
+      {showRides && role === 'tourist' ? (
         <View style={styles.ridesContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -238,6 +245,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 6,
     position: 'relative',
+  },
+  singleToggle: {
+    backgroundColor: '#6B2E2B',
   },
   activeToggle: {
     backgroundColor: '#6B2E2B',
