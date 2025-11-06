@@ -364,6 +364,68 @@ export async function getOwnerBreakevenHistory({
 }
 
 /**
+ * Save complete breakeven data to breakeven_history
+ */
+export async function saveExpensesForPeriod({
+  driverId,
+  periodType,
+  periodStart,
+  periodEnd,
+  expenses = 0,
+  breakevenData = null,
+}) {
+  try {
+    if (!driverId || !periodType || !periodStart || !periodEnd) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    const exps = Number(expenses || 0);
+    const role = 'driver';
+    
+    // Use provided breakeven data or defaults
+    const revenue = Number(breakevenData?.revenue_period || 0);
+    const profit = Number((revenue - exps).toFixed(2));
+    const ridesNeeded = Number(breakevenData?.bookings_needed || 0);
+    const ridesDone = Number(breakevenData?.total_bookings || 0);
+    const breakdown = breakevenData?.breakdown || {};
+
+    const row = {
+      driver_id: driverId,
+      role: role,
+      period_type: periodType,
+      period_start: periodStart,
+      period_end: periodEnd,
+      expenses: exps,
+      revenue_driver: revenue,
+      profit: profit,
+      rides_needed: ridesNeeded,
+      rides_done: ridesDone,
+      breakeven_hit: profit >= 0,
+      profitable: profit > 0,
+      breakdown: breakdown,
+      snapshot_at: new Date().toISOString(),
+      bucket_tz: 'ph',
+    };
+
+    const { data, error } = await supabase
+      .from('breakeven_history')
+      .upsert(row, { onConflict: 'driver_id,role,period_type,period_start' })
+      .select();
+
+    if (error) {
+      console.error('Supabase error saving breakeven data:', error);
+      return { success: false, error: error.message || 'supabase error' };
+    }
+    
+    console.log('Complete breakeven data saved:', data);
+    return { success: true, data };
+  } catch (e) {
+    console.error('Save breakeven data error:', e);
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
+
+/**
  * Save owner breakeven history based on manual inputs and selected period
  */
 export async function saveOwnerBreakevenHistory({

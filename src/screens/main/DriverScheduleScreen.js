@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { driverScheduleService } from '../../services/driverScheduleService';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 
@@ -26,6 +27,7 @@ export default function DriverScheduleScreen({ navigation }) {
   }, [navigation]);
 
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const [calendar, setCalendar] = useState([]);
   const [schedule, setSchedule] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -258,10 +260,12 @@ export default function DriverScheduleScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <TARTRACKHeader
-          onMessagePress={() => navigation.navigate('Chat')}
-          onNotificationPress={() => navigation.navigate('Notification')}
-        />
+        <View style={styles.hero}>
+          <TARTRACKHeader
+            onMessagePress={() => navigation.navigate('Chat')}
+            onNotificationPress={() => navigation.navigate('Notification')}
+          />
+        </View>
         <View style={styles.loadingContainer}>
           <Animated.View style={[styles.logoContainer, { opacity: pulseAnim }]}>
             <Image 
@@ -283,32 +287,36 @@ export default function DriverScheduleScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TARTRACKHeader
-        onMessagePress={() => navigation.navigate('Chat')}
-        onNotificationPress={() => navigation.navigate('Notification')}
-      />
+      {/* Header */}
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      </View>
+
+      {/* Floating title card with month navigation */}
+      <View style={styles.titleCard}>
+        <TouchableOpacity style={styles.navButton} onPress={() => changeMonth(-1)}>
+          <Ionicons name="chevron-back" size={20} color="#6B2E2B" />
+        </TouchableOpacity>
+        <View style={styles.monthTitleContainer}>
+          <Text style={styles.monthTitle}>
+            {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </Text>
+          <Text style={styles.monthSubtitle}>
+            {calendar.length} booking{calendar.length !== 1 ? 's' : ''} • {schedule.length} day{schedule.length !== 1 ? 's' : ''} scheduled
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.navButton} onPress={() => changeMonth(1)}>
+          <Ionicons name="chevron-forward" size={20} color="#6B2E2B" />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         style={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Month Navigation */}
-        <View style={styles.monthHeader}>
-          <TouchableOpacity style={styles.navButton} onPress={() => changeMonth(-1)}>
-            <Ionicons name="chevron-back" size={20} color={MAROON} />
-          </TouchableOpacity>
-          <View style={styles.monthTitleContainer}>
-            <Text style={styles.monthTitle}>
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </Text>
-            <Text style={styles.monthSubtitle}>
-              {calendar.length} booking{calendar.length !== 1 ? 's' : ''} • {schedule.length} day{schedule.length !== 1 ? 's' : ''} scheduled
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.navButton} onPress={() => changeMonth(1)}>
-            <Ionicons name="chevron-forward" size={20} color={MAROON} />
-          </TouchableOpacity>
-        </View>
 
         {/* Calendar */}
         <View style={styles.calendarContainer}>
@@ -922,6 +930,59 @@ export default function DriverScheduleScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F8F8',
+  },
+  hero: {
+    backgroundColor: MAROON,
+    paddingTop: 6,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  navButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F8F8',
+  },
+  monthTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1F2937',
+  },
+  monthSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
   container: {
     flex: 1,
     backgroundColor: '#f8f8f8'

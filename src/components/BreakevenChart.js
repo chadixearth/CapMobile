@@ -70,7 +70,7 @@ function niceCeil(n, isDailyData = false) {
   return niceFrac * base;
 }
 
-export default function BreakevenChart({ data = [], currentData = null, timeZone = TIME_ZONE }) {
+export default function BreakevenChart({ data = [], currentData = null, timeZone = TIME_ZONE, frequency = 'Daily', onExportPDF }) {
   // Merge + sort + de-dup (currentData overrides same period)
   const series = useMemo(() => {
     const map = new Map();
@@ -118,7 +118,7 @@ export default function BreakevenChart({ data = [], currentData = null, timeZone
     <View style={styles.container}>
       <View style={styles.titleContainer}>
         <Text style={styles.title}>Breakeven Report — Earnings vs Expenses</Text>
-        <TouchableOpacity style={styles.pdfButton}>
+        <TouchableOpacity style={styles.pdfButton} onPress={onExportPDF}>
           <Ionicons name="document-text" size={20} color={colors.primary} />
         </TouchableOpacity>
       </View>

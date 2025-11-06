@@ -12,7 +12,9 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { useAuth } from '../../hooks/useAuth';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { checkExistingReviews } from '../../services/reviews';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 import { apiBaseUrl } from '../../services/networkConfig';
@@ -24,6 +26,7 @@ const CARD = '#FFFFFF';
 
 export default function BookingHistoryScreen({ navigation }) {
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -380,65 +383,70 @@ export default function BookingHistoryScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Bookings</Text>
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
       </View>
 
-      {/* Categories */}
-      <View style={styles.categoriesContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingRight: 16 }}
-        >
-          {categories.map((category) => {
-            const categoryCount = category.id === 'all' 
-              ? bookings.length 
-              : bookings.filter(b => categorizeBooking(b) === category.id).length;
-            
-            return (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.categoryBtn,
-                  selectedCategory === category.id && styles.categoryBtnActive
-                ]}
-                onPress={() => setSelectedCategory(category.id)}
-              >
-                <Ionicons 
-                  name={category.icon} 
-                  size={16} 
-                  color={selectedCategory === category.id ? '#fff' : MAROON} 
-                />
-                <Text style={[
-                  styles.categoryText,
-                  selectedCategory === category.id && styles.categoryTextActive
-                ]}>
-                  {category.label}
-                </Text>
-                {categoryCount > 0 && (
-                  <View style={[
-                    styles.categoryBadge,
-                    selectedCategory === category.id && styles.categoryBadgeActive
+      {/* Floating title card with categories */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="calendar-outline" size={24} color={MAROON} />
+          <Text style={styles.titleText}>My Bookings</Text>
+        </View>
+        
+        {/* Categories */}
+        <View style={styles.categoriesContainer}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            {categories.map((category) => {
+              const categoryCount = category.id === 'all' 
+                ? bookings.length 
+                : bookings.filter(b => categorizeBooking(b) === category.id).length;
+              
+              return (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryBtn,
+                    selectedCategory === category.id && styles.categoryBtnActive
+                  ]}
+                  onPress={() => setSelectedCategory(category.id)}
+                >
+                  <Ionicons 
+                    name={category.icon} 
+                    size={16} 
+                    color={selectedCategory === category.id ? '#fff' : MAROON} 
+                  />
+                  <Text style={[
+                    styles.categoryText,
+                    selectedCategory === category.id && styles.categoryTextActive
                   ]}>
-                    <Text style={[
-                      styles.categoryBadgeText,
-                      selectedCategory === category.id && styles.categoryBadgeTextActive
+                    {category.label}
+                  </Text>
+                  {categoryCount > 0 && (
+                    <View style={[
+                      styles.categoryBadge,
+                      selectedCategory === category.id && styles.categoryBadgeActive
                     ]}>
-                      {categoryCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+                      <Text style={[
+                        styles.categoryBadgeText,
+                        selectedCategory === category.id && styles.categoryBadgeTextActive
+                      ]}>
+                        {categoryCount}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
       </View>
 
       {/* Content */}
@@ -492,28 +500,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-  header: {
+  hero: {
     backgroundColor: MAROON,
-    paddingTop: 40,
-    paddingBottom: 16,
+    paddingTop: 6,
+    paddingBottom: 18,
     paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  titleCenter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
-  backButton: {
-    marginRight: 16,
-  },
-  headerTitle: {
-    color: '#fff',
+  titleText: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#1F2937',
   },
   categoriesContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    marginTop: 12,
   },
   categoryBtn: {
     flexDirection: 'row',

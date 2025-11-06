@@ -12,6 +12,8 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { getMyTourPackages, togglePackageStatus } from '../../services/tourPackageService';
 
 const MAROON = '#6B2E2B';
@@ -19,6 +21,7 @@ const BG = '#F8F8F8';
 const CARD = '#FFFFFF';
 
 export default function MyTourPackagesScreen({ navigation }) {
+  const { unreadCount } = useNotifications();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -307,14 +310,19 @@ export default function MyTourPackagesScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Tour Packages</Text>
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      </View>
+
+      {/* Floating title card */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="map-outline" size={24} color="#6B2E2B" />
+          <Text style={styles.titleText}>My Tour Packages</Text>
+        </View>
         <TouchableOpacity
           onPress={() => {
             const activePackages = packages.filter(pkg => pkg.is_active);
@@ -336,7 +344,7 @@ export default function MyTourPackagesScreen({ navigation }) {
           }}
           style={styles.addButton}
         >
-          <Ionicons name="add" size={24} color="#fff" />
+          <Ionicons name="add" size={20} color="#6B2E2B" />
         </TouchableOpacity>
       </View>
 
@@ -421,28 +429,52 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-  header: {
+  hero: {
     backgroundColor: MAROON,
-    paddingTop: 40,
-    paddingBottom: 16,
+    paddingTop: 6,
+    paddingBottom: 18,
     paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
-  backButton: {
-    width: 40,
+  titleCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  headerTitle: {
-    color: '#fff',
+  titleText: {
     fontSize: 20,
-    fontWeight: '700',
-    flex: 1,
-    textAlign: 'center',
+    fontWeight: '800',
+    color: '#1F2937',
   },
   addButton: {
     width: 40,
-    alignItems: 'flex-end',
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8DCD8',
   },
   content: {
     flex: 1,

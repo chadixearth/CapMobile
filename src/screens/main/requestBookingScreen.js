@@ -439,11 +439,49 @@ const RequestBookingScreen = ({ route, navigation }) => {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={MAROON} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Request Booking</Text>
-        <View style={{ width: 40 }} />
+        {selectedPackage && (
+          <ImageBackground
+            source={(() => {
+              let imageSource = require('../../../assets/images/tourA.png');
+              if (selectedPackage.photos && selectedPackage.photos.length > 0) {
+                const photo = selectedPackage.photos[0];
+                if (typeof photo === 'string' && photo.startsWith('http')) {
+                  imageSource = { uri: photo };
+                } else if (photo && typeof photo === 'object' && photo.url && photo.url.startsWith('http')) {
+                  imageSource = { uri: photo.url };
+                }
+              }
+              return imageSource;
+            })()}
+            style={styles.headerBg}
+            imageStyle={styles.headerBgImage}
+          >
+            <View style={styles.headerOverlay}>
+              <View style={styles.headerNav}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+                  <Ionicons name="chevron-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Request Booking</Text>
+                <View style={{ width: 40 }} />
+              </View>
+              <View style={styles.headerDescription}>
+                <Text style={styles.packageName}>{selectedPackage.package_name}</Text>
+                <Text style={styles.packageDesc} numberOfLines={2}>
+                  {selectedPackage.description || 'Experience the best of our tour package'}
+                </Text>
+              </View>
+            </View>
+          </ImageBackground>
+        )}
+        {!selectedPackage && (
+          <>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={24} color={MAROON} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Request Booking</Text>
+            <View style={{ width: 40 }} />
+          </>
+        )}
       </View>
 
       {/* CONTENT */}
@@ -454,6 +492,8 @@ const RequestBookingScreen = ({ route, navigation }) => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+
+
         <View style={styles.formOuterPad}>
           {/* FORM CARD — same motif as receipt details card */}
           <View style={styles.formCard}>
@@ -681,27 +721,62 @@ const styles = StyleSheet.create({
   /* Header */
   header: {
     backgroundColor: CARD,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  headerBg: {
     paddingTop: 50,
-    paddingBottom: 16,
+    paddingBottom: 24,
     paddingHorizontal: 16,
+    minHeight: 200,
+  },
+  headerBgImage: {
+    resizeMode: 'cover',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    flexDirection: 'column',
+    paddingTop: 15,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  headerNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
+  },
+  headerDescription: {
+    marginTop: 'auto',
+  },
+  packageName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  packageDesc: {
+    fontSize: 14,
+    color: '#fff',
+    opacity: 0.9,
+    lineHeight: 18,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: BG,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: TEXT,
+    color: '#fff',
   },
 
 
@@ -844,6 +919,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+
 });
 
 export default RequestBookingScreen;

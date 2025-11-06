@@ -11,6 +11,8 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import TARTRACKHeader from '../../components/TARTRACKHeader';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
 import { getUserReviews } from '../../services/reviews';
 
@@ -20,6 +22,7 @@ const CARD = '#FFFFFF';
 
 export default function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const [activeTab, setActiveTab] = useState(user?.role === 'tourist' ? 'given' : 'received');
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -184,14 +187,19 @@ export default function ReviewsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Reviews</Text>
+      <View style={styles.hero}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+      </View>
+
+      {/* Floating title card */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="star-outline" size={24} color="#6B2E2B" />
+          <Text style={styles.titleText}>Reviews</Text>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -268,21 +276,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-  header: {
+  hero: {
     backgroundColor: MAROON,
-    paddingTop: 40,
-    paddingBottom: 16,
+    paddingTop: 6,
+    paddingBottom: 18,
     paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  titleCenter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
-  backButton: {
-    marginRight: 16,
-  },
-  headerTitle: {
-    color: '#fff',
+  titleText: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#1F2937',
   },
   tabContainer: {
     flexDirection: 'row',

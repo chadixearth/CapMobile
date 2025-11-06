@@ -201,28 +201,26 @@ export default function TouristRefundScreen({ navigation }) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* Header with centered title overlay (keeps back arrow on left, not blocked) */}
-      <View style={{ position: 'relative' }}>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.hero}>
         <TARTRACKHeader
-          showBack
-          onBackPress={() => navigation.goBack?.()}
-          // Intentionally not passing title to avoid conflicting layouts inside TARTRACKHeader
-          showMessage={false}
-          showNotification
+          onMessagePress={() => navigation.navigate('Chat')}
           onNotificationPress={() => navigation.navigate('Notification')}
-          containerStyle={{ backgroundColor: MAROON }}
-          headerStyle={{ backgroundColor: MAROON, borderBottomWidth: 0 }}
-          tint="#fff"
         />
-        {/* Centered title that doesn't capture touches */}
-        <View pointerEvents="none" style={styles.headerCenterTitleWrap}>
-          <Text style={styles.headerCenterTitle}>Refunds</Text>
+      </View>
+
+      {/* Floating title card */}
+      <View style={styles.titleCard}>
+        <View style={styles.titleCenter}>
+          <Ionicons name="cash-outline" size={24} color="#6B2E2B" />
+          <Text style={styles.titleText}>Refunds</Text>
         </View>
       </View>
 
+      {/* Content */}
       <ScrollView
-        style={{ flex: 1 }}
+        style={styles.content}
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
@@ -407,20 +405,49 @@ export default function TouristRefundScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // Centered title overlay for TARTRACKHeader
-  headerCenterTitleWrap: {
-    position: 'absolute',
-    left: 56,   // keep clear of back button area
-    right: 56,  // keep clear of right icons (e.g., notifications)
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: BG,
   },
-  headerCenterTitle: {
-    color: '#fff',
+  hero: {
+    backgroundColor: MAROON,
+    paddingTop: 6,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  titleCard: {
+    marginHorizontal: 16,
+    marginTop: -12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#EFE7E4',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  titleCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  titleText: {
+    fontSize: 20,
     fontWeight: '800',
-    fontSize: 16,
+    color: '#1F2937',
+  },
+  content: {
+    flex: 1,
   },
 
   card: {

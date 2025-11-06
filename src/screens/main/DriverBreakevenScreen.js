@@ -28,7 +28,6 @@ import { supabase } from '../../services/supabase';
 
 import { getDriverEarningsStats } from '../../services/Earnings/EarningsService';
 import BreakevenNotificationManager from '../../services/breakeven';
-import NotificationScheduler from '../../services/notificationScheduler';
 import { exportBreakevenImage } from '../../services/pdfExportService';
 
 import {
@@ -40,6 +39,7 @@ import {
   getTodayExpenses,
   getBreakevenExpenseCache,
   getExpensesSumInRange,
+  saveExpensesForPeriod,
 } from '../../services/Earnings/BreakevenService';
 
 const PERIOD_BY_FREQ = {
@@ -503,19 +503,55 @@ export default function EarningsScreen({ navigation, route }) {
     const val = parseFloat(String(expenseInput).replace(/,/g, '')) || 0;
     if (val <= 0) return;
 
-    if (periodKey === 'today') {
+    try {
+      // Calculate new total expenses
       const sessionAdds = expenseItems.reduce((s, n) => s + (Number(n) || 0), 0);
-      const newDbTotal = Math.max(0, Number(dbExpensesBase || 0) + sessionAdds + val);
-      const result = await setBreakevenExpenseCache(driverId, newDbTotal);
-      console.log('Saved expenses to DB (daily additive):', newDbTotal, result);
-      setDbExpensesBase(newDbTotal);
-      setExpenseItems([]);
-    } else {
-      setExpenseItems((prev) => [...prev, val]);
+      const newTotal = Number(dbExpensesBase || 0) + sessionAdds + val;
+      
+      // Get period bounds
+      let startUtc, endUtc, periodType;
+      if (periodKey === 'today') {
+        [startUtc, endUtc] = getPhTodayUtcWindow();
+        periodType = 'daily';
+        // Also update cache for daily
+        await setBreakevenExpenseCache(driverId, newTotal);
+      } else if (periodKey === 'week') {
+        [startUtc, endUtc] = getPhWeekUtcWindow();
+        periodType = 'weekly';
+      } else if (periodKey === 'month') {
+        [startUtc, endUtc] = getPhMonthUtcWindow();
+        periodType = 'monthly';
+      }
+      
+      // Get current breakeven data with the new expense amount
+      const breakevenData = await fetchBreakevenBlock(driverId, periodKey, newTotal, frequency);
+      
+      // Save complete breakeven data to history table
+      const saveResult = await saveExpensesForPeriod({
+        driverId,
+        periodType,
+        periodStart: startUtc,
+        periodEnd: endUtc,
+        expenses: newTotal,
+        breakevenData,
+      });
+      
+      if (saveResult.success) {
+        console.log('Complete breakeven data saved:', saveResult.data);
+        setDbExpensesBase(newTotal);
+        setExpenseItems([]);
+        setExpenseInput('0.00');
+        await markExpensesTouched();
+        // Refresh data
+        fetchAll(driverId, frequency);
+      } else {
+        console.error('Failed to save breakeven data:', saveResult.error);
+        setErrorText('Failed to save data: ' + saveResult.error);
+      }
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      setErrorText('Failed to save expense. Please try again.');
     }
-
-    setExpenseInput('0.00');
-    await markExpensesTouched();
   };
 
   const clearExpenses = () => {
@@ -547,21 +583,29 @@ export default function EarningsScreen({ navigation, route }) {
         setPeriodStart(d.date_start || null);
         setPeriodEnd(d.date_end || null);
 
-        // Normalize: empty → zeros
-        const fare  = Number(d.fare_per_ride || 0);
-        const need  = Number(d.bookings_needed || 0);
-        const done  = Number(d.total_bookings || 0);
-        const rev   = Number(d.revenue_period || 0);
+        const done = Number(d.total_bookings || 0);
+        const rev = Number(d.revenue_period || 0);
+        const ex = Number(expensesNumber || 0);
 
-        setFarePerRide(fare);
-        setBookingsNeeded(need);
         setAcceptedBookings(done);
         setRevenuePeriod(rev);
 
-        const ex = Number(expensesNumber || 0);
-        const rp = rev;
-        const localDeficit = Math.max(ex - rp, 0);
+        // Calculate fare per ride = revenue / completed bookings
+        const farePerRideCalc = done > 0 ? rev / done : 0;
+        setFarePerRide(farePerRideCalc);
 
+        // Calculate bookings needed to hit breakeven
+        if (rev >= ex) {
+          setBookingsNeeded(0); // Already at breakeven
+        } else if (farePerRideCalc > 0) {
+          const deficit = ex - rev;
+          const additionalBookings = Math.ceil(deficit / farePerRideCalc);
+          setBookingsNeeded(additionalBookings);
+        } else {
+          setBookingsNeeded(0);
+        }
+
+        const localDeficit = Math.max(ex - rev, 0);
         setDeficitAmount(localDeficit);
 
         const br = d.breakdown || {};
@@ -630,16 +674,38 @@ export default function EarningsScreen({ navigation, route }) {
         // 2) Breakeven (with correct statuses per period)
         const summary = await fetchBreakevenBlock(drvId, period, baseExp, currentFrequency);
 
-        // 3) For WEEKLY and MONTHLY, override revenue using EarningsService
+        // 3) For WEEKLY and MONTHLY, override revenue using EarningsService and recalculate metrics
         if ((currentFrequency === 'Weekly' || currentFrequency === 'Monthly') && baseData) {
-          setRevenuePeriod(Number(baseData.total_driver_earnings || 0));
-          setAcceptedBookings(Number(baseData.count || 0));
+          const updatedRevenue = Number(baseData.total_driver_earnings || 0);
+          const updatedBookings = Number(baseData.count || 0);
+          
+          setRevenuePeriod(updatedRevenue);
+          setAcceptedBookings(updatedBookings);
+          
           if (baseData.period_from && baseData.period_to) {
             const startIso = new Date(baseData.period_from + 'T00:00:00').toISOString();
             const endIso = new Date(baseData.period_to + 'T23:59:59').toISOString();
             setPeriodStart(startIso);
             setPeriodEnd(endIso);
           }
+          
+          // Calculate fare per ride = revenue / completed bookings
+          const farePerRideCalc = updatedBookings > 0 ? updatedRevenue / updatedBookings : 0;
+          setFarePerRide(farePerRideCalc);
+          
+          // Calculate bookings needed to hit breakeven
+          if (updatedRevenue >= baseExp) {
+            setBookingsNeeded(0); // Already at breakeven
+          } else if (farePerRideCalc > 0) {
+            const deficit = baseExp - updatedRevenue;
+            const additionalBookings = Math.ceil(deficit / farePerRideCalc);
+            setBookingsNeeded(additionalBookings);
+          } else {
+            setBookingsNeeded(0);
+          }
+          
+          const deficit = Math.max(baseExp - updatedRevenue, 0);
+          setDeficitAmount(deficit);
         }
 
         // DAILY: keep today’s history updated
@@ -740,14 +806,35 @@ export default function EarningsScreen({ navigation, route }) {
       if (frequency === 'Weekly' || frequency === 'Monthly') {
         const res = await getDriverEarningsStats(driverId, PERIOD_BY_FREQ[frequency]);
         if (res?.success && res.data) {
-          setRevenuePeriod(Number(res.data.total_driver_earnings || 0));
-          setAcceptedBookings(Number(res.data.count || 0));
+          const updatedRevenue = Number(res.data.total_driver_earnings || 0);
+          const updatedBookings = Number(res.data.count || 0);
+          
+          setRevenuePeriod(updatedRevenue);
+          setAcceptedBookings(updatedBookings);
+          
           if (res.data.period_from && res.data.period_to) {
             const startIso = new Date(res.data.period_from + 'T00:00:00').toISOString();
             const endIso = new Date(res.data.period_to + 'T23:59:59').toISOString();
             setPeriodStart(startIso);
             setPeriodEnd(endIso);
           }
+          
+          // Recalculate fare per ride and bookings needed with updated data
+          const farePerRideCalc = updatedBookings > 0 ? updatedRevenue / updatedBookings : 0;
+          setFarePerRide(farePerRideCalc);
+          
+          if (updatedRevenue >= t) {
+            setBookingsNeeded(0);
+          } else if (farePerRideCalc > 0) {
+            const deficit = t - updatedRevenue;
+            const additionalBookings = Math.ceil(deficit / farePerRideCalc);
+            setBookingsNeeded(additionalBookings);
+          } else {
+            setBookingsNeeded(0);
+          }
+          
+          const deficit = Math.max(t - updatedRevenue, 0);
+          setDeficitAmount(deficit);
         }
       }
 
@@ -942,13 +1029,31 @@ export default function EarningsScreen({ navigation, route }) {
     setHistoryMode('detail');
   };
 
-  // Export handler
+  // Export handler for chart
+  const handleChartExportPDF = async () => {
+    if (exportingPDF) return;
+    
+    setExportingPDF(true);
+    try {
+      const result = await exportBreakevenReport(historyItems, frequency);
+      
+      if (!result.success) {
+        setErrorText('Failed to export report: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      setErrorText('Failed to export report: ' + error.message);
+    } finally {
+      setExportingPDF(false);
+    }
+  };
+
+  // Export handler for main screen
   const handleExportPDF = async () => {
     if (exportingPDF) return;
     
     setExportingPDF(true);
     try {
-      const result = await exportBreakevenImage();
+      const result = await exportBreakevenReport(historyItems, frequency);
       
       if (!result.success) {
         setErrorText('Failed to export report: ' + (result.error || 'Unknown error'));
@@ -974,8 +1079,9 @@ export default function EarningsScreen({ navigation, route }) {
   }, [revenuePeriod, totalExpenses, farePerRide]);
 
   const ridesProgress = useMemo(() => {
-    if (!bookingsNeeded || bookingsNeeded <= 0) return 0;
-    return clamp01((acceptedBookings || 0) / bookingsNeeded);
+    const totalNeeded = (acceptedBookings || 0) + (bookingsNeeded || 0);
+    if (totalNeeded <= 0) return 0;
+    return clamp01((acceptedBookings || 0) / totalNeeded);
   }, [bookingsNeeded, acceptedBookings]);
 
   const safetyMarginPct = useMemo(() => {
@@ -1305,23 +1411,6 @@ export default function EarningsScreen({ navigation, route }) {
               <Ionicons name="refresh" size={14} color={colors.primary} />
               <Text style={styles.btnOutlineText}>Reset expenses</Text>
             </TouchableOpacity>
-            
-            {/* PDF Export Button */}
-            <TouchableOpacity
-              style={[styles.pdfExportBtn, exportingPDF && styles.pdfExportBtnDisabled]}
-              onPress={handleExportPDF}
-              disabled={exportingPDF}
-              activeOpacity={0.85}
-            >
-              {exportingPDF ? (
-                <Animated.View style={{ opacity: pulseAnim }}>
-                  <Ionicons name="refresh" size={14} color={colors.textSecondary} />
-                </Animated.View>
-              ) : (
-                <Ionicons name="document-text-outline" size={14} color={colors.primary} />
-              )}
-              <Text style={styles.btnOutlineText}>Export</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -1380,7 +1469,9 @@ export default function EarningsScreen({ navigation, route }) {
               <View style={[styles.modernProgressFill, { width: `${ridesProgress * 100}%` }]} />
             </View>
             <View style={styles.progressDetails}>
-              <Text style={styles.progressText}>{acceptedBookings} of {bookingsNeeded} rides completed</Text>
+              <Text style={styles.progressText}>
+                {acceptedBookings} of {(acceptedBookings || 0) + (bookingsNeeded || 0)} rides completed to breakeven
+              </Text>
             </View>
           </View>
 
@@ -1440,6 +1531,8 @@ export default function EarningsScreen({ navigation, route }) {
             period_end: periodEnd,
             period_type: frequency === 'Daily' ? 'daily' : frequency === 'Weekly' ? 'weekly' : 'monthly'
           }}
+          frequency={frequency}
+          onExportPDF={handleChartExportPDF}
         />
 
 
