@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { supabase } from './supabase';
-import { Alert } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 
 class LocationService {
   static locationWatcher = null;
@@ -13,9 +13,21 @@ class LocationService {
       const isEnabled = await Location.hasServicesEnabledAsync();
       if (!isEnabled) {
         Alert.alert(
-          'Location Services Disabled',
-          'Please enable location services in your device settings to use ride hailing features.',
-          [{ text: 'OK' }]
+          'Location Services Required',
+          'Please enable location services to book a ride. This helps us find nearby drivers.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
+            }
+          ]
         );
         return false;
       }
@@ -24,8 +36,20 @@ class LocationService {
       if (status !== 'granted') {
         Alert.alert(
           'Location Permission Required',
-          'This app needs location access to provide real-time tracking for bookings. Please enable location permissions in your device settings.',
-          [{ text: 'OK' }]
+          'This app needs location access to book rides and provide real-time tracking.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              }
+            }
+          ]
         );
         return false;
       }
@@ -114,7 +138,7 @@ class LocationService {
   static async getCurrentLocation() {
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) {
-      throw new Error('Location services are not enabled or permission denied. Please enable location services in your device settings.');
+      return null; // Return null instead of throwing - Alert already shown
     }
 
     try {

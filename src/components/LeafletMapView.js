@@ -23,9 +23,10 @@ const LeafletMapView = ({
     };
 
     console.log('🗺️ Generating map HTML with:', {
-      markersCount: markers.length,
+      center,
+      markersCoount: markers.length,
       roadsCount: roads.length,
-      center
+      routesCount: routes.length
     });
 
     // Convert markers to JSON string
@@ -50,6 +51,14 @@ const LeafletMapView = ({
     }));
 
     console.log('🎯 Processed markers for WebView:', markers.length, 'markers');
+
+    // Convert routes to JSON string
+    const routesJSON = JSON.stringify(routes.map(route => ({
+      coordinates: route.coordinates || [],
+      color: route.color || '#FF9800',
+      weight: route.weight || 5,
+      opacity: route.opacity || 0.8
+    })));
 
     // Convert roads to JSON string with proper coordinate handling
     const roadsJSON = JSON.stringify(roads.map(road => {
@@ -224,10 +233,12 @@ const LeafletMapView = ({
           // Parse data and log immediately
           var markers = ${markersJSON};
           var roads = ${roadsJSON};
+          var routes = ${routesJSON};
           
           console.log('🚀 WebView started with data:');
           console.log('📍 Markers:', markers.length);
           console.log('🛣️ Roads:', roads.length);
+          console.log('🗺️ Routes:', routes.length);
           
           // Send status to React Native
           if (window.ReactNativeWebView) {
@@ -447,6 +458,39 @@ const LeafletMapView = ({
               total: roads.length
             }));
           }
+
+          // Add OSRM routes to map
+          console.log('🗺️ Adding', routes.length, 'OSRM routes to map');
+          var addedRoutes = 0;
+          
+          routes.forEach(function(route, index) {
+            console.log('🗺️ Processing route', index + 1);
+            
+            if (route.coordinates && route.coordinates.length > 0) {
+              try {
+                var latlngs = route.coordinates.map(function(coord) {
+                  return [coord.latitude, coord.longitude];
+                });
+                
+                if (latlngs.length > 0) {
+                  allRoadCoords = allRoadCoords.concat(latlngs);
+                  
+                  var polyline = L.polyline(latlngs, {
+                    color: route.color || '#FF9800',
+                    weight: route.weight || 5,
+                    opacity: route.opacity || 0.8
+                  }).addTo(map);
+                  
+                  addedRoutes++;
+                  console.log('✅ ROUTE ADDED with', latlngs.length, 'points');
+                }
+              } catch (error) {
+                console.error('❌ Error adding route:', error);
+              }
+            }
+          });
+          
+          console.log('🗺️ Total routes added:', addedRoutes, 'out of', routes.length);
           
           // Fit bounds for all coordinates
           var allCoords = [];

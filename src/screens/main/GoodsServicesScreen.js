@@ -70,9 +70,7 @@ export default function GoodsServicesScreen() {
   const fetchUserProfile = useCallback(async () => {
     if (!auth.user?.id || !isDriverOrOwner) return;
     try {
-      console.log('[GoodsServicesScreen] Fetching user profile for:', auth.user.id);
       const result = await getGoodsServicesProfileByAuthor(auth.user.id);
-      console.log('[GoodsServicesScreen] User profile result:', result);
       
       if (result.success) {
         setUserProfile(result.data);
@@ -80,12 +78,10 @@ export default function GoodsServicesScreen() {
         // Reset selected images when fetching profile
         setSelectedImages([]);
       } else {
-        console.log('[GoodsServicesScreen] No user profile found or error:', result.error);
         setUserProfile(null);
         setEditDescription('');
       }
     } catch (e) {
-      console.error('[GoodsServicesScreen] Error fetching user profile:', e);
       setUserProfile(null);
       setEditDescription('');
     }
@@ -95,22 +91,17 @@ export default function GoodsServicesScreen() {
     setLoading(true);
     setError('');
     try {
-      console.log('[GoodsServicesScreen] Fetching posts...');
       const result = await listGoodsServicesPosts();
-      console.log('[GoodsServicesScreen] Posts result:', result);
       
       if (result.success) {
         const postsData = Array.isArray(result.data) ? result.data : [];
-        console.log('[GoodsServicesScreen] Setting posts:', postsData.length, 'items');
         setPosts(postsData);
         setError('');
       } else {
-        console.error('[GoodsServicesScreen] Failed to fetch posts:', result.error);
         setError(result.error || 'Failed to load posts');
         setPosts([]);
       }
     } catch (e) {
-      console.error('[GoodsServicesScreen] Error fetching posts:', e);
       setError(e.message || 'Failed to load posts');
       setPosts([]);
     } finally {
@@ -125,11 +116,10 @@ export default function GoodsServicesScreen() {
       const res = await listReviews({ limit: 100, include_stats: true });
       if (res.success) {
         const arr = Array.isArray(res.data) ? res.data : [];
-        console.log('Fetched reviews:', arr.length);
         setReviews(arr);
       }
     } catch (error) {
-      console.error('Error fetching reviews:', error);
+      // Silent error handling
     } finally {
       setLoadingReviews(false);
     }
@@ -151,8 +141,6 @@ export default function GoodsServicesScreen() {
         );
         if (missingIds.length === 0) return;
 
-        console.log('Fetching author profiles for:', missingIds.length, 'users');
-
         const results = await Promise.all(
           missingIds.map(async (id) => {
             try {
@@ -170,12 +158,6 @@ export default function GoodsServicesScreen() {
                 
                 // Generate fallback avatar if no photo found
                 const finalPhotoUrl = profilePhotoUrl || getBestAvatarUrl(userData);
-                
-                console.log(`Fetched profile for user ${id}:`, {
-                  name: userData.name || userData.email,
-                  hasPhoto: !!profilePhotoUrl,
-                  photoUrl: finalPhotoUrl
-                });
                 
                 return { 
                   id, 
@@ -197,7 +179,6 @@ export default function GoodsServicesScreen() {
         for (const r of results) {
           mapUpdate[r.id] = r;
         }
-        console.log('Author map updated with:', Object.keys(mapUpdate).length, 'profiles');
         setAuthorMap(mapUpdate);
       } catch (error) {
         console.error('Error resolving author profiles:', error);
@@ -223,11 +204,8 @@ export default function GoodsServicesScreen() {
       setAuthorMap({});
       setError('');
       
-      console.log('[GoodsServicesScreen] Starting refresh...');
       await Promise.all([fetchPosts(), fetchRecentReviews(), fetchUserProfile()]);
-      console.log('[GoodsServicesScreen] Refresh completed');
     } catch (error) {
-      console.error('[GoodsServicesScreen] Error during refresh:', error);
       setError('Failed to refresh data');
     } finally {
       setRefreshing(false);
@@ -456,12 +434,6 @@ export default function GoodsServicesScreen() {
                 source={{ uri: m.url }} 
                 style={styles.gridImage} 
                 resizeMode="cover"
-                onError={(error) => {
-                  console.error('Image load error:', error.nativeEvent.error, 'URL:', m.url);
-                }}
-                onLoad={() => {
-                  console.log('Image loaded successfully:', m.url);
-                }}
                 defaultSource={require('../../../assets/icon.png')}
               />
               {idx === 3 && images.length > 4 && (
@@ -514,7 +486,6 @@ export default function GoodsServicesScreen() {
     
     // Try media field first - handle both string URLs and objects with url property
     if (item.media && Array.isArray(item.media) && item.media.length > 0) {
-      console.log('Processing media array:', item.media);
       const validMedia = item.media
         .map(m => {
           let url = null;
@@ -533,12 +504,9 @@ export default function GoodsServicesScreen() {
             }
           }
           
-          console.log('Processed media URL:', url);
           return { url };
         })
         .filter(Boolean);
-      
-      console.log('Valid media after processing:', validMedia);
       if (validMedia.length > 0) {
         mediaArray = validMedia;
       }
@@ -623,8 +591,6 @@ export default function GoodsServicesScreen() {
     if (!profilePhoto && displayName) {
       profilePhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6B2E2B&color=fff&size=128`;
     }
-    
-    console.log(`Profile photo for ${displayName}:`, profilePhoto);
 
     return (
       <View style={styles.card}>
@@ -635,7 +601,6 @@ export default function GoodsServicesScreen() {
               <Image 
                 source={{ uri: profilePhoto }} 
                 style={styles.avatar}
-                onError={() => console.log('Avatar failed to load:', profilePhoto)}
               />
             ) : (
               <View style={[styles.avatar, { backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }]}>
@@ -669,7 +634,6 @@ export default function GoodsServicesScreen() {
                   style={styles.contactChip}
                   onPress={() => {
                     // Could implement email functionality here
-                    console.log('Email:', userEmail);
                   }}
                 >
                   <Ionicons name="mail" size={12} color={COLORS.primary} />
@@ -681,7 +645,6 @@ export default function GoodsServicesScreen() {
                   style={styles.contactChip}
                   onPress={() => {
                     // Could implement call functionality here
-                    console.log('Phone:', userPhone);
                   }}
                 >
                   <Ionicons name="call" size={12} color={COLORS.primary} />
@@ -854,31 +817,13 @@ export default function GoodsServicesScreen() {
           </View>
         ) : null}
         ListFooterComponent={
-          <View style={styles.footer}>
-            <Button
-              title={loading ? 'Loading...' : 'Refresh Data'}
-              onPress={async () => {
-                console.log('[GoodsServicesScreen] Manual refresh triggered');
-                // Clear all data first
-                setPosts([]);
-                setAuthorMap({});
-                setError('');
-                
-                // Force reload
-                await Promise.all([
-                  fetchPosts(),
-                  fetchRecentReviews(),
-                  fetchUserProfile()
-                ]);
-              }}
-              disabled={loading}
-            />
-            {posts.length > 0 && (
+          posts.length > 0 ? (
+            <View style={styles.footer}>
               <Text style={styles.footerText}>
                 Showing {posts.length} goods & services posts
               </Text>
-            )}
-          </View>
+            </View>
+          ) : null
         }
         showsVerticalScrollIndicator={true}
         nestedScrollEnabled={true}

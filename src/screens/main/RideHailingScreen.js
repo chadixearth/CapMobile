@@ -70,33 +70,36 @@ export default function RideHailingScreen({ navigation }) {
 
   const loadMapData = async () => {
     try {
+      console.log('[RideHailing] Loading map data...');
       const data = await fetchMapData({ forceRefresh: false });
-      
-      // Load all road highlights with pickup and dropoff points
       const { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
-      const roadData = await getAllRoadHighlightsWithPoints();
       
-      if (roadData.success) {
+      console.log('[RideHailing] Fetching road highlights...');
+      const roadData = await getAllRoadHighlightsWithPoints();
+      console.log('[RideHailing] Road data result:', roadData.success, 'roads:', roadData.roadHighlights?.length);
+      
+      if (roadData.success && roadData.roadHighlights.length > 0) {
         const processedRoads = processRoadHighlightsForMap(roadData.roadHighlights);
+        console.log('[RideHailing] Processed roads with coordinates:', processedRoads.length);
         
-        // Combine all points (pickup, dropoff, and existing points)
         const allPoints = [
           ...(data?.points || []),
           ...(roadData.pickupPoints || []),
           ...(roadData.dropoffPoints || [])
         ];
         
+        console.log('[RideHailing] Setting map data with', processedRoads.length, 'roads');
         setMapData({ 
-          ...data, 
+          ...data,
           points: allPoints,
-          roads: processedRoads,
-          allRoadHighlights: roadData.roadHighlights
+          roads: processedRoads
         });
       } else {
+        console.log('[RideHailing] No road highlights, using basic map data');
         setMapData(data);
       }
     } catch (error) {
-      console.error('Error loading map data:', error);
+      console.error('[RideHailing] Error loading map data:', error);
       const data = await fetchMapData({ forceRefresh: false });
       setMapData(data);
     }
@@ -180,33 +183,6 @@ export default function RideHailingScreen({ navigation }) {
     if (type === 'pickup') {
       setPickupLocation(location);
       setPickupAddress(location.name || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
-      
-      // Highlight specific routes for selected pickup point
-      if ((location.pointType === 'pickup' || location.point_type === 'pickup') && location.id) {
-        try {
-          const routeResult = await getRoutesByPickup(location.id);
-          console.log('Route result for pickup:', location.id, routeResult);
-          if (routeResult.success && routeResult.data?.road_highlights) {
-            const { processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
-            const processedRoads = processRoadHighlightsForMap(routeResult.data.road_highlights);
-            console.log('Processed roads for pickup:', processedRoads);
-            // Combine with existing roads, highlighting the selected routes
-            const allRoads = mapData?.allRoadHighlights || [];
-            const enhancedRoads = allRoads.map(road => {
-              const isSelectedRoute = processedRoads.find(pr => pr.id === road.id);
-              if (isSelectedRoute) {
-                return { ...road, stroke_color: routeResult.data.color, weight: 6, opacity: 1.0 };
-              }
-              return { ...road, stroke_color: '#CCCCCC', weight: 2, opacity: 0.4 };
-            });
-            const { processRoadHighlightsForMap: processForMap } = await import('../../services/roadHighlightsService');
-            const finalRoads = processForMap(enhancedRoads);
-            setMapData(prev => ({ ...prev, roads: finalRoads }));
-          }
-        } catch (error) {
-          console.error('Error loading road highlights:', error);
-        }
-      }
     } else if (type === 'dropoff') {
       setDropoffLocation(location);
       setDropoffAddress(location.name || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
@@ -253,8 +229,11 @@ export default function RideHailingScreen({ navigation }) {
     }
   };
 
-  const openMapForSelection = (type) => {
+  const openMapForSelection = async (type) => {
     setSelectingLocation(type);
+    console.log('[RideHailing] Opening map, current roads:', mapData?.roads?.length || 0);
+    // Always reload to get fresh road data
+    await loadMapData();
     setShowMap(true);
   };
 
@@ -477,47 +456,53 @@ export default function RideHailingScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.mapContainer}>
-            <LeafletMapView
-              region={{
-                latitude: mapData?.config?.center_latitude || 10.3157,
-                longitude: mapData?.config?.center_longitude || 123.8854,
-                latitudeDelta: 0.06,
-                longitudeDelta: 0.06,
-              }}
-              markers={[
-                ...(mapData?.points || []).map(point => ({
-                  latitude: parseFloat(point.latitude),
-                  longitude: parseFloat(point.longitude),
-                  title: point.name,
-                  description: point.description || '',
-                  pointType: point.point_type,
-                  iconColor: point.stroke_color || point.icon_color || '#FF0000',
-                  id: point.id,
-                })),
-                ...(pickupLocation ? [{
-                  latitude: pickupLocation.latitude,
-                  longitude: pickupLocation.longitude,
-                  title: 'Pickup Location',
-                  description: 'Selected pickup point',
-                  pointType: 'pickup',
-                  iconColor: '#2E7D32',
-                  id: 'selected-pickup'
-                }] : []),
-                ...(dropoffLocation ? [{
-                  latitude: dropoffLocation.latitude,
-                  longitude: dropoffLocation.longitude,
-                  title: 'Drop-off Location',
-                  description: 'Selected drop-off point',
-                  pointType: 'dropoff',
-                  iconColor: '#C62828',
-                  id: 'selected-dropoff'
-                }] : [])
-              ]}
-              roads={mapData?.roads || []}
-              routes={mapData?.routes || []}
-              onMarkerPress={handleMarkerPress}
-              onMapPress={handleMapPress}
-            />
+            {mapData && (() => {
+              const roads = mapData.roads || [];
+              console.log('[RideHailing] Rendering map with', roads.length, 'roads');
+              return (
+                <LeafletMapView
+                  region={{
+                    latitude: mapData?.config?.center_latitude || 10.3157,
+                    longitude: mapData?.config?.center_longitude || 123.8854,
+                    latitudeDelta: 0.06,
+                    longitudeDelta: 0.06,
+                  }}
+                  markers={[
+                    ...(mapData?.points || []).map(point => ({
+                      latitude: parseFloat(point.latitude),
+                      longitude: parseFloat(point.longitude),
+                      title: point.name,
+                      description: point.description || '',
+                      pointType: point.point_type,
+                      iconColor: point.stroke_color || point.icon_color || '#FF0000',
+                      id: point.id,
+                    })),
+                    ...(pickupLocation ? [{
+                      latitude: pickupLocation.latitude,
+                      longitude: pickupLocation.longitude,
+                      title: 'Pickup Location',
+                      description: 'Selected pickup point',
+                      pointType: 'pickup',
+                      iconColor: '#2E7D32',
+                      id: 'selected-pickup'
+                    }] : []),
+                    ...(dropoffLocation ? [{
+                      latitude: dropoffLocation.latitude,
+                      longitude: dropoffLocation.longitude,
+                      title: 'Drop-off Location',
+                      description: 'Selected drop-off point',
+                      pointType: 'dropoff',
+                      iconColor: '#C62828',
+                      id: 'selected-dropoff'
+                    }] : [])
+                  ]}
+                  roads={roads}
+                  routes={mapData?.routes || []}
+                  onMarkerPress={handleMarkerPress}
+                  onMapPress={handleMapPress}
+                />
+              );
+            })()}
           </View>
           <View style={styles.mapInstructions}>
             <Text style={styles.instructionText}>

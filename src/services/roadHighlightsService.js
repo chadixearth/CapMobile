@@ -69,15 +69,19 @@ export async function getAllRoadHighlightsWithPoints() {
       point.point_type === 'dropoff' || point.point_type === 'destination' || point.point_type === 'station'
     );
     
-    // Use roads from map data as fallback only
+    // Use roads from map data
     const roadHighlights = mapData.roads || [];
+    console.log('Map data roads:', roadHighlights.length, 'roads');
     
-    // Get actual road highlights using the working API (same as when pickup points are clicked)
+    // Get actual road highlights using the working API
     const enhancedRoadHighlights = await enhanceRoadHighlightsWithAssociations(
       roadHighlights, 
       pickupPoints, 
       dropoffPoints
     );
+    
+    // If API didn't return roads with coordinates, use map data roads directly
+    const finalRoadHighlights = enhancedRoadHighlights.length > 0 ? enhancedRoadHighlights : roadHighlights;
     
     console.log('Fallback road highlights data:', {
       roadHighlights: enhancedRoadHighlights.length,
@@ -87,7 +91,7 @@ export async function getAllRoadHighlightsWithPoints() {
     
     return {
       success: true,
-      roadHighlights: enhancedRoadHighlights,
+      roadHighlights: finalRoadHighlights,
       pickupPoints: pickupPoints,
       dropoffPoints: dropoffPoints
     };
@@ -125,10 +129,25 @@ async function enhanceRoadHighlightsWithAssociations(roadHighlights, pickupPoint
         
         // Process each road highlight from the API
         road_highlights.forEach(road => {
+          let coordinates = road.road_coordinates || road.coordinates || [];
+          
+          // Parse if string
+          if (typeof coordinates === 'string') {
+            try {
+              coordinates = JSON.parse(coordinates);
+            } catch (e) {
+              console.warn('Failed to parse coordinates for', road.name);
+              coordinates = [];
+            }
+          }
+          
+          console.log('Road from API:', road.name, 'coords:', coordinates.length);
+          
           const processedRoad = {
             id: road.id,
             name: road.name || 'Route',
-            road_coordinates: road.road_coordinates || [],
+            road_coordinates: coordinates,
+            coordinates: coordinates,
             stroke_color: color || road.stroke_color || '#007AFF',
             stroke_width: road.stroke_width || 4,
             stroke_opacity: road.stroke_opacity || 0.7,

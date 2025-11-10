@@ -510,6 +510,41 @@ export async function getMyActiveRides(customerId) {
   }
 }
 
+// Get user's ride history (completed/cancelled)
+export async function getMyRideHistory(customerId) {
+  try {
+    const result = await apiCall(`/ride-hailing/`);
+    let ridesArray = [];
+    if (result.success && result.data?.data && Array.isArray(result.data.data)) {
+      ridesArray = result.data.data;
+    } else if (result.success && result.data && Array.isArray(result.data)) {
+      ridesArray = result.data;
+    }
+    
+    if (ridesArray.length >= 0) {
+      const historyRides = ridesArray.filter(ride => {
+        if (!ride) return false;
+        if (ride.customer_id === customerId) {
+          return ['completed', 'cancelled'].includes(ride.status);
+        }
+        const passengers = ride.passengers || [];
+        const isPassenger = passengers.some(p => p.customer_id === customerId);
+        if (isPassenger) {
+          return ['completed', 'cancelled'].includes(ride.status);
+        }
+        return false;
+      }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return { success: true, data: historyRides };
+    }
+    return { success: false, error: 'No valid ride data received' };
+  } catch (error) {
+    if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
+      console.error('Error fetching ride history:', error);
+    }
+    return { success: false, error: error.message };
+  }
+}
+
 // Get driver location for tracking
 export async function getDriverLocation(driverId) {
   try {

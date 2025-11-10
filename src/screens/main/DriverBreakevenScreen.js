@@ -227,7 +227,6 @@ export default function EarningsScreen({ navigation, route }) {
   const driverId = useDriverId(route);
 
   const latestReqRef = useRef(0);
-  const notificationSchedulerInitialized = useRef(false);
 
   // UI
   const [frequency, setFrequency] = useState('Daily'); // Daily | Weekly | Monthly
@@ -469,12 +468,6 @@ export default function EarningsScreen({ navigation, route }) {
           );
           // Clear dismissed notifications for new day
           BreakevenNotificationManager.clearBreakevenState(driverId);
-          
-          // Restart notification scheduler for new day
-          if (notificationSchedulerInitialized.current) {
-            NotificationScheduler.stopScheduledNotifications(driverId);
-            NotificationScheduler.startScheduledNotifications(driverId);
-          }
         } catch {}
 
         // Refresh tiles/summary with the new daily window
@@ -742,24 +735,7 @@ export default function EarningsScreen({ navigation, route }) {
     [fetchBreakevenBlock]
   );
 
-  // Initialize notification scheduler for daily notifications
-  useEffect(() => {
-    if (driverId && frequency === 'Daily' && !notificationSchedulerInitialized.current) {
-      NotificationScheduler.initialize();
-      NotificationScheduler.startScheduledNotifications(driverId);
-      notificationSchedulerInitialized.current = true;
-      
-      console.log('[DriverBreakevenScreen] Notification scheduler initialized for driver:', driverId);
-    }
-    
-    // Cleanup when component unmounts or driver changes
-    return () => {
-      if (notificationSchedulerInitialized.current) {
-        NotificationScheduler.stopScheduledNotifications(driverId);
-        notificationSchedulerInitialized.current = false;
-      }
-    };
-  }, [driverId, frequency]);
+
 
   // Load chart data when frequency changes
   const loadChartData = useCallback(async () => {

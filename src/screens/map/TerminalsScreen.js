@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LeafletMapView from '../../components/LeafletMapView';
 import BackButton from '../../components/BackButton';
 import RideStatusCard from '../../components/RideStatusCard';
-import { getMyActiveRides } from '../../services/rideHailingService';
+import { getMyActiveRides, getMyRideHistory } from '../../services/rideHailingService';
 import { getCurrentUser } from '../../services/authService';
 import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
 import { useAuth } from '../../hooks/useAuth';
+import { createDriverReview } from '../../services/reviews';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -22,16 +23,22 @@ const TerminalsScreen = ({ navigation, route }) => {
   const type = route?.params?.type || 'pickup';
   const [selectedId, setSelectedId] = useState(null);
   const [activeRides, setActiveRides] = useState([]);
+  const [rideHistory, setRideHistory] = useState([]);
   const [showRides, setShowRides] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(false);
   const [terminals, setTerminals] = useState([]);
   const [mapData, setMapData] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [ratingModal, setRatingModal] = useState({ visible: false, ride: null });
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   useEffect(() => {
-    // Only fetch active rides for tourists
     if (role === 'tourist') {
       fetchActiveRides();
+      fetchRideHistory();
     }
     loadMapData();
   }, []);
@@ -80,6 +87,7 @@ const TerminalsScreen = ({ navigation, route }) => {
     try {
       setLoading(true);
       const user = await getCurrentUser();
+      setCurrentUser(user);
       if (user?.id) {
         const result = await getMyActiveRides(user.id);
         if (result.success) {
@@ -93,15 +101,62 @@ const TerminalsScreen = ({ navigation, route }) => {
     }
   };
 
+  const fetchRideHistory = async () => {
+    try {
+      const user = await getCurrentUser();
+      if (user?.id) {
+        const result = await getMyRideHistory(user.id);
+        if (result.success) {
+          setRideHistory(result.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching ride history:', error);
+    }
+  };
+
   const handleRideRefresh = (updatedRide) => {
     if (updatedRide.status === 'cancelled' || updatedRide.status === 'completed') {
-      // Remove cancelled or completed rides from the list
       setActiveRides(prev => prev.filter(ride => ride.id !== updatedRide.id));
+      fetchRideHistory();
+      if (updatedRide.status === 'completed' && updatedRide.driver_id) {
+        setTimeout(() => {
+          setRatingModal({ visible: true, ride: updatedRide });
+          setRating(5);
+          setComment('');
+        }, 1000);
+      }
     } else {
-      // Update existing ride
       setActiveRides(prev => 
         prev.map(ride => ride.id === updatedRide.id ? updatedRide : ride)
       );
+    }
+  };
+
+  const handleSubmitRating = async () => {
+    if (!ratingModal.ride || !currentUser) return;
+    
+    try {
+      setSubmittingRating(true);
+      const result = await createDriverReview({
+        driver_id: ratingModal.ride.driver_id,
+        booking_id: ratingModal.ride.id,
+        reviewer_id: currentUser.id,
+        rating,
+        comment: comment.trim(),
+        is_anonymous: false
+      });
+      
+      if (result.success) {
+        Alert.alert('Thank You!', 'Your rating has been submitted.');
+        setRatingModal({ visible: false, ride: null });
+      } else {
+        Alert.alert('Error', result.error || 'Failed to submit rating');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to submit rating');
+    } finally {
+      setSubmittingRating(false);
     }
   };
 
@@ -116,27 +171,108 @@ const TerminalsScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.toggleContainer}>
         <TouchableOpacity 
-          style={[styles.toggleButton, !showRides && styles.activeToggle]}
-          onPress={() => setShowRides(false)}
+          style={[styles.toggleButton, !showRides && !showHistory && styles.activeToggle]}
+          onPress={() => { setShowRides(false); setShowHistory(false); }}
         >
-          <Ionicons name="location-outline" size={20} color={!showRides ? '#fff' : '#6B2E2B'} />
-          <Text style={[styles.toggleText, !showRides && styles.activeToggleText]}>Terminals</Text>
+          <Ionicons name="location-outline" size={20} color={!showRides && !showHistory ? '#fff' : '#6B2E2B'} />
+          <Text style={[styles.toggleText, !showRides && !showHistory && styles.activeToggleText]}>Terminals</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.toggleButton, showRides && styles.activeToggle]}
-          onPress={() => setShowRides(true)}
+          onPress={() => { setShowRides(true); setShowHistory(false); }}
         >
           <Ionicons name="car-outline" size={20} color={showRides ? '#fff' : '#6B2E2B'} />
-          <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>My Rides</Text>
+          <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>Active</Text>
           {activeRides.length > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{activeRides.length}</Text>
             </View>
           )}
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.toggleButton, showHistory && styles.activeToggle]}
+          onPress={() => { setShowRides(false); setShowHistory(true); }}
+        >
+          <Ionicons name="time-outline" size={20} color={showHistory ? '#fff' : '#6B2E2B'} />
+          <Text style={[styles.toggleText, showHistory && styles.activeToggleText]}>History</Text>
+        </TouchableOpacity>
       </View>
 
-      {showRides ? (
+      {showHistory ? (
+        <View style={styles.ridesContainer}>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#6B2E2B" />
+              <Text style={styles.loadingText}>Loading history...</Text>
+            </View>
+          ) : rideHistory.length > 0 ? (
+            <ScrollView 
+              style={styles.ridesList}
+              contentContainerStyle={styles.ridesContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {rideHistory.map(ride => (
+                <View key={ride.id} style={styles.historyCard}>
+                  <View style={styles.historyHeader}>
+                    <Ionicons 
+                      name={ride.status === 'completed' ? 'checkmark-circle' : 'close-circle'} 
+                      size={24} 
+                      color={ride.status === 'completed' ? '#2E7D32' : '#C62828'} 
+                    />
+                    <Text style={styles.historyStatus}>
+                      {ride.status === 'completed' ? 'Completed' : 'Cancelled'}
+                    </Text>
+                    <Text style={styles.historyDate}>
+                      {new Date(ride.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <View style={styles.historyDetails}>
+                    <View style={styles.historyRow}>
+                      <Ionicons name="location" size={16} color="#666" />
+                      <Text style={styles.historyText}>{ride.pickup_address}</Text>
+                    </View>
+                    <View style={styles.historyRow}>
+                      <Ionicons name="flag" size={16} color="#666" />
+                      <Text style={styles.historyText}>{ride.dropoff_address}</Text>
+                    </View>
+                    {ride.driver_name && (
+                      <View style={styles.historyRow}>
+                        <Ionicons name="person" size={16} color="#666" />
+                        <Text style={styles.historyText}>Driver: {ride.driver_name}</Text>
+                      </View>
+                    )}
+                    <View style={styles.historyRow}>
+                      <Ionicons name="cash" size={16} color="#666" />
+                      <Text style={styles.historyText}>₱{ride.passenger_count * 10}</Text>
+                    </View>
+                  </View>
+                  {ride.status === 'completed' && ride.driver_id && (
+                    <TouchableOpacity 
+                      style={styles.rateButton}
+                      onPress={() => {
+                        setRatingModal({ visible: true, ride });
+                        setRating(5);
+                        setComment('');
+                      }}
+                    >
+                      <Ionicons name="star" size={16} color="#FFA000" />
+                      <Text style={styles.rateButtonText}>Rate Driver</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="time-outline" size={64} color="#6B2E2B" />
+              </View>
+              <Text style={styles.emptyText}>No Ride History</Text>
+              <Text style={styles.emptySubtext}>Your completed and cancelled rides will appear here</Text>
+            </View>
+          )}
+        </View>
+      ) : showRides ? (
         <View style={styles.ridesContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -220,6 +356,61 @@ const TerminalsScreen = ({ navigation, route }) => {
           />
         </View>
       )}
+
+      <Modal
+        visible={ratingModal.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRatingModal({ visible: false, ride: null })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Rate Your Driver</Text>
+            <Text style={styles.modalSubtitle}>{ratingModal.ride?.driver_name || 'Driver'}</Text>
+            
+            <View style={styles.starsContainer}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                  <Ionicons 
+                    name={star <= rating ? 'star' : 'star-outline'} 
+                    size={40} 
+                    color="#FFA000" 
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Add a comment (optional)"
+              value={comment}
+              onChangeText={setComment}
+              multiline
+              numberOfLines={3}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setRatingModal({ visible: false, ride: null })}
+              >
+                <Text style={styles.cancelButtonText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.submitButton]}
+                onPress={handleSubmitRating}
+                disabled={submittingRating}
+              >
+                {submittingRating ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -386,6 +577,127 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     borderRadius: 0,
     overflow: 'hidden',
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  historyStatus: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+    flex: 1,
+  },
+  historyDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  historyDetails: {
+    gap: 8,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyText: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  rateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF3E0',
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6,
+  },
+  rateButtonText: {
+    color: '#F57C00',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 20,
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F5F5F5',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  submitButton: {
+    backgroundColor: '#6B2E2B',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Linking, Platform } from 'react-native';
 import { createRideBooking, getMyActiveRides } from '../services/rideHailingService';
 import LocationService from '../services/locationService';
 import RideMonitor from './RideMonitor';
@@ -48,11 +48,12 @@ const RideBookingScreen = () => {
     setLoading(true);
     try {
       // Get current location
-      let currentLocation = null;
-      try {
-        currentLocation = await LocationService.getCurrentLocation();
-      } catch (locationError) {
-        console.warn('Could not get current location:', locationError);
+      const currentLocation = await LocationService.getCurrentLocation();
+      
+      // If location is null, permissions were denied (Alert already shown)
+      if (currentLocation === null) {
+        setLoading(false);
+        return;
       }
 
       const bookingData = {
@@ -109,7 +110,7 @@ const RideBookingScreen = () => {
       } else {
         Alert.alert('Error', 'Failed to book ride. Please try again.');
       }
-      console.error('Booking error:', error);
+      console.error('Ride booking error:', error);
     } finally {
       setLoading(false);
     }

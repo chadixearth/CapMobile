@@ -101,22 +101,6 @@ export default function MenuScreen({ navigation }) {
   const doLogout = async () => {
     setLoggingOut(true);
     try {
-      // Check for active rides before logout (only for tourists)
-      const currentUser = await getCurrentUser();
-      if (currentUser?.id && role === 'tourist') {
-        const activeRidesResult = await getMyActiveRides(currentUser.id);
-        if (activeRidesResult.success && activeRidesResult.data && activeRidesResult.data.length > 0) {
-          Alert.alert(
-            'Active Ride Found',
-            'You have an active ride booking. Please complete or cancel your ride before logging out.',
-            [{ text: 'OK' }]
-          );
-          setLoggingOut(false);
-          setLogoutVisible(false);
-          return;
-        }
-      }
-      
       await auth.logout();
     } catch (e) {
       console.error('Logout error:', e);

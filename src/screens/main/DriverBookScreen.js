@@ -93,64 +93,29 @@ const RideMap = ({ ride }) => {
       const deltaLat = Math.max(Math.abs(pickupCoords.latitude - dropoffCoords.latitude) * 1.5, 0.01);
       const deltaLng = Math.max(Math.abs(pickupCoords.longitude - dropoffCoords.longitude) * 1.5, 0.01);
       
-      // Load only the specific route roads
-      let roads = [];
+      // Fetch OSRM route
+      let routes = [];
       try {
-        // Get route summaries and map data
-        const [routeResponse, mapDataResult] = await Promise.all([
-          fetch(`${apiBaseUrl()}/ride-hailing/route-summaries/`),
-          fetchMapData({ cacheOnly: true })
-        ]);
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.longitude},${pickupCoords.latitude};${dropoffCoords.longitude},${dropoffCoords.latitude}?overview=full&geometries=geojson`;
+        const osrmResponse = await fetch(osrmUrl);
         
-        if (routeResponse.ok && mapDataResult?.roads && mapDataResult?.points) {
-          const routeData = await routeResponse.json();
-          const routeSummaries = routeData.data || [];
-          
-          // Find pickup and dropoff points by coordinates
-          const pickupPoint = mapDataResult.points.find(p => 
-            Math.abs(parseFloat(p.latitude) - pickupCoords.latitude) < 0.001 &&
-            Math.abs(parseFloat(p.longitude) - pickupCoords.longitude) < 0.001
-          );
-          
-          const dropoffPoint = mapDataResult.points.find(p => 
-            Math.abs(parseFloat(p.latitude) - dropoffCoords.latitude) < 0.001 &&
-            Math.abs(parseFloat(p.longitude) - dropoffCoords.longitude) < 0.001
-          );
-          
-          if (pickupPoint && dropoffPoint) {
-            // Find the route that connects these specific points
-            const matchingRoute = routeSummaries.find(r => {
-              const pickupMatch = r.pickup_point_id == pickupPoint.id;
-              
-              let dropoffIds = r.dropoff_point_ids;
-              if (typeof dropoffIds === 'string') {
-                dropoffIds = dropoffIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim()));
-              }
-              
-              const dropoffMatch = Array.isArray(dropoffIds) && dropoffIds.includes(parseInt(dropoffPoint.id));
-              return pickupMatch && dropoffMatch;
-            });
-            
-            if (matchingRoute) {
-              // Get only roads for this specific route
-              let roadIds = matchingRoute.road_highlight_ids;
-              if (typeof roadIds === 'string') {
-                roadIds = roadIds.replace(/[{}]/g, '').split(',').map(id => parseInt(id.trim()));
-              }
-              
-              roads = mapDataResult.roads
-                .filter(road => roadIds.includes(parseInt(road.id)))
-                .map(road => ({
-                  ...road,
-                  color: matchingRoute.color || '#FF9800',
-                  weight: 4,
-                  opacity: 0.8
-                }));
-            }
+        if (osrmResponse.ok) {
+          const osrmData = await osrmResponse.json();
+          if (osrmData.routes && osrmData.routes.length > 0) {
+            const route = osrmData.routes[0];
+            routes = [{
+              coordinates: route.geometry.coordinates.map(coord => ({
+                latitude: coord[1],
+                longitude: coord[0]
+              })),
+              color: '#FF9800',
+              weight: 5,
+              opacity: 0.8
+            }];
           }
         }
       } catch (error) {
-        console.log('Could not load specific route:', error);
+        console.log('Could not load OSRM route:', error);
       }
       
       setMapData({
@@ -176,7 +141,8 @@ const RideMap = ({ ride }) => {
             iconColor: '#C62828'
           }
         ],
-        roads
+        roads: [],
+        routes
       });
     } catch (error) {
       console.error('Error loading map data:', error);
@@ -197,7 +163,7 @@ const RideMap = ({ ride }) => {
       region={mapData.region}
       markers={mapData.markers}
       roads={mapData.roads}
-      routes={[]}
+      routes={mapData.routes}
       showSatellite={false}
     />
   );
