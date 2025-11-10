@@ -9,7 +9,7 @@ import { getCurrentUser } from '../../services/authService';
 import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
 import { useAuth } from '../../hooks/useAuth';
-import { createDriverReview } from '../../services/reviews';
+import { createRideHailingDriverReview, checkExistingReviews } from '../../services/reviews';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -34,6 +34,7 @@ const TerminalsScreen = ({ navigation, route }) => {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submittingRating, setSubmittingRating] = useState(false);
+  const [reviewedRides, setReviewedRides] = useState(new Set());
 
   useEffect(() => {
     if (role === 'tourist') {
@@ -108,6 +109,20 @@ const TerminalsScreen = ({ navigation, route }) => {
         const result = await getMyRideHistory(user.id);
         if (result.success) {
           setRideHistory(result.data || []);
+          // Check which rides have been reviewed
+          const reviewed = new Set();
+          for (const ride of result.data || []) {
+            if (ride.status === 'completed' && ride.driver_id) {
+              const check = await checkExistingReviews({
+                booking_id: ride.id,
+                reviewer_id: user.id
+              });
+              if (check.success && check.data?.hasDriverReview) {
+                reviewed.add(ride.id);
+              }
+            }
+          }
+          setReviewedRides(reviewed);
         }
       }
     } catch (error) {
@@ -134,27 +149,41 @@ const TerminalsScreen = ({ navigation, route }) => {
   };
 
   const handleSubmitRating = async () => {
-    if (!ratingModal.ride || !currentUser) return;
+    if (!ratingModal.ride || !currentUser) {
+      Alert.alert('Error', 'Missing ride or user information');
+      return;
+    }
     
     try {
       setSubmittingRating(true);
-      const result = await createDriverReview({
+      console.log('Submitting review:', {
         driver_id: ratingModal.ride.driver_id,
-        booking_id: ratingModal.ride.id,
+        ride_booking_id: ratingModal.ride.id,
+        reviewer_id: currentUser.id,
+        rating
+      });
+      
+      const result = await createRideHailingDriverReview({
+        driver_id: ratingModal.ride.driver_id,
+        ride_booking_id: ratingModal.ride.id,
         reviewer_id: currentUser.id,
         rating,
         comment: comment.trim(),
         is_anonymous: false
       });
       
+      console.log('Review result:', result);
+      
       if (result.success) {
         Alert.alert('Thank You!', 'Your rating has been submitted.');
         setRatingModal({ visible: false, ride: null });
+        setReviewedRides(prev => new Set([...prev, ratingModal.ride.id]));
       } else {
         Alert.alert('Error', result.error || 'Failed to submit rating');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to submit rating');
+      console.error('Review error:', error);
+      Alert.alert('Error', error.message || 'Failed to submit rating');
     } finally {
       setSubmittingRating(false);
     }
@@ -247,17 +276,24 @@ const TerminalsScreen = ({ navigation, route }) => {
                     </View>
                   </View>
                   {ride.status === 'completed' && ride.driver_id && (
-                    <TouchableOpacity 
-                      style={styles.rateButton}
-                      onPress={() => {
-                        setRatingModal({ visible: true, ride });
-                        setRating(5);
-                        setComment('');
-                      }}
-                    >
-                      <Ionicons name="star" size={16} color="#FFA000" />
-                      <Text style={styles.rateButtonText}>Rate Driver</Text>
-                    </TouchableOpacity>
+                    reviewedRides.has(ride.id) ? (
+                      <View style={styles.reviewedBadge}>
+                        <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+                        <Text style={styles.reviewedText}>Reviewed</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity 
+                        style={styles.rateButton}
+                        onPress={() => {
+                          setRatingModal({ visible: true, ride });
+                          setRating(5);
+                          setComment('');
+                        }}
+                      >
+                        <Ionicons name="star" size={16} color="#FFA000" />
+                        <Text style={styles.rateButtonText}>Rate Driver</Text>
+                      </TouchableOpacity>
+                    )
                   )}
                 </View>
               ))}
@@ -631,6 +667,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  reviewedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6,
+  },
+  reviewedText: {
+    color: '#2E7D32',
+    fontWeight: '600',
+    fontSize: 14,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -700,5 +751,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+// Auto-refresh active rides every 10 seconds
+const useRidePolling = (fetchFunction, interval = 10000) => {
+  useEffect(() => {
+    const timer = setInterval(fetchFunction, interval);
+    return () => clearInterval(timer);
+  }, [fetchFunction, interval]);
+};
 
 export default TerminalsScreen;

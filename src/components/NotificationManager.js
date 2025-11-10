@@ -16,49 +16,60 @@ const NotificationManager = ({ navigation }) => {
 
   useEffect(() => {
     initializeNotifications();
-    loadDismissedNotifications();
     
     return () => {
       NotificationService.stopPolling();
     };
   }, []);
   
+  // Load dismissed notifications when user changes
+  useEffect(() => {
+    if (user?.id) {
+      loadDismissedNotifications(user.id);
+    }
+  }, [user?.id]);
+  
   // Update dismissed notifications when context notifications change (e.g., marked as read)
   useEffect(() => {
-    if (contextNotifications && contextNotifications.length > 0) {
+    if (contextNotifications && contextNotifications.length > 0 && user?.id) {
       const readNotifications = contextNotifications
         .filter(n => n.read)
         .map(n => `${n.id}_${n.created_at}`);
       
       if (readNotifications.length > 0) {
         setShownNotifications(prev => new Set([...prev, ...readNotifications]));
-        AsyncStorage.setItem('dismissedNotifications', JSON.stringify([...shownNotifications, ...readNotifications]));
+        saveDismissedNotifications(user.id, [...shownNotifications, ...readNotifications]);
       }
     }
   }, [contextNotifications]);
 
-  const loadDismissedNotifications = async () => {
+  const loadDismissedNotifications = async (userId) => {
     try {
-      const dismissed = await AsyncStorage.getItem('dismissedNotifications');
+      const key = `dismissedNotifications_${userId}`;
+      const dismissed = await AsyncStorage.getItem(key);
       if (dismissed) {
         setShownNotifications(new Set(JSON.parse(dismissed)));
       }
     } catch (error) {
       console.log('Error loading dismissed notifications:', error);
-      // Clear corrupted notification cache
-      try {
-        await AsyncStorage.removeItem('dismissedNotifications');
-      } catch (clearError) {
-        console.log('Error clearing notification cache:', clearError);
-      }
+    }
+  };
+
+  const saveDismissedNotifications = async (userId, notifications) => {
+    try {
+      const key = `dismissedNotifications_${userId}`;
+      await AsyncStorage.setItem(key, JSON.stringify(notifications));
+    } catch (error) {
+      console.log('Error saving dismissed notification:', error);
     }
   };
 
   const saveDismissedNotification = async (notificationKey) => {
+    if (!user?.id) return;
     try {
       const newSet = new Set([...shownNotifications, notificationKey]);
       setShownNotifications(newSet);
-      await AsyncStorage.setItem('dismissedNotifications', JSON.stringify([...newSet]));
+      await saveDismissedNotifications(user.id, [...newSet]);
     } catch (error) {
       console.log('Error saving dismissed notification:', error);
     }
@@ -95,10 +106,11 @@ const NotificationManager = ({ navigation }) => {
     // Reload notifications in context to update badge count
     loadNotifications();
     
-    // Only show one notification at a time to prevent modal spam
+    // Filter out already read or shown notifications
     const unshownNotifications = notifications.filter(notification => {
       const notificationKey = `${notification.id}_${notification.created_at}`;
-      return !shownNotifications.has(notificationKey) && !notification.read;
+      // Don't show if already marked as read OR already shown
+      return !notification.read && !shownNotifications.has(notificationKey);
     });
     
     if (unshownNotifications.length > 0) {
@@ -108,16 +120,11 @@ const NotificationManager = ({ navigation }) => {
   };
 
   const handleNotificationByType = (notification) => {
-    // Only show alerts for new notifications (not already read)
-    if (notification.read) {
-      return;
-    }
-    
     const { type, title, message } = notification;
-    
-    // Prevent duplicate alerts by tracking shown notifications
     const notificationKey = `${notification.id}_${notification.created_at}`;
-    if (shownNotifications.has(notificationKey)) {
+    
+    // Prevent duplicate alerts - check both read status and shown status
+    if (notification.read || shownNotifications.has(notificationKey)) {
       return;
     }
     

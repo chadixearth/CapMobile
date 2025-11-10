@@ -365,10 +365,24 @@ export async function completeRideBooking(bookingId, driverData) {
       body: driverData
     });
     
+    // Invalidate reviews to trigger refresh
+    invalidateData.reviews();
+    
     return result;
   } catch (error) {
     console.error('Error completing ride booking:', error);
     throw error;
+  }
+}
+
+// Get ride booking details
+export async function getRideBookingDetails(bookingId) {
+  try {
+    const result = await apiCall(`/ride-hailing/${bookingId}/`);
+    return result;
+  } catch (error) {
+    console.error('Error fetching ride booking details:', error);
+    return { success: false, error: error.message };
   }
 }
 

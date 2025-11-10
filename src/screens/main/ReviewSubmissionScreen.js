@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
-import { createPackageReview, createDriverReview } from '../../services/reviews';
+import { createPackageReview, createDriverReview, createRideHailingDriverReview } from '../../services/reviews';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 
 const MAROON = '#6B2E2B';
@@ -20,7 +20,7 @@ const CARD = '#FFFFFF';
 
 export default function ReviewSubmissionScreen({ navigation, route }) {
   const { user } = useAuth();
-  const { booking, package: tourPackage, driver } = route.params || {};
+  const { booking, package: tourPackage, driver, rideBooking, bookingType = 'tour' } = route.params || {};
   
   const [packageRating, setPackageRating] = useState(0);
   const [driverRating, setDriverRating] = useState(0);
@@ -77,8 +77,8 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
     try {
       const results = [];
       
-      // Submit package review if rating provided
-      if (packageRating > 0) {
+      // Submit package review if rating provided (tour bookings only)
+      if (packageRating > 0 && bookingType === 'tour') {
         const packageResult = await createPackageReview({
           package_id: tourPackage?.id,
           booking_id: booking?.id,
@@ -90,16 +90,28 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
         results.push({ type: 'package', result: packageResult });
       }
       
-      // Submit driver review if rating provided
+      // Submit driver review
       if (driverRating > 0) {
-        const driverResult = await createDriverReview({
-          driver_id: driver?.id,
-          booking_id: booking?.id,
-          reviewer_id: user?.id,
-          rating: driverRating,
-          comment: driverComment.trim(),
-          is_anonymous: isAnonymous,
-        });
+        let driverResult;
+        if (bookingType === 'ride_hailing') {
+          driverResult = await createRideHailingDriverReview({
+            driver_id: driver?.id || rideBooking?.driver_id,
+            ride_booking_id: rideBooking?.id,
+            reviewer_id: user?.id,
+            rating: driverRating,
+            comment: driverComment.trim(),
+            is_anonymous: isAnonymous,
+          });
+        } else {
+          driverResult = await createDriverReview({
+            driver_id: driver?.id,
+            booking_id: booking?.id,
+            reviewer_id: user?.id,
+            rating: driverRating,
+            comment: driverComment.trim(),
+            is_anonymous: isAnonymous,
+          });
+        }
         results.push({ type: 'driver', result: driverResult });
       }
       
@@ -168,7 +180,7 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
         </View>
 
         {/* Package Review */}
-        {tourPackage && (
+        {tourPackage && bookingType === 'tour' && (
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <Ionicons name="location" size={20} color={MAROON} />
@@ -192,7 +204,7 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
         )}
 
         {/* Driver Review */}
-        {driver && (
+        {(driver || (rideBooking && rideBooking.driver_id)) && (
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <Ionicons name="person" size={20} color={MAROON} />

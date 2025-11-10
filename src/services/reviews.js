@@ -115,17 +115,39 @@ export async function getUserReviews({ user_id, type = 'received', limit = 50, u
   if (!user_id) return { success: false, error: 'user_id is required' };
   
   try {
-    // Tourists can only give reviews, not receive them
-    if (user_role === 'tourist' && type === 'received') {
-      return { success: true, data: [], stats: { average_rating: 0, review_count: 0 } };
-    }
-    
     if (type === 'received') {
       // Get reviews received by this user (as driver/owner)
       return await getDriverReviews({ driver_id: user_id, limit });
     } else {
-      // Get reviews given by this user
-      return await listReviews({ reviewer_id: user_id, limit, include_stats: true });
+      // Get reviews given by this user - fetch BOTH package and driver reviews
+      const token = await getAccessToken().catch(() => null);
+      
+      // Fetch driver reviews
+      const driverRes = await request(`/reviews/driver/all/?reviewer_id=${user_id}&limit=${limit}`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      
+      // Fetch package reviews
+      const packageRes = await request(`/reviews/?reviewer_id=${user_id}&limit=${limit}`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      
+      const driverReviews = (driverRes.ok && driverRes.data?.success) 
+        ? (driverRes.data.data?.reviews || driverRes.data.data || []) 
+        : [];
+      
+      const packageReviews = (packageRes.ok && packageRes.data?.success)
+        ? (packageRes.data.data || [])
+        : [];
+      
+      // Combine and sort by date
+      const allReviews = [...driverReviews, ...packageReviews].sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+      
+      return { success: true, data: allReviews, stats: null };
     }
   } catch (error) {
     return { success: false, error: error.message || 'Failed to fetch user reviews' };
@@ -161,6 +183,34 @@ export async function checkExistingReviews({ booking_id, reviewer_id }) {
       };
     }
     return { success: false, error: error.message || 'Failed to check existing reviews' };
+  }
+}
+
+export async function createRideHailingDriverReview({ driver_id, ride_booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
+  try {
+    const token = await getAccessToken().catch(() => null);
+    const res = await request(`/reviews/driver/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ 
+        driver_id, 
+        booking_id: ride_booking_id, 
+        reviewer_id, 
+        rating, 
+        comment, 
+        is_anonymous,
+        booking_type: 'ride_hailing'
+      }),
+      timeoutMs: 20000,
+    });
+    if (res.ok && (res.data?.success || res.status === 201)) {
+      return { success: true, data: res.data?.data || res.data };
+    }
+    return { success: false, error: res.data?.error || 'Failed to submit driver review' };
+  } catch (e) {
+    return { success: false, error: e?.message || 'Failed to submit driver review' };
   }
 }
 

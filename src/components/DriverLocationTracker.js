@@ -43,7 +43,7 @@ const DriverLocationTracker = () => {
     }
 
     try {
-      const success = await LocationService.startDriverLocationTracking(user.id);
+      const success = await LocationService.startDriverLocationTracking(user.id, user.role);
       
       if (success) {
         setIsTracking(true);

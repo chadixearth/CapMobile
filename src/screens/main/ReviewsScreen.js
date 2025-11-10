@@ -20,10 +20,12 @@ const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
 const CARD = '#FFFFFF';
 
-export default function ReviewsScreen({ navigation }) {
+function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
   const [activeTab, setActiveTab] = useState(user?.role === 'tourist' ? 'given' : 'received');
+  const isTourist = user?.role === 'tourist';
+  const isDriverOrOwner = user?.role === 'driver' || user?.role === 'driver-owner' || user?.role === 'owner';
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -136,32 +138,46 @@ export default function ReviewsScreen({ navigation }) {
     return <View style={styles.starsRow}>{stars}</View>;
   };
 
-  const renderReview = (review, index) => (
-    <View key={index} style={styles.reviewCard}>
-      <View style={styles.reviewHeader}>
-        <View style={styles.reviewInfo}>
-          <Text style={styles.reviewerName}>
-            {activeTab === 'received' 
-              ? (review.reviewer_name || 'Anonymous User')
-              : (review.driver_name || review.package_name || 'Service')
-            }
+  const renderReview = (review, index) => {
+    const isPackageReview = !!review.package_id;
+    const isDriverReview = !!review.driver_id;
+    
+    return (
+      <View key={index} style={styles.reviewCard}>
+        <View style={styles.reviewHeader}>
+          <View style={styles.reviewInfo}>
+            <Text style={styles.reviewerName}>
+              {activeTab === 'received' 
+                ? (review.reviewer_name || 'Anonymous User')
+                : isDriverReview
+                  ? (review.driver_name || 'Driver')
+                  : (review.package_name || 'Tour Package')
+              }
+            </Text>
+            {renderStars(review.rating)}
+          </View>
+          <Text style={styles.reviewDate}>
+            {new Date(review.created_at).toLocaleDateString()}
           </Text>
-          {renderStars(review.rating)}
         </View>
-        <Text style={styles.reviewDate}>
-          {new Date(review.created_at).toLocaleDateString()}
-        </Text>
+        
+        {review.comment && (
+          <Text style={styles.reviewComment}>{review.comment}</Text>
+        )}
+        
+        <View style={styles.reviewType}>
+          <Ionicons 
+            name={isDriverReview ? 'person' : 'location'} 
+            size={12} 
+            color="#999" 
+          />
+          <Text style={styles.reviewTypeText}>
+            {isDriverReview ? 'Driver Review' : 'Package Review'}
+          </Text>
+        </View>
       </View>
-      
-      {review.comment && (
-        <Text style={styles.reviewComment}>{review.comment}</Text>
-      )}
-      
-      {review.package_name && (
-        <Text style={styles.packageInfo}>Package: {review.package_name}</Text>
-      )}
-    </View>
-  );
+    );
+  }
 
   const renderStats = () => {
     if (!stats || activeTab !== 'received') return null;
@@ -202,17 +218,9 @@ export default function ReviewsScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'received' && styles.activeTab]}
-          onPress={() => setActiveTab('received')}
-        >
-          <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
-            Received
-          </Text>
-        </TouchableOpacity>
-        {user?.role === 'tourist' && (
+      {/* Tabs - Only show for tourists */}
+      {isTourist && (
+        <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'given' && styles.activeTab]}
             onPress={() => setActiveTab('given')}
@@ -221,8 +229,8 @@ export default function ReviewsScreen({ navigation }) {
               Given
             </Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
 
       {/* Content */}
       <ScrollView
@@ -254,11 +262,9 @@ export default function ReviewsScreen({ navigation }) {
             <Ionicons name="star-outline" size={64} color="#DDD" />
             <Text style={styles.emptyTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyText}>
-              {user?.role === 'tourist' 
+              {isTourist
                 ? 'You haven\'t given any reviews yet. Complete a booking to leave a review!'
-                : activeTab === 'received'
-                  ? 'You haven\'t received any reviews yet.'
-                  : 'You haven\'t given any reviews yet.'}
+                : 'You haven\'t received any reviews yet. Complete rides to get reviews from tourists.'}
             </Text>
           </View>
         ) : (
@@ -421,6 +427,17 @@ const styles = StyleSheet.create({
     color: MAROON,
     fontWeight: '500',
   },
+  reviewType: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  reviewTypeText: {
+    fontSize: 11,
+    color: '#999',
+    fontWeight: '500',
+  },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -463,3 +480,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
 });
+
+export default ReviewsScreen;

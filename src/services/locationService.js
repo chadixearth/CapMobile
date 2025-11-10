@@ -6,15 +6,27 @@ class LocationService {
   static locationWatcher = null;
   static isTracking = false;
 
+  // Get role-specific location message
+  static getLocationMessage(userRole) {
+    if (userRole === 'driver') {
+      return 'Please turn on location to accept bookings. This allows you to receive booking requests.';
+    } else if (userRole === 'owner') {
+      return 'Please turn on location to accept bookings. This allows you to receive booking requests.';
+    } else {
+      return 'Please turn on location to book a ride. This helps us find nearby drivers.';
+    }
+  }
+
   // Request location permissions
-  static async requestPermissions() {
+  static async requestPermissions(userRole = null) {
     try {
       // Check if location services are enabled first
       const isEnabled = await Location.hasServicesEnabledAsync();
       if (!isEnabled) {
+        const message = this.getLocationMessage(userRole);
         Alert.alert(
           'Location Services Required',
-          'Please enable location services to book a ride. This helps us find nearby drivers.',
+          message,
           [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -66,13 +78,13 @@ class LocationService {
   }
 
   // Start real-time location tracking
-  static async startTracking(userId, onLocationUpdate) {
+  static async startTracking(userId, onLocationUpdate, userRole = null) {
     if (this.isTracking) {
       console.log('Location tracking already active');
       return true;
     }
 
-    const hasPermission = await this.requestPermissions();
+    const hasPermission = await this.requestPermissions(userRole);
     if (!hasPermission) return false;
 
     try {
@@ -135,8 +147,8 @@ class LocationService {
   }
 
   // Get current location once
-  static async getCurrentLocation() {
-    const hasPermission = await this.requestPermissions();
+  static async getCurrentLocation(userRole = null) {
+    const hasPermission = await this.requestPermissions(userRole);
     if (!hasPermission) {
       return null; // Return null instead of throwing - Alert already shown
     }
@@ -291,11 +303,11 @@ class LocationService {
   }
   
   // Start location tracking for drivers automatically
-  static async startDriverLocationTracking(userId) {
+  static async startDriverLocationTracking(userId, userRole = 'driver') {
     try {
       const success = await this.startTracking(userId, (location) => {
         console.log(`[LocationService] Driver ${userId} location updated:`, location);
-      });
+      }, userRole);
       
       if (success) {
         console.log(`[LocationService] Started location tracking for driver ${userId}`);
