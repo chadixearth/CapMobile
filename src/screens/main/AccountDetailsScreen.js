@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import EditableField from '../../components/EditableField';
 import Button from '../../components/Button';
 import BackButton from '../../components/BackButton';
+import SuccessModal from '../../components/SuccessModal';
 import {
   getCurrentUser,
   getUserProfile,
@@ -84,6 +85,11 @@ export default function AccountDetailsScreen({ navigation }) {
   // Deactivation modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Success modal state
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showPhotoSuccessModal, setShowPhotoSuccessModal] = useState(false);
+  const [showPasswordSuccessModal, setShowPasswordSuccessModal] = useState(false);
 
   // Fetch user data
   useEffect(() => {
@@ -268,6 +274,7 @@ export default function AccountDetailsScreen({ navigation }) {
           });
           if (profileUpdateResult.success) {
             setSuccess('Profile photo updated successfully!');
+            setShowPhotoSuccessModal(true);
             // Refresh auth context with updated user data
             if (auth.refreshUser) {
               await auth.refreshUser();
@@ -275,6 +282,7 @@ export default function AccountDetailsScreen({ navigation }) {
           } else {
             console.warn('Photo uploaded but failed to save to profile:', profileUpdateResult.error);
             setSuccess('Profile photo uploaded!');
+            setShowPhotoSuccessModal(true);
           }
         } else {
           throw new Error(result.error || 'Failed to upload photo');
@@ -300,6 +308,7 @@ export default function AccountDetailsScreen({ navigation }) {
         setPhotoUrl(publicUrlData.publicUrl);
         await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
         setSuccess('Profile photo updated!');
+        setShowPhotoSuccessModal(true);
       }
     } catch (err) {
       console.error('Upload error:', err);
@@ -361,6 +370,7 @@ export default function AccountDetailsScreen({ navigation }) {
         setPhotoUrl(publicUrlData.publicUrl);
         await supabase.auth.updateUser({ data: { profile_photo_url: publicUrlData.publicUrl } });
         setSuccess('Profile photo updated!');
+        setShowPhotoSuccessModal(true);
       }
     } catch (err) {
       setError(err.message || 'Failed to upload photo.');
@@ -396,6 +406,7 @@ export default function AccountDetailsScreen({ navigation }) {
         const result = await updateUserProfile(currentUser.id, profileData);
         if (result.success) {
           setSuccess(result.message || 'Account updated successfully!');
+          setShowSuccessModal(true);
           // Refresh auth context with updated user data
           if (auth.refreshUser) {
             await auth.refreshUser();
@@ -419,6 +430,7 @@ export default function AccountDetailsScreen({ navigation }) {
           setError(metaError?.message || emailError?.message || 'Failed to update account.');
         } else {
           setSuccess('Account updated successfully!');
+          setShowSuccessModal(true);
         }
       }
     } catch (e) {
@@ -462,6 +474,7 @@ export default function AccountDetailsScreen({ navigation }) {
       const result = await changePassword(currentPassword, newPassword);
       if (result.success) {
         setPasswordMessage('Password changed successfully!');
+        setShowPasswordSuccessModal(true);
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
@@ -934,6 +947,39 @@ export default function AccountDetailsScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Success Modal */}
+      <SuccessModal
+        visible={showSuccessModal}
+        title="Profile Updated!"
+        message="Your account details have been successfully updated."
+        onClose={() => setShowSuccessModal(false)}
+        primaryActionText="Done"
+        iconName="checkmark-circle"
+        iconColor="#22C55E"
+      />
+
+      {/* Photo Success Modal */}
+      <SuccessModal
+        visible={showPhotoSuccessModal}
+        title="Photo Updated!"
+        message="Your profile photo has been successfully updated."
+        onClose={() => setShowPhotoSuccessModal(false)}
+        primaryActionText="Done"
+        iconName="camera"
+        iconColor="#6B2E2B"
+      />
+
+      {/* Password Success Modal */}
+      <SuccessModal
+        visible={showPasswordSuccessModal}
+        title="Password Changed!"
+        message="Your password has been successfully updated."
+        onClose={() => setShowPasswordSuccessModal(false)}
+        primaryActionText="Done"
+        iconName="shield-checkmark"
+        iconColor="#22C55E"
+      />
     </View>
   );
 }

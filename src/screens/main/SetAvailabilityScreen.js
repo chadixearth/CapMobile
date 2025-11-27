@@ -7,19 +7,16 @@ import {
   Alert,
   ScrollView,
   Switch,
-  Modal
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { driverScheduleService } from '../../services/driverScheduleService';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
+import TimePickerModal from '../../components/TimePickerModal';
+import { TIME_SLOTS, formatTime, isTimeInPast, isDateInPast, getValidTimeSlotsForDate } from '../../constants/timeConstants';
 
 const MAROON = '#6B2E2B';
-
-const TIME_SLOTS = [
-  '08:00', '09:00', '10:00', '11:00', '12:00',
-  '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
-];
 
 export default function SetAvailabilityScreen({ navigation, route }) {
   // Hide the default stack header (avoid double headers)
@@ -39,6 +36,7 @@ export default function SetAvailabilityScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [showFromTimePicker, setShowFromTimePicker] = useState(false);
   const [showToTimePicker, setShowToTimePicker] = useState(false);
+  const [hasNonContinuousSlots, setHasNonContinuousSlots] = useState(false);
 
   // Load existing availability when date changes
   React.useEffect(() => {
@@ -46,14 +44,10 @@ export default function SetAvailabilityScreen({ navigation, route }) {
       if (!user?.id || !selectedDate) return;
       
       // Check if selected date is in the past
-      const selectedDateObj = new Date(selectedDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (selectedDateObj < today) {
+      if (isDateInPast(selectedDate)) {
         Alert.alert(
           'Invalid Date', 
-          'Cannot set availability for past dates. Redirecting to today.',
+          'Cannot set availability for past dates.',
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
         return;
@@ -67,9 +61,7 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           setIsAvailable(schedule.is_available);
           
           if (schedule.is_available && schedule.unavailable_times?.length > 0) {
-            // Determine if it's range or custom mode based on pattern
-            const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
-            const availableTimes = allTimes.filter(time => !schedule.unavailable_times.includes(time));
+            const availableTimes = TIME_SLOTS.filter(time => !schedule.unavailable_times.includes(time));
             
             if (availableTimes.length > 0) {
               // Check if it's a continuous range
@@ -105,27 +97,42 @@ export default function SetAvailabilityScreen({ navigation, route }) {
     };
 
     loadExistingAvailability();
-  }, [selectedDate, user?.id]);
+  }, [selectedDate, user?.id, navigation]);
 
   const toggleTimeSlot = (time) => {
-    setSelectedTimeSlots(prev => 
-      prev.includes(time) 
-        ? prev.filter(t => t !== time)
-        : [...prev, time].sort()
-    );
+    const newSlots = selectedTimeSlots.includes(time) 
+      ? selectedTimeSlots.filter(t => t !== time)
+      : [...selectedTimeSlots, time].sort();
+    
+    setSelectedTimeSlots(newSlots);
+    
+    // Check for non-continuous slots
+    if (newSlots.length > 1) {
+      const isContinuous = newSlots.every((slot, index) => {
+        if (index === 0) return true;
+        const prevHour = parseInt(newSlots[index - 1].split(':')[0]);
+        const currHour = parseInt(slot.split(':')[0]);
+        return currHour === prevHour + 1;
+      });
+      setHasNonContinuousSlots(!isContinuous);
+    } else {
+      setHasNonContinuousSlots(false);
+    }
   };
-
-  const timeOptions = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
 
   const handleFromTimeSelect = (time) => {
     setAvailableFromTime(time);
     setShowFromTimePicker(false);
+    
     // Auto-adjust 'to' time if it's not later than 'from' time
     const fromHour = parseInt(time.split(':')[0]);
     const toHour = parseInt(availableToTime.split(':')[0]);
+    
     if (toHour <= fromHour) {
-      const newToHour = Math.min(fromHour + 8, 20); // Default 8-hour shift, max 20:00
-      setAvailableToTime(`${newToHour.toString().padStart(2, '0')}:00`);
+      // Find next available slot, default to 8 hours or end of day
+      const maxHour = Math.min(fromHour + 8, 20);
+      const nextSlot = TIME_SLOTS.find(slot => parseInt(slot.split(':')[0]) >= maxHour);
+      setAvailableToTime(nextSlot || '20:00');
     }
   };
 
@@ -134,40 +141,39 @@ export default function SetAvailabilityScreen({ navigation, route }) {
     setShowToTimePicker(false);
   };
 
-  const getValidToTimes = () => {
-    const fromHour = parseInt(availableFromTime.split(':')[0]);
-    return timeOptions.filter(time => {
-      const hour = parseInt(time.split(':')[0]);
-      return hour > fromHour;
-    });
+  const saveAvailability = async () => {
+    // Show confirmation for non-continuous slots
+    if (hasNonContinuousSlots && availabilityMode === 'custom') {
+      Alert.alert(
+        'Non-Continuous Hours',
+        'You have selected non-continuous hours. This means you will have gaps in your availability. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => {} },
+          { text: 'Continue', onPress: () => performSave() }
+        ]
+      );
+      return;
+    }
+    
+    performSave();
   };
 
-  const saveAvailability = async () => {
+  const performSave = async () => {
     setSaving(true);
     try {
-      // Additional validation for today's date with current time
-      const selectedDateObj = new Date(selectedDate);
-      const today = new Date();
-      const isToday = selectedDateObj.toDateString() === today.toDateString();
-      
-      if (isToday && isAvailable) {
-        const currentHour = today.getHours();
-        
+      // Validate times are not in the past
+      if (isAvailable) {
         if (availabilityMode === 'range') {
-          const fromHour = parseInt(availableFromTime.split(':')[0]);
-          if (fromHour <= currentHour) {
+          if (isTimeInPast(selectedDate, availableFromTime)) {
             Alert.alert(
               'Invalid Time', 
-              `Cannot set availability for past hours. Current time is ${today.getHours()}:${today.getMinutes().toString().padStart(2, '0')}`
+              'Start time is in the past. Please select a future time.'
             );
             setSaving(false);
             return;
           }
         } else {
-          const validSlots = selectedTimeSlots.filter(time => {
-            const slotHour = parseInt(time.split(':')[0]);
-            return slotHour > currentHour;
-          });
+          const validSlots = selectedTimeSlots.filter(time => !isTimeInPast(selectedDate, time));
           
           if (validSlots.length === 0) {
             Alert.alert(
@@ -180,10 +186,12 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           
           if (validSlots.length !== selectedTimeSlots.length) {
             Alert.alert(
-              'Some Hours Skipped', 
-              `${selectedTimeSlots.length - validSlots.length} past hour(s) were automatically removed.`
+              'Some Hours Removed', 
+              `${selectedTimeSlots.length - validSlots.length} past hour(s) were removed.`,
+              [{ text: 'OK', onPress: () => setSelectedTimeSlots(validSlots) }]
             );
-            setSelectedTimeSlots(validSlots);
+            setSaving(false);
+            return;
           }
         }
       }
@@ -192,25 +200,22 @@ export default function SetAvailabilityScreen({ navigation, route }) {
       let notes = '';
       
       if (!isAvailable) {
-        // If not available, mark all times as unavailable
-        unavailableTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+        unavailableTimes = TIME_SLOTS;
         notes = 'Not available';
       } else {
-        // Available - calculate based on mode
-        const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
         
         if (availabilityMode === 'range') {
           const fromHour = parseInt(availableFromTime.split(':')[0]);
           const toHour = parseInt(availableToTime.split(':')[0]);
           
-          unavailableTimes = allTimes.filter(time => {
+          unavailableTimes = TIME_SLOTS.filter(time => {
             const hour = parseInt(time.split(':')[0]);
             return hour < fromHour || hour >= toHour;
           });
           
           notes = `Available ${formatTime(availableFromTime)} - ${formatTime(availableToTime)}`;
         } else {
-          unavailableTimes = allTimes.filter(time => !selectedTimeSlots.includes(time));
+          unavailableTimes = TIME_SLOTS.filter(time => !selectedTimeSlots.includes(time));
           
           if (selectedTimeSlots.length === 1) {
             notes = `Available at ${formatTime(selectedTimeSlots[0])}`;
@@ -234,22 +239,34 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to update availability');
+        const errorMsg = result.errorType === 'NETWORK' 
+          ? 'Network error. Please check your connection and try again.'
+          : result.error || 'Failed to update availability';
+        Alert.alert('Error', errorMsg);
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error updating availability');
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  const formatTime = (timeString) => {
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
-  };
+  const validTimeSlots = getValidTimeSlotsForDate(selectedDate);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <TARTRACKHeader
+          onMessagePress={() => navigation.navigate('Chat')}
+          onNotificationPress={() => navigation.navigate('Notification')}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={MAROON} />
+          <Text style={styles.loadingText}>Loading availability...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -388,7 +405,7 @@ export default function SetAvailabilityScreen({ navigation, route }) {
                 </Text>
                 
                 <View style={styles.timeGrid}>
-                  {['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map((time) => (
+                  {validTimeSlots.map((time) => (
                     <TouchableOpacity
                       key={time}
                       style={[
@@ -413,6 +430,12 @@ export default function SetAvailabilityScreen({ navigation, route }) {
                     <Text style={styles.selectedSummaryText}>
                       {selectedTimeSlots.map(time => formatTime(time)).join(', ')}
                     </Text>
+                    {hasNonContinuousSlots && (
+                      <View style={styles.warningBanner}>
+                        <Ionicons name="warning-outline" size={16} color="#f57c00" />
+                        <Text style={styles.warningText}>Non-continuous hours selected</Text>
+                      </View>
+                    )}
                   </View>
                 )}
               </>
@@ -437,87 +460,24 @@ export default function SetAvailabilityScreen({ navigation, route }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* From Time Picker Modal */}
-      <Modal
+      <TimePickerModal
         visible={showFromTimePicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowFromTimePicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.timePickerModal}>
-            <View style={styles.timePickerHeader}>
-              <Text style={styles.timePickerTitle}>Select Start Time</Text>
-              <TouchableOpacity onPress={() => setShowFromTimePicker(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.timePickerList}>
-              {timeOptions.map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[
-                    styles.timePickerItem,
-                    availableFromTime === time && styles.timePickerItemSelected
-                  ]}
-                  onPress={() => handleFromTimeSelect(time)}
-                >
-                  <Text style={[
-                    styles.timePickerItemText,
-                    availableFromTime === time && styles.timePickerItemTextSelected
-                  ]}>
-                    {formatTime(time)}
-                  </Text>
-                  {availableFromTime === time && (
-                    <Ionicons name="checkmark" size={20} color={MAROON} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowFromTimePicker(false)}
+        onSelect={handleFromTimeSelect}
+        selectedTime={availableFromTime}
+        title="Select Start Time"
+        timeOptions={validTimeSlots}
+      />
 
-      {/* To Time Picker Modal */}
-      <Modal
+      <TimePickerModal
         visible={showToTimePicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowToTimePicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.timePickerModal}>
-            <View style={styles.timePickerHeader}>
-              <Text style={styles.timePickerTitle}>Select End Time</Text>
-              <TouchableOpacity onPress={() => setShowToTimePicker(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.timePickerList}>
-              {getValidToTimes().map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[
-                    styles.timePickerItem,
-                    availableToTime === time && styles.timePickerItemSelected
-                  ]}
-                  onPress={() => handleToTimeSelect(time)}
-                >
-                  <Text style={[
-                    styles.timePickerItemText,
-                    availableToTime === time && styles.timePickerItemTextSelected
-                  ]}>
-                    {formatTime(time)}
-                  </Text>
-                  {availableToTime === time && (
-                    <Ionicons name="checkmark" size={20} color={MAROON} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowToTimePicker(false)}
+        onSelect={handleToTimeSelect}
+        selectedTime={availableToTime}
+        title="Select End Time"
+        timeOptions={TIME_SLOTS}
+        minTime={availableFromTime}
+      />
     </View>
   );
 }
@@ -763,52 +723,28 @@ const styles = StyleSheet.create({
     color: '#388e3c',
     lineHeight: 18
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end'
-  },
-  timePickerModal: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '60%'
-  },
-  timePickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0'
-  },
-  timePickerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333'
-  },
-  timePickerList: {
-    maxHeight: 300
-  },
-  timePickerItem: {
+  warningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5'
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#ffd54f'
   },
-  timePickerItemSelected: {
-    backgroundColor: '#f8f9fa'
-  },
-  timePickerItemText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500'
-  },
-  timePickerItemTextSelected: {
-    color: MAROON,
+  warningText: {
+    fontSize: 12,
+    color: '#f57c00',
+    marginLeft: 6,
     fontWeight: '600'
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666'
   }
 });

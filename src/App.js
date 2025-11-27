@@ -1,7 +1,12 @@
 import * as React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
-import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Alert, LogBox } from 'react-native';
+
+// Disable red error screen in development
+if (__DEV__) {
+  LogBox.ignoreAllLogs(true);
+}
 import RootNavigator from './navigation/RootNavigator';
 import AppInitService from './services/AppInitService';
 import { setSessionExpiredCallback, clearLocalSession } from './services/authService';

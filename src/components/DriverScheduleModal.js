@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { driverScheduleService } from '../services/driverScheduleService';
+import TimePickerModal from './TimePickerModal';
+import { TIME_SLOTS, formatTime, isTimeInPast, isDateInPast } from '../constants/timeConstants';
 
 const MAROON = '#6B2E2B';
 
@@ -83,14 +85,6 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     });
   };
 
-  const formatTime = (timeString) => {
-    const [hours, minutes] = timeString.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
-  };
-
   const getDaysInMonth = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -134,14 +128,10 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     if (!day) return 'empty';
     
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const selectedDateObj = new Date(dateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
     const hasBooking = hasBookingOnDate(day);
     const availability = getAvailabilityForDate(day);
     
-    if (selectedDateObj < today) {
+    if (isDateInPast(dateStr)) {
       return hasBooking ? 'pastWithBooking' : 'past';
     }
     
@@ -158,13 +148,9 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     if (!day) return;
     
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const selectedDateObj = new Date(dateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
     const bookings = getBookingsForDate(day);
     const availability = getAvailabilityForDate(day);
-    const isPastDate = selectedDateObj < today;
+    const isPastDate = isDateInPast(dateStr);
     const dateStatus = getDateStatus(day);
     
     if (dateStatus === 'past') {
@@ -370,9 +356,8 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                       {selectedDate.availability.is_available ? 'Available' : 'Unavailable'}
                     </Text>
                     {selectedDate.availability.is_available && selectedDate.availability.unavailable_times?.length > 0 && (() => {
-                      const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
                       const unavailable = selectedDate.availability.unavailable_times;
-                      const available = allTimes.filter(time => !unavailable.includes(time));
+                      const available = TIME_SLOTS.filter(time => !unavailable.includes(time));
                       
                       if (available.length > 0) {
                         const startTime = available[0];
@@ -637,7 +622,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                 <>
                   <Text style={styles.customModeTitle}>Select specific hours you're available:</Text>
                   <View style={styles.timeSlotGrid}>
-                    {['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'].map((time) => (
+                    {TIME_SLOTS.map((time) => (
                       <TouchableOpacity
                         key={time}
                         style={[
@@ -689,7 +674,24 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                   disabled={availabilityMode === 'custom' && selectedTimeSlots.length === 0}
                   onPress={async () => {
                     try {
-                      const allTimes = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+                      if (availabilityMode === 'range') {
+                        if (isTimeInPast(selectedDate.dateStr, availableFromTime)) {
+                          Alert.alert('Invalid Time', 'Start time is in the past.');
+                          return;
+                        }
+                      } else {
+                        const validSlots = selectedTimeSlots.filter(time => !isTimeInPast(selectedDate.dateStr, time));
+                        if (validSlots.length === 0) {
+                          Alert.alert('Invalid Time', 'All selected hours are in the past.');
+                          return;
+                        }
+                        if (validSlots.length !== selectedTimeSlots.length) {
+                          setSelectedTimeSlots(validSlots);
+                          Alert.alert('Notice', `${selectedTimeSlots.length - validSlots.length} past hour(s) removed.`);
+                          return;
+                        }
+                      }
+
                       let unavailableTimes;
                       let notes;
                       
@@ -697,14 +699,14 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                         const fromHour = parseInt(availableFromTime.split(':')[0]);
                         const toHour = parseInt(availableToTime.split(':')[0]);
                         
-                        unavailableTimes = allTimes.filter(time => {
+                        unavailableTimes = TIME_SLOTS.filter(time => {
                           const hour = parseInt(time.split(':')[0]);
                           return hour < fromHour || hour >= toHour;
                         });
                         
                         notes = `Available ${formatTime(availableFromTime)} - ${formatTime(availableToTime)}`;
                       } else {
-                        unavailableTimes = allTimes.filter(time => !selectedTimeSlots.includes(time));
+                        unavailableTimes = TIME_SLOTS.filter(time => !selectedTimeSlots.includes(time));
                         
                         if (selectedTimeSlots.length === 1) {
                           notes = `Available at ${formatTime(selectedTimeSlots[0])}`;
@@ -714,7 +716,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                         }
                       }
                       
-                      await driverScheduleService.setAvailability(
+                      const result = await driverScheduleService.setAvailability(
                         user.id, 
                         selectedDate.dateStr, 
                         true, 
@@ -722,14 +724,20 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                         notes
                       );
                       
-                      setShowTimeModal(false);
-                      setShowDateModal(false);
-                      onRefresh();
-                      
-                      setSelectedTimeSlots([]);
-                      setAvailabilityMode('range');
+                      if (result.success) {
+                        setShowTimeModal(false);
+                        setShowDateModal(false);
+                        onRefresh();
+                        setSelectedTimeSlots([]);
+                        setAvailabilityMode('range');
+                      } else {
+                        const errorMsg = result.errorType === 'NETWORK' 
+                          ? 'Network error. Please check your connection.'
+                          : result.error || 'Failed to set availability';
+                        Alert.alert('Error', errorMsg);
+                      }
                     } catch (error) {
-                      Alert.alert('Error', 'Failed to set availability');
+                      Alert.alert('Error', 'An unexpected error occurred.');
                     }
                   }}
                 >
@@ -746,70 +754,36 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
         </View>
       </Modal>
 
-      {/* From Time Picker */}
-      <Modal visible={showFromPicker} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.timePickerModal}>
-            <View style={styles.timePickerHeader}>
-              <Text style={styles.timePickerTitle}>Select Start Time</Text>
-              <TouchableOpacity onPress={() => setShowFromPicker(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.timePickerList}>
-              {['00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00'].map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[styles.timePickerItem, availableFromTime === time && styles.timePickerItemSelected]}
-                  onPress={() => {
-                    setAvailableFromTime(time);
-                    const fromHour = parseInt(time.split(':')[0]);
-                    const pmHour = fromHour === 0 ? 12 : fromHour + 12;
-                    setAvailableToTime(`${pmHour.toString().padStart(2, '0')}:00`);
-                    setShowFromPicker(false);
-                  }}
-                >
-                  <Text style={[styles.timePickerItemText, availableFromTime === time && styles.timePickerItemTextSelected]}>
-                    {formatTime(time)}
-                  </Text>
-                  {availableFromTime === time && <Ionicons name="checkmark" size={20} color={MAROON} />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <TimePickerModal
+        visible={showFromPicker}
+        onClose={() => setShowFromPicker(false)}
+        onSelect={(time) => {
+          setAvailableFromTime(time);
+          const fromHour = parseInt(time.split(':')[0]);
+          const toHour = parseInt(availableToTime.split(':')[0]);
+          if (toHour <= fromHour) {
+            const nextSlot = TIME_SLOTS.find(slot => parseInt(slot.split(':')[0]) > fromHour);
+            setAvailableToTime(nextSlot || TIME_SLOTS[TIME_SLOTS.length - 1]);
+          }
+          setShowFromPicker(false);
+        }}
+        selectedTime={availableFromTime}
+        title="Select Start Time"
+        timeOptions={TIME_SLOTS}
+      />
 
-      {/* To Time Picker */}
-      <Modal visible={showToPicker} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.timePickerModal}>
-            <View style={styles.timePickerHeader}>
-              <Text style={styles.timePickerTitle}>Select End Time</Text>
-              <TouchableOpacity onPress={() => setShowToPicker(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.timePickerList}>
-              {['12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'].map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={[styles.timePickerItem, availableToTime === time && styles.timePickerItemSelected]}
-                  onPress={() => {
-                    setAvailableToTime(time);
-                    setShowToPicker(false);
-                  }}
-                >
-                  <Text style={[styles.timePickerItemText, availableToTime === time && styles.timePickerItemTextSelected]}>
-                    {formatTime(time)}
-                  </Text>
-                  {availableToTime === time && <Ionicons name="checkmark" size={20} color={MAROON} />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <TimePickerModal
+        visible={showToPicker}
+        onClose={() => setShowToPicker(false)}
+        onSelect={(time) => {
+          setAvailableToTime(time);
+          setShowToPicker(false);
+        }}
+        selectedTime={availableToTime}
+        title="Select End Time"
+        timeOptions={TIME_SLOTS}
+        minTime={availableFromTime}
+      />
     </Modal>
   );
 }
@@ -1444,47 +1418,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
-  },
-  // Time picker styles
-  timePickerModal: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    width: '80%',
-    maxHeight: '60%',
-  },
-  timePickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  timePickerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-  },
-  timePickerList: {
-    maxHeight: 300,
-  },
-  timePickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  timePickerItemSelected: {
-    backgroundColor: '#f0f8ff',
-  },
-  timePickerItemText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  timePickerItemTextSelected: {
-    fontWeight: '700',
-    color: MAROON,
   },
 });

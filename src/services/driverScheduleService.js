@@ -7,7 +7,7 @@ export const driverScheduleService = {
       // Validate required parameters
       if (!driverId || !bookingDate || !bookingTime) {
         console.warn('[driverScheduleService] Missing required parameters:', { driverId, bookingDate, bookingTime });
-        return { success: false, available: false, error: 'Missing required parameters' };
+        return { success: false, error: 'Missing required parameters', errorType: 'VALIDATION' };
       }
       
       const result = await apiClient.post('/driver-schedule/check-availability/', {
@@ -18,7 +18,7 @@ export const driverScheduleService = {
       return { success: true, ...result.data };
     } catch (error) {
       console.error('[driverScheduleService] checkAvailability error:', error);
-      return { success: false, available: false, error: error.message || 'Failed to check availability' };
+      return { success: false, error: error.message || 'Failed to check availability', errorType: 'NETWORK' };
     }
   },
 
@@ -35,7 +35,7 @@ export const driverScheduleService = {
       });
       return result.data;
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: error.message || 'Failed to accept booking', errorType: 'NETWORK' };
     }
   },
 
@@ -65,7 +65,7 @@ export const driverScheduleService = {
       });
       return result.data;
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, error: error.message || 'Failed to set availability', errorType: 'NETWORK' };
     }
   },
 
