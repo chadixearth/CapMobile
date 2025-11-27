@@ -156,9 +156,9 @@ export default function NotificationScreen({ navigation }) {
       {/* Action buttons */}
       {unreadCount > 0 && (
         <View style={styles.actionBar}>
-          <TouchableOpacity style={styles.markAllBtn} onPress={() => {
+          <TouchableOpacity style={styles.markAllBtn} onPress={async () => {
             console.log('[NotificationScreen] Mark all as read pressed');
-            markAllAsRead();
+            await markAllAsRead();
           }}>
             <Ionicons name="checkmark-done" size={16} color={MAROON} />
             <Text style={styles.markAllText}>Mark all as read</Text>

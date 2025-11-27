@@ -109,23 +109,34 @@ const DriverLocationTracker = () => {
       <View style={styles.infoContainer}>
         <Text style={styles.infoTitle}>📍 How it works:</Text>
         <Text style={styles.infoText}>
-          • When tracking is ON: You receive ride requests from nearby customers
+          • When tracking is ON: Tourists can see your location on the map
         </Text>
         <Text style={styles.infoText}>
-          • When tracking is OFF: You will NOT receive any ride notifications
+          • You appear as available driver and receive ride requests
         </Text>
         <Text style={styles.infoText}>
-          • Closest drivers get priority for new ride requests
+          • When tracking is OFF: You are invisible and get NO bookings
         </Text>
         <Text style={styles.infoText}>
           • Location updates every 15 seconds or 25 meters
+        </Text>
+        <Text style={styles.infoText}>
+          • Closest drivers get priority for new ride requests
         </Text>
       </View>
       
       {!isTracking && (
         <View style={styles.warningContainer}>
           <Text style={styles.warningText}>
-            ⚠️ Location sharing is OFF. You will not receive ride booking notifications.
+            ⚠️ Location sharing is OFF. Tourists cannot see you on the map and you will not receive bookings.
+          </Text>
+        </View>
+      )}
+      
+      {isTracking && (
+        <View style={styles.successContainer}>
+          <Text style={styles.successText}>
+            ✅ You are now visible to tourists on the map! They can see your live location and book rides with you.
           </Text>
         </View>
       )}
@@ -237,6 +248,20 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 14,
     color: '#856404',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  successContainer: {
+    backgroundColor: '#d4edda',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#28a745',
+  },
+  successText: {
+    fontSize: 14,
+    color: '#155724',
     fontWeight: '600',
     textAlign: 'center',
   },

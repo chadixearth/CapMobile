@@ -40,11 +40,14 @@ export default function MyTourPackagesScreen({ navigation }) {
       const result = await getMyTourPackages();
       if (result.success) {
         const packages = result.data || [];
-        // Debug: Log photos data
+        // Debug: Log all package data including photos
         packages.forEach(pkg => {
-          if (pkg.photos) {
-            console.log(`Package ${pkg.package_name} photos:`, pkg.photos);
-          }
+          console.log(`\n=== Package: ${pkg.package_name} ===`);
+          console.log('Photos array:', pkg.photos);
+          console.log('Image URL:', pkg.image_url);
+          console.log('Photo URLs:', pkg.photo_urls);
+          console.log('All package keys:', Object.keys(pkg));
+          console.log('================================\n');
         });
         setPackages(packages);
       }
@@ -150,26 +153,47 @@ export default function MyTourPackagesScreen({ navigation }) {
       onPress={() => navigation.navigate('PackageDetails', { package: pkg })}
       activeOpacity={0.7}
     >
-      {pkg.photos && Array.isArray(pkg.photos) && pkg.photos.length > 0 ? (
-        <View style={styles.imageContainer}>
-          <Image 
-            source={{ uri: pkg.photos[0].url }} 
-            style={styles.packageImage}
-            onError={() => console.log('Image load error:', pkg.photos[0].url)}
-          />
-          {pkg.photos.length > 1 && (
-            <View style={styles.imageCountBadge}>
-              <Ionicons name="images-outline" size={12} color="#fff" />
-              <Text style={styles.imageCountText}>{pkg.photos.length}</Text>
-            </View>
-          )}
-        </View>
-      ) : (
-        <View style={styles.placeholderImage}>
-          <Ionicons name="image-outline" size={32} color="#CCC" />
-          <Text style={styles.placeholderText}>No Image</Text>
-        </View>
-      )}
+      {(() => {
+        let imageUri = null;
+        let photoCount = 0;
+        
+        if (pkg.photos && Array.isArray(pkg.photos) && pkg.photos.length > 0) {
+          const photo = pkg.photos[0];
+          imageUri = photo.url || photo.uri || (typeof photo === 'string' ? photo : null);
+          photoCount = pkg.photos.length;
+        } else if (pkg.photo_urls && Array.isArray(pkg.photo_urls) && pkg.photo_urls.length > 0) {
+          imageUri = pkg.photo_urls[0];
+          photoCount = pkg.photo_urls.length;
+        } else if (pkg.image_url) {
+          imageUri = pkg.image_url;
+          photoCount = 1;
+        }
+        
+        return imageUri ? (
+          <View style={styles.imageContainer}>
+            <Image 
+              source={{ uri: imageUri }} 
+              style={styles.packageImage}
+              onError={(error) => {
+                console.log('❌ Image load failed for:', pkg.package_name);
+                console.log('Tried URI:', imageUri);
+              }}
+              onLoad={() => console.log('✅ Image loaded for:', pkg.package_name)}
+            />
+            {photoCount > 1 && (
+              <View style={styles.imageCountBadge}>
+                <Ionicons name="images-outline" size={12} color="#fff" />
+                <Text style={styles.imageCountText}>{photoCount}</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.placeholderImage}>
+            <Ionicons name="image-outline" size={32} color="#CCC" />
+            <Text style={styles.placeholderText}>No Image</Text>
+          </View>
+        );
+      })()}
       
       <View style={styles.packageContent}>
         <View style={styles.packageHeader}>

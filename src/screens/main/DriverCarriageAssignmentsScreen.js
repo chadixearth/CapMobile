@@ -42,6 +42,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [selectedCarriage, setSelectedCarriage] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [selectingCarriage, setSelectingCarriage] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
@@ -291,6 +292,33 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
     }
   };
 
+  const handleSelectCarriage = async (carriageId) => {
+    const inUseCount = assignedCarriages.filter(c => c.status === 'in_use').length;
+    if (inUseCount >= 2) {
+      CustomAlert.error('Limit Reached', 'You can only have 2 carriages in use at a time.');
+      return;
+    }
+
+    setSelectingCarriage(carriageId);
+    try {
+      const { apiClient } = await import('../../services/improvedApiClient');
+      const response = await apiClient.post(`/tartanilla-carriages/${carriageId}/select-for-use/`, {
+        driver_id: user.id
+      });
+      if (response.success) {
+        CustomAlert.success('Carriage Selected!', 'This carriage is now in use.');
+        await fetchUserAndCarriages();
+      } else {
+        CustomAlert.error('Selection Failed', response.error || 'Failed to select carriage');
+      }
+    } catch (error) {
+      console.error('Error selecting carriage:', error);
+      CustomAlert.error('Error', 'Failed to select carriage');
+    } finally {
+      setSelectingCarriage(null);
+    }
+  };
+
   const pendingCarriages = carriages.filter(c => c.status === 'waiting_driver_acceptance');
   const assignedCarriages = carriages.filter(c => 
     c.status === 'driver_assigned' || 
@@ -468,13 +496,52 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                   )}
                 </View>
 
+                {carriage.status === 'in_use' && (
+                  <View style={styles.inUseBanner}>
+                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                    <Text style={styles.inUseBannerText}>Currently In Use</Text>
+                  </View>
+                )}
+
                 <View style={styles.statusActions}>
+                  {carriage.status === 'available' && (
+                    <TouchableOpacity
+                      style={[styles.statusButton, styles.selectButton]}
+                      onPress={() => handleSelectCarriage(carriage.id)}
+                      disabled={selectingCarriage === carriage.id}
+                    >
+                      {selectingCarriage === carriage.id ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                          <Text style={[styles.statusButtonText, { color: '#fff' }]}>Select for Use</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {carriage.status === 'in_use' && (
+                    <TouchableOpacity
+                      style={[styles.statusButton, styles.availableButton]}
+                      onPress={() => handleUpdateCarriageStatus(carriage.id, 'available')}
+                      disabled={updatingStatus}
+                    >
+                      {updatingStatus ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="close-circle" size={16} color="#fff" />
+                          <Text style={[styles.statusButtonText, { color: '#fff' }]}>Set Available</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     style={styles.statusButton}
                     onPress={() => openStatusModal(carriage)}
                   >
                     <Ionicons name={getStatusIcon(carriage.status)} size={16} color={MAROON} />
-                    <Text style={styles.statusButtonText}>Update Status</Text>
+                    <Text style={styles.statusButtonText}>Change Status</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -764,6 +831,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5E9E2',
     borderRadius: 8,
     gap: 6,
+    marginTop: 8,
+  },
+  selectButton: {
+    backgroundColor: SUCCESS,
+  },
+  availableButton: {
+    backgroundColor: '#757575',
+  },
+  inUseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SUCCESS,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 6,
+  },
+  inUseBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   statusButtonText: {
     color: MAROON,

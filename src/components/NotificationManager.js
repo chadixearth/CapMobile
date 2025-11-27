@@ -12,6 +12,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 const NotificationManager = ({ navigation }) => {
   const [user, setUser] = useState(null);
   const [shownNotifications, setShownNotifications] = useState(new Set());
+  const [isInitialized, setIsInitialized] = useState(false);
   const { loadNotifications, notifications: contextNotifications } = useNotifications();
 
   useEffect(() => {
@@ -24,10 +25,12 @@ const NotificationManager = ({ navigation }) => {
   
   // Load dismissed notifications when user changes
   useEffect(() => {
-    if (user?.id) {
-      loadDismissedNotifications(user.id);
+    if (user?.id && !isInitialized) {
+      loadDismissedNotifications(user.id).then(() => {
+        setIsInitialized(true);
+      });
     }
-  }, [user?.id]);
+  }, [user?.id, isInitialized]);
   
   // Update dismissed notifications when context notifications change (e.g., marked as read)
   useEffect(() => {
@@ -48,7 +51,13 @@ const NotificationManager = ({ navigation }) => {
       const key = `dismissedNotifications_${userId}`;
       const dismissed = await AsyncStorage.getItem(key);
       if (dismissed) {
-        setShownNotifications(new Set(JSON.parse(dismissed)));
+        const dismissedArray = JSON.parse(dismissed);
+        console.log(`[NotificationManager] Loaded ${dismissedArray.length} dismissed notifications for user ${userId}`);
+        setShownNotifications(new Set(dismissedArray));
+        // Cleanup old notifications periodically
+        cleanupOldDismissedNotifications(userId);
+      } else {
+        console.log(`[NotificationManager] No dismissed notifications found for user ${userId}`);
       }
     } catch (error) {
       console.log('Error loading dismissed notifications:', error);
@@ -58,9 +67,30 @@ const NotificationManager = ({ navigation }) => {
   const saveDismissedNotifications = async (userId, notifications) => {
     try {
       const key = `dismissedNotifications_${userId}`;
-      await AsyncStorage.setItem(key, JSON.stringify(notifications));
+      // Keep only the last 100 dismissed notifications to prevent storage bloat
+      const limitedNotifications = notifications.slice(-100);
+      await AsyncStorage.setItem(key, JSON.stringify(limitedNotifications));
     } catch (error) {
       console.log('Error saving dismissed notification:', error);
+    }
+  };
+  
+  const cleanupOldDismissedNotifications = async (userId) => {
+    try {
+      const key = `dismissedNotifications_${userId}`;
+      const dismissed = await AsyncStorage.getItem(key);
+      if (dismissed) {
+        const dismissedArray = JSON.parse(dismissed);
+        // Keep only the last 50 dismissed notifications
+        if (dismissedArray.length > 50) {
+          const cleaned = dismissedArray.slice(-50);
+          await AsyncStorage.setItem(key, JSON.stringify(cleaned));
+          setShownNotifications(new Set(cleaned));
+          console.log(`[NotificationManager] Cleaned up old dismissed notifications, kept ${cleaned.length}`);
+        }
+      }
+    } catch (error) {
+      console.log('Error cleaning up dismissed notifications:', error);
     }
   };
 
@@ -101,7 +131,7 @@ const NotificationManager = ({ navigation }) => {
   };
 
   const handleNewNotifications = (notifications) => {
-    if (!notifications || notifications.length === 0) return;
+    if (!notifications || notifications.length === 0 || !isInitialized) return;
     
     // Reload notifications in context to update badge count
     loadNotifications();
@@ -109,12 +139,27 @@ const NotificationManager = ({ navigation }) => {
     // Filter out already read or shown notifications
     const unshownNotifications = notifications.filter(notification => {
       const notificationKey = `${notification.id}_${notification.created_at}`;
-      // Don't show if already marked as read OR already shown
-      return !notification.read && !shownNotifications.has(notificationKey);
+      
+      // Skip if already shown (persisted across app restarts)
+      if (shownNotifications.has(notificationKey)) {
+        console.log(`[NotificationManager] Skipping already shown notification: ${notification.title}`);
+        return false;
+      }
+      
+      // Skip if already marked as read
+      if (notification.read) {
+        console.log(`[NotificationManager] Skipping read notification: ${notification.title}`);
+        // Mark as shown to prevent future processing
+        saveDismissedNotification(notificationKey);
+        return false;
+      }
+      
+      return true;
     });
     
     if (unshownNotifications.length > 0) {
-      // Show only the most recent notification
+      console.log(`[NotificationManager] Showing ${unshownNotifications.length} new notifications`);
+      // Show only the most recent notification to avoid spam
       handleNotificationByType(unshownNotifications[0]);
     }
   };
@@ -140,6 +185,18 @@ const NotificationManager = ({ navigation }) => {
         }
       } catch (error) {
         console.error('Error marking notification as read:', error);
+      }
+    };
+    
+    // For general announcements, mark as permanently dismissed when OK is pressed
+    const markAnnouncementDismissed = async () => {
+      try {
+        // Mark as shown first to prevent duplicate alerts
+        await saveDismissedNotification(notificationKey);
+        await NotificationService.markAsRead(notification.id);
+        loadNotifications(); // Refresh context
+      } catch (error) {
+        console.error('Error marking announcement as dismissed:', error);
       }
     };
     
@@ -345,13 +402,16 @@ const NotificationManager = ({ navigation }) => {
         break;
         
       default:
+        // Handle general announcements - mark as shown immediately to prevent duplicates
+        saveDismissedNotification(notificationKey);
+        
         Alert.alert(
           title || '📢 Notification',
           message,
           [
             { 
               text: 'OK',
-              onPress: () => markAsReadAndNavigate()
+              onPress: () => markAnnouncementDismissed()
             }
           ]
         );

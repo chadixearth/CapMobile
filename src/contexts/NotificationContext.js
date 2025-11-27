@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NotificationService from '../services/notificationService';
 import { useAuth } from '../hooks/useAuth';
 
@@ -15,18 +16,29 @@ export const useNotifications = () => {
 export const NotificationProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
+  const [lastLoadTime, setLastLoadTime] = useState(0);
   const { user } = useAuth();
 
-  const filterTestNotifications = (notifications) => {
-    return notifications.filter(n => {
-      // Safely check if title and message exist before calling includes
-      const title = n.title || '';
-      const message = n.message || '';
+  const filterTestNotifications = async (notifications) => {
+    // Load persisted read notifications
+    let persistedReadIds = [];
+    try {
+      const stored = await AsyncStorage.getItem(`readNotifications_${user?.id}`);
+      persistedReadIds = stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.log('[NotificationContext] Error loading persisted read notifications:', error);
+    }
+    
+    return notifications.map(n => {
+      // Mark as read if it was previously marked as read and persisted
+      const wasMarkedRead = persistedReadIds.includes(n.id);
+      if (wasMarkedRead && !n.read) {
+        console.log(`[NotificationContext] Restoring read state for notification ${n.id}`);
+        return { ...n, read: true };
+      }
       
-      // Don't filter out any notifications for now to debug
-      console.log('[NotificationContext] Processing notification:', { id: n.id, title, message, read: n.read });
-      
-      return true; // Show all notifications for debugging
+      console.log('[NotificationContext] Processing notification:', { id: n.id, title: n.title, read: n.read });
+      return n;
     });
   };
 
@@ -36,13 +48,21 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
     
+    // Debounce to prevent excessive loading (minimum 2 seconds between loads)
+    const now = Date.now();
+    if (now - lastLoadTime < 2000) {
+      console.log('[NotificationContext] Debouncing notification load');
+      return;
+    }
+    setLastLoadTime(now);
+    
     try {
       console.log(`[NotificationContext] Loading notifications for user: ${user.id}`);
       const result = await NotificationService.getNotifications(user.id);
       console.log(`[NotificationContext] Service result:`, result);
       
       if (result.success) {
-        const filtered = filterTestNotifications(result.data || []);
+        const filtered = await filterTestNotifications(result.data || []);
         const newUnreadCount = filtered.filter(n => !n.read).length;
         
         console.log(`[NotificationContext] Filtered notifications: ${filtered.length}, unread: ${newUnreadCount}`);
@@ -86,21 +106,29 @@ export const NotificationProvider = ({ children }) => {
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
       
+      // Store read notifications in AsyncStorage to persist across app restarts
+      try {
+        const readNotificationIds = unreadNotifications.map(n => n.id);
+        const existingReadIds = await AsyncStorage.getItem(`readNotifications_${user?.id}`) || '[]';
+        const allReadIds = [...JSON.parse(existingReadIds), ...readNotificationIds];
+        await AsyncStorage.setItem(`readNotifications_${user?.id}`, JSON.stringify(allReadIds));
+        console.log('[NotificationContext] Persisted read notifications to storage');
+      } catch (storageError) {
+        console.error('[NotificationContext] Failed to persist read notifications:', storageError);
+      }
+      
       // Then sync with backend
-      const result = await NotificationService.markAllAsRead(user?.id, notifications);
+      const result = await NotificationService.markAllAsRead(user?.id, unreadNotifications);
       console.log('[NotificationContext] Backend sync result:', result);
       
       if (!result.success) {
         console.error('[NotificationContext] Failed to sync mark all as read with backend:', result.error);
-        // Reload notifications to get correct state
-        await loadNotifications();
       } else {
         console.log('[NotificationContext] All notifications marked as read successfully');
       }
+      
     } catch (error) {
       console.error('[NotificationContext] Error marking all as read:', error);
-      // Reload notifications to get correct state
-      await loadNotifications();
     }
   };
 

@@ -205,6 +205,24 @@ const RequestBookingScreen = ({ route, navigation }) => {
       }
     }
 
+    if (!formData.contact_number || !formData.contact_number.trim()) {
+      showError('Contact number is required', {
+        title: 'Missing Information',
+        type: 'warning',
+      });
+      focusField('contact_number');
+      return false;
+    }
+
+    if (!formData.contact_email || !formData.contact_email.trim()) {
+      showError('Contact email is required', {
+        title: 'Missing Information',
+        type: 'warning',
+      });
+      focusField('contact_email');
+      return false;
+    }
+
     if (formData.number_of_pax <= 0) {
       showError('Number of passengers must be greater than 0', {
         title: 'Invalid Passenger Count',
@@ -585,7 +603,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
 
             {/* Contacts */}
             <View style={styles.inputGroup} onLayout={registerField('contact_number')}>
-              <Text style={styles.label}>Contact Number</Text>
+              <Text style={styles.label}>Contact Number *</Text>
               <TextInput
                 style={styles.input}
                 value={formData.contact_number}
@@ -598,7 +616,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
             </View>
 
             <View style={styles.inputGroup} onLayout={registerField('contact_email')}>
-              <Text style={styles.label}>Contact Email</Text>
+              <Text style={styles.label}>Contact Email *</Text>
               <TextInput
                 style={styles.input}
                 value={formData.contact_email}

@@ -82,6 +82,10 @@ export default function EditTourPackageScreen({ navigation, route }) {
       Alert.alert('Error', 'Destination is required');
       return false;
     }
+    if (!formData.duration_hours || isNaN(parseFloat(formData.duration_hours)) || parseFloat(formData.duration_hours) < 1) {
+      Alert.alert('Error', 'Duration must be at least 1 hour');
+      return false;
+    }
     return true;
   };
 
@@ -93,7 +97,7 @@ export default function EditTourPackageScreen({ navigation, route }) {
       const packageData = {
         ...formData,
         price: parseFloat(formData.price),
-        duration_hours: parseInt(formData.duration_hours) || 1,
+        duration_hours: parseFloat(formData.duration_hours) || 1,
         duration_minutes: parseInt(formData.duration_minutes) || 0,
         max_pax: parseInt(formData.max_pax) || 1,
       };

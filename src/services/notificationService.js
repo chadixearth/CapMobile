@@ -19,6 +19,7 @@ class NotificationService {
   static maxFailures = 3;
   static backoffTime = 0;
   static isCircuitOpen = false;
+  static processedNotifications = new Set();
 
   // Initialize notification service
   static async initialize() {
@@ -226,9 +227,13 @@ class NotificationService {
           const newNotifications = this.lastNotificationCheck 
             ? result.data.filter(n => {
                 const notifTime = new Date(n.created_at);
-                return notifTime > this.lastNotificationCheck && !n.read;
+                const notifKey = `${n.id}_${n.created_at}`;
+                return notifTime > this.lastNotificationCheck && !n.read && !this.processedNotifications.has(notifKey);
               })
-            : result.data.filter(n => !n.read).slice(0, 3); // Limit initial load to 3 most recent
+            : result.data.filter(n => {
+                const notifKey = `${n.id}_${n.created_at}`;
+                return !n.read && !this.processedNotifications.has(notifKey);
+              }).slice(0, 3); // Limit initial load to 3 most recent
           
           if (newNotifications.length > 0) {
             // Send local notifications for all new notifications
@@ -275,6 +280,18 @@ class NotificationService {
                 console.log('[NotificationService] Received announcement:', title);
               }
             });
+            
+            // Mark notifications as processed
+            newNotifications.forEach(n => {
+              const notifKey = `${n.id}_${n.created_at}`;
+              this.processedNotifications.add(notifKey);
+            });
+            
+            // Clean up old processed notifications (keep only last 100)
+            if (this.processedNotifications.size > 100) {
+              const processedArray = Array.from(this.processedNotifications);
+              this.processedNotifications = new Set(processedArray.slice(-100));
+            }
             
             this.callbacks.forEach(cb => {
               try {

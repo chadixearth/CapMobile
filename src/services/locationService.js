@@ -109,7 +109,11 @@ class LocationService {
             // Update location via API
             const { updateDriverLocation } = await import('./rideHailingService');
             const result = await updateDriverLocation(userId, latitude, longitude, speed || 0, heading || 0);
-            console.log(`[LocationService] Location update result:`, result);
+            
+            // Only log if there's an actual error (not network timeouts)
+            if (!result.success && !result.error?.includes('10035') && !result.error?.includes('socket')) {
+              console.log(`[LocationService] Location update failed:`, result.error);
+            }
 
             // Call callback if provided
             if (onLocationUpdate) {
@@ -122,7 +126,10 @@ class LocationService {
               });
             }
           } catch (error) {
-            console.error('Error updating location:', error);
+            // Silently handle network errors
+            if (!error.message?.includes('10035') && !error.message?.includes('socket')) {
+              console.error('Error updating location:', error.message);
+            }
           }
         }
       );

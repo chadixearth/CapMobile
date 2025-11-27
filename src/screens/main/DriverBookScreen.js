@@ -13,6 +13,7 @@ import {
   Pressable,
   ActivityIndicator,
   Image,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -1129,6 +1130,28 @@ const getCustomTitle = (r) => (
       <Text style={styles.acceptButtonText}>Message Tourist</Text>
     </TouchableOpacity>
   );
+  const getTimeElapsed = (createdAt) => {
+    if (!createdAt) return 'Unknown';
+    const now = new Date();
+    const created = new Date(createdAt);
+    const diffMs = now - created;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    return `${diffHours}h ${diffMins % 60}m ago`;
+  };
+
+  const getUrgencyColor = (createdAt) => {
+    if (!createdAt) return '#666';
+    const diffMins = Math.floor((new Date() - new Date(createdAt)) / (1000 * 60));
+    if (diffMins > 15) return '#E53E3E';
+    if (diffMins > 10) return '#F56500';
+    if (diffMins > 5) return '#D69E2E';
+    return '#38A169';
+  };
+
   const renderBookingCard = (booking) => (
     <View key={booking.id} style={[
       styles.bookingCard, 
@@ -1138,6 +1161,13 @@ const getCustomTitle = (r) => (
         <View style={styles.bookingInfo}>
           <Text style={styles.bookingReference}>Ref: {booking.booking_reference || 'N/A'}</Text>
           <Text style={styles.bookingDate}>{formatDate(booking.booking_date)}</Text>
+          {/* Time elapsed indicator */}
+          <View style={styles.timeElapsedContainer}>
+            <Ionicons name="time-outline" size={12} color={getUrgencyColor(booking.created_at || booking.booking_date)} />
+            <Text style={[styles.timeElapsedText, { color: getUrgencyColor(booking.created_at || booking.booking_date) }]}>
+              {getTimeElapsed(booking.created_at || booking.booking_date)}
+            </Text>
+          </View>
           {booking.request_type === 'ride_hailing' && (
             <View style={styles.rideHailingBadge}>
               <Text style={styles.rideHailingBadgeText}>RIDE HAILING</Text>
@@ -1164,6 +1194,27 @@ const getCustomTitle = (r) => (
             <Text style={styles.customerName}>
               {booking.customer_profile?.name || 'Tourist'}
             </Text>
+            {/* Call button if contact available */}
+            {booking.contact_number && booking.contact_number !== 'N/A' && (
+              <TouchableOpacity 
+                style={styles.callButton}
+                onPress={() => {
+                  const phone = booking.contact_number;
+                  if (phone) {
+                    Alert.alert(
+                      'Call Customer',
+                      `Call ${phone}?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Call', onPress: () => Linking.openURL(`tel:${phone}`) }
+                      ]
+                    );
+                  }
+                }}
+              >
+                <Ionicons name="call-outline" size={14} color="#007AFF" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
         
@@ -1173,34 +1224,77 @@ const getCustomTitle = (r) => (
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Pickup Time:</Text>
-          <Text style={styles.detailValue}>{formatTime(booking.pickup_time)}</Text>
+          <Text style={styles.detailLabel}>Date & Time:</Text>
+          <Text style={styles.detailValue}>{formatDate(booking.booking_date)} at {formatTime(booking.pickup_time)}</Text>
         </View>
 
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Passengers:</Text>
-          <Text style={styles.detailValue}>{booking.number_of_pax || 'N/A'}</Text>
+          <Text style={styles.detailValue}>{booking.number_of_pax || 'N/A'} person{(booking.number_of_pax || 1) > 1 ? 's' : ''}</Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Pickup Address:</Text>
-          <Text style={styles.detailValue}>{booking.pickup_address || 'N/A'}</Text>
+          <Text style={styles.detailLabel}>Pickup Location:</Text>
+          <View style={styles.locationInfo}>
+            <Text style={styles.detailValue}>{booking.pickup_address || 'N/A'}</Text>
+            {booking.pickup_address && (
+              <TouchableOpacity 
+                style={styles.navButton}
+                onPress={() => {
+                  const address = encodeURIComponent(booking.pickup_address);
+                  const url = `https://www.google.com/maps/search/?api=1&query=${address}`;
+                  Linking.openURL(url);
+                }}
+              >
+                <Ionicons name="navigate-outline" size={14} color="#007AFF" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Contact:</Text>
-          <Text style={styles.detailValue}>{booking.contact_number || 'N/A'}</Text>
+        {/* Financial Information */}
+        <View style={styles.earningsSection}>
+          <View style={styles.earningsHeader}>
+            <Ionicons name="cash-outline" size={16} color="#6B2E2B" />
+            <Text style={styles.earningsTitle}>Your Earnings</Text>
+          </View>
+          <View style={styles.earningsGrid}>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsLabel}>Total Fare</Text>
+              <Text style={styles.earningsAmount}>₱{booking.total_amount || 0}</Text>
+            </View>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsLabel}>Your Share (80%)</Text>
+              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{((booking.total_amount || 0) * 0.8).toFixed(0)}</Text>
+            </View>
+          </View>
+          {booking.payment_status && (
+            <View style={styles.paymentStatus}>
+              <Text style={styles.paymentLabel}>Payment: </Text>
+              <Text style={[
+                styles.paymentText,
+                booking.payment_status === 'paid' ? styles.paidStatus : styles.pendingStatus
+              ]}>
+                {booking.payment_status === 'paid' ? '✓ Paid' : '⏳ Pending'}
+              </Text>
+            </View>
+          )}
         </View>
 
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Total Amount:</Text>
-          <Text style={styles.detailValue}>{formatCurrencyLocal(booking.total_amount)}</Text>
-        </View>
+        {booking.contact_number && booking.contact_number !== 'N/A' && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Contact:</Text>
+            <Text style={styles.detailValue}>{booking.contact_number}</Text>
+          </View>
+        )}
 
         {booking.special_requests && (
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Special Requests:</Text>
-            <Text style={styles.detailValue}>{booking.special_requests}</Text>
+          <View style={styles.notesSection}>
+            <View style={styles.notesHeader}>
+              <Ionicons name="document-text-outline" size={16} color="#F59E0B" />
+              <Text style={styles.notesTitle}>Special Requests</Text>
+            </View>
+            <Text style={styles.notesText}>{booking.special_requests}</Text>
           </View>
         )}
       </View>
@@ -1283,6 +1377,13 @@ const getCustomTitle = (r) => (
       <View style={styles.bookingHeader}>
         <View style={styles.bookingInfo}>
           <Text style={styles.bookingReference}>Ref: {ride.booking_reference}</Text>
+          {/* Time elapsed for ride requests */}
+          <View style={styles.timeElapsedContainer}>
+            <Ionicons name="time-outline" size={12} color={getUrgencyColor(ride.booking_date)} />
+            <Text style={[styles.timeElapsedText, { color: getUrgencyColor(ride.booking_date) }]}>
+              {getTimeElapsed(ride.booking_date)}
+            </Text>
+          </View>
           <View style={styles.rideHailingBadge}>
             <Text style={styles.rideHailingBadgeText}>RIDE HAILING</Text>
           </View>
@@ -1298,12 +1399,24 @@ const getCustomTitle = (r) => (
       <View style={styles.bookingDetails}>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Service:</Text>
-          <Text style={styles.detailValue}>Point-to-Point Ride</Text>
+          <Text style={styles.detailValue}>Point-to-Point Ride ({ride.number_of_pax || 1} passenger{(ride.number_of_pax || 1) > 1 ? 's' : ''})</Text>
         </View>
 
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Pickup:</Text>
-          <Text style={styles.detailValue}>{ride.pickup_address}</Text>
+          <View style={styles.locationInfo}>
+            <Text style={styles.detailValue}>{ride.pickup_address}</Text>
+            <TouchableOpacity 
+              style={styles.navButton}
+              onPress={() => {
+                const address = encodeURIComponent(ride.pickup_address);
+                const url = `https://www.google.com/maps/search/?api=1&query=${address}`;
+                Linking.openURL(url);
+              }}
+            >
+              <Ionicons name="navigate-outline" size={14} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.detailRow}>
@@ -1313,27 +1426,54 @@ const getCustomTitle = (r) => (
 
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Requested:</Text>
-          <Text style={styles.detailValue}>{formatDate(ride.booking_date)}</Text>
+          <Text style={styles.detailValue}>{formatDate(ride.booking_date)} (ASAP)</Text>
+        </View>
+
+        {/* Ride Earnings */}
+        <View style={styles.earningsSection}>
+          <View style={styles.earningsHeader}>
+            <Ionicons name="cash-outline" size={16} color="#FF9800" />
+            <Text style={styles.earningsTitle}>Ride Earnings</Text>
+          </View>
+          <View style={styles.earningsGrid}>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsLabel}>Total Fare</Text>
+              <Text style={styles.earningsAmount}>₱{ride.total_amount || ((ride.number_of_pax || 1) * 10)}</Text>
+            </View>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsLabel}>Your Share (80%)</Text>
+              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{((ride.total_amount || ((ride.number_of_pax || 1) * 10)) * 0.8).toFixed(0)}</Text>
+            </View>
+          </View>
+          <View style={styles.paymentStatus}>
+            <Text style={styles.paymentLabel}>Payment: </Text>
+            <Text style={[styles.paymentText, styles.paidStatus]}>Cash on Completion</Text>
+          </View>
         </View>
 
         {ride.notes && (
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Notes:</Text>
-            <Text style={styles.detailValue}>{ride.notes}</Text>
+          <View style={styles.notesSection}>
+            <View style={styles.notesHeader}>
+              <Ionicons name="document-text-outline" size={16} color="#F59E0B" />
+              <Text style={styles.notesTitle}>Ride Notes</Text>
+            </View>
+            <Text style={styles.notesText}>{ride.notes}</Text>
           </View>
         )}
       </View>
 
       {(ride.status === 'waiting_for_driver' || ride.status === 'pending') && activeTab === 'available' && (
         <>
-          <TouchableOpacity style={[styles.acceptButton, styles.viewMapButton]} onPress={() => handleViewRideMap(ride)}>
-            <Ionicons name="map" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>View Route</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleAcceptBooking(ride)}>
-            <Ionicons name="car" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>Accept Ride</Text>
-          </TouchableOpacity>
+          <View style={styles.rideActions}>
+            <TouchableOpacity style={[styles.acceptButton, styles.viewMapButton]} onPress={() => handleViewRideMap(ride)}>
+              <Ionicons name="map" size={18} color="#fff" />
+              <Text style={styles.acceptButtonText}>View Route</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleAcceptBooking(ride)}>
+              <Ionicons name="car" size={18} color="#fff" />
+              <Text style={styles.acceptButtonText}>Accept Ride (₱{((ride.total_amount || ((ride.number_of_pax || 1) * 10)) * 0.8).toFixed(0)})</Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
       
@@ -1982,11 +2122,134 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 8,
   },
-
   customerName: {
     fontSize: 13,
     color: '#222',
     fontWeight: '600',
+  },
+  
+  /* Time Elapsed Styles */
+  timeElapsedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  timeElapsedText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  
+  /* Action Buttons */
+  callButton: {
+    marginLeft: 8,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#E3F2FD',
+  },
+  navButton: {
+    marginLeft: 8,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#E3F2FD',
+  },
+  locationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 2,
+    justifyContent: 'flex-end',
+  },
+  
+  /* Earnings Section */
+  earningsSection: {
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  earningsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  earningsTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+  },
+  earningsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  earningsItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  earningsLabel: {
+    fontSize: 11,
+    color: '#666',
+    marginBottom: 2,
+  },
+  earningsAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+  },
+  driverShare: {
+    color: '#2E7D32',
+    fontSize: 16,
+  },
+  paymentStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E9ECEF',
+  },
+  paymentLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  paymentText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  paidStatus: {
+    color: '#2E7D32',
+  },
+  pendingStatus: {
+    color: '#F57C00',
+  },
+  
+  /* Notes Section */
+  notesSection: {
+    backgroundColor: '#FFF9E6',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 6,
+  },
+  notesTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  notesText: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 16,
   },
 
   /* Buttons */
@@ -2169,6 +2432,9 @@ const styles = StyleSheet.create({
   viewMapButton: {
     backgroundColor: '#1976D2',
     marginTop: 8
+  },
+  rideActions: {
+    gap: 8,
   },
   
   /* Map Modal Styles */

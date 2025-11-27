@@ -133,11 +133,11 @@ const MapViewScreen = ({ navigation, route }) => {
           return false;
         }
         
-        // Check if driver location is recent (within last 15 minutes)
+        // Check if driver location is recent (within last 5 minutes for active tracking)
         const lastUpdate = new Date(driver.updated_at);
         const now = new Date();
         const minutesAgo = (now - lastUpdate) / (1000 * 60);
-        const isRecent = minutesAgo <= 15;
+        const isRecent = minutesAgo <= 5; // Reduced to 5 minutes for more accurate "live" status
         
         if (!isRecent) {
           console.log(`Driver ${driver.driver_id || driver.user_id} location too old: ${Math.round(minutesAgo)} minutes ago`);
@@ -146,7 +146,7 @@ const MapViewScreen = ({ navigation, route }) => {
         return isRecent;
       });
       
-      console.log(`Active drivers: ${activeDrivers.length} out of ${locations.length}`);
+      console.log(`Active drivers with live location: ${activeDrivers.length} out of ${locations.length}`);
       setDriverLocations(activeDrivers);
     } catch (error) {
       console.error('Error fetching driver locations:', error);
@@ -672,12 +672,12 @@ const MapViewScreen = ({ navigation, route }) => {
       const minutesAgo = lastUpdate ? Math.round((new Date() - lastUpdate) / (1000 * 60)) : null;
       
       Alert.alert(
-        '🐎 Tartanilla Driver Available',
+        '🐎 Available Tartanilla Driver',
         `Driver ID: ${driverId}\n` +
-        `Status: Online & Available\n` +
-        `Last seen: ${minutesAgo ? `${minutesAgo} minutes ago` : 'Just now'}\n` +
-        `Speed: ${driverInfo?.speed || 0} km/h\n` +
-        `Location sharing: Active`,
+        `Status: Live Location Active\n` +
+        `Last updated: ${minutesAgo === 0 ? 'Just now' : `${minutesAgo} min ago`}\n` +
+        `Speed: ${Math.round(driverInfo?.speed || 0)} km/h\n\n` +
+        `This driver is available for booking!`,
         [
           { text: 'Book Ride', onPress: () => {
             // Navigate to ride hailing screen with driver location
@@ -695,7 +695,7 @@ const MapViewScreen = ({ navigation, route }) => {
               console.log(`Navigating to driver via nearest road: ${result.roadName}`);
             }
           }},
-          { text: 'OK' }
+          { text: 'Close' }
         ]
       );
     } else if (marker.pointType === 'pickup') {

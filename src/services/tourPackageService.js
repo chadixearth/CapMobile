@@ -86,12 +86,16 @@ export async function createTourPackage(packageData) {
       }
     }
     
-    // Handle expiration date - set to null if "No Expiration" is selected
+    // Handle expiration date
     let expiration_date = packageData.expiration_date_data;
     if (!expiration_date || expiration_date === 'No Expiration') {
       expiration_date = null;
     }
     
+    // Create FormData for file upload
+    const formData = new FormData();
+    
+    // Add package data
     const dataWithDriver = {
       ...packageData,
       creator_role: userRole,
@@ -101,9 +105,36 @@ export async function createTourPackage(packageData) {
       no_expiry: !expiration_date
     };
     
-    const result = await apiClient.post('/tourpackage/', dataWithDriver, {
+    // Remove photos from main data
+    delete dataWithDriver.photos;
+    
+    // Add non-file fields
+    Object.keys(dataWithDriver).forEach(key => {
+      if (dataWithDriver[key] !== null && dataWithDriver[key] !== undefined) {
+        formData.append(key, dataWithDriver[key]);
+      }
+    });
+    
+    // Add photos
+    if (packageData.photos && Array.isArray(packageData.photos)) {
+      packageData.photos.forEach((photo, index) => {
+        formData.append('photos', {
+          uri: photo.uri,
+          type: photo.type || 'image/jpeg',
+          name: photo.name || `photo_${index}_${Date.now()}.jpg`
+        });
+      });
+    }
+    
+    const result = await apiClient.makeRequest('/tourpackage/', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
       timeout: 30000,
     });
+    
     if (result.success && (result.data?.success || result.status === 201)) {
       return { success: true, data: result.data?.data || result.data };
     }

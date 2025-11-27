@@ -10,9 +10,11 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
 import * as ImagePicker from 'expo-image-picker';
 import { createTourPackage, updateTourPackage, getPickupPoints, getDropoffPoints } from '../../services/tourPackageService';
 
@@ -39,8 +41,11 @@ export default function CreateTourPackageScreen({ navigation, route }) {
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
+  const [durationHours, setDurationHours] = useState(1);
+  const [durationMinutes, setDurationMinutes] = useState(0);
   const [pickupPoints, setPickupPoints] = useState([]);
   const [dropoffPoints, setDropoffPoints] = useState([]);
   const [selectedPickupPoint, setSelectedPickupPoint] = useState(null);
@@ -173,6 +178,30 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     }
   };
 
+  const handleDurationConfirm = () => {
+    try {
+      // Validate duration values
+      const hours = parseInt(durationHours) || 0;
+      const minutes = parseInt(durationMinutes) || 0;
+      
+      // Ensure minimum duration of 1 hour
+      if (hours === 0 && minutes === 0) {
+        Alert.alert('Invalid Duration', 'Duration must be at least 1 hour');
+        return;
+      }
+      
+      const totalHours = hours + (minutes / 60);
+      const displayText = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+      
+      updateField('duration_hours', totalHours.toString());
+      updateField('duration_display', displayText);
+      setShowDurationPicker(false);
+    } catch (error) {
+      console.error('Error setting duration:', error);
+      Alert.alert('Error', 'Failed to set duration. Please try again.');
+    }
+  };
+
   const pickImages = async () => {
     if (photos.length >= 5) {
       Alert.alert('Limit Reached', 'You can add up to 5 photos only.');
@@ -194,6 +223,8 @@ export default function CreateTourPackageScreen({ navigation, route }) {
         name: asset.fileName || `photo_${Date.now()}.jpg`
       }));
       const updatedPhotos = [...photos, ...newPhotos];
+      console.log('📸 Photos selected:', updatedPhotos.length);
+      console.log('Photo URIs:', updatedPhotos.map(p => p.uri));
       setPhotos(updatedPhotos);
       updateField('photos', updatedPhotos);
     }
@@ -238,7 +269,7 @@ export default function CreateTourPackageScreen({ navigation, route }) {
       Alert.alert('Validation Error', 'Please select a pickup location');
       return false;
     }
-    if (!formData.duration_hours || parseInt(formData.duration_hours) < 1) {
+    if (!formData.duration_hours || isNaN(parseFloat(formData.duration_hours)) || parseFloat(formData.duration_hours) < 1) {
       Alert.alert('Validation Error', 'Duration must be at least 1 hour');
       return false;
     }
@@ -261,9 +292,14 @@ export default function CreateTourPackageScreen({ navigation, route }) {
       const packageData = {
         ...formData,
         price: parseFloat(formData.price),
-        duration_hours: parseInt(formData.duration_hours) || 1,
+        duration_hours: parseFloat(formData.duration_hours) || 1,
         max_pax: parseInt(formData.max_pax) || 1,
       };
+      
+      console.log('📦 Submitting package with photos:', packageData.photos?.length || 0);
+      if (packageData.photos) {
+        console.log('Photo details:', packageData.photos);
+      }
 
       const result = isEdit
         ? await updateTourPackage(existingPackage.id, packageData)
@@ -477,14 +513,18 @@ export default function CreateTourPackageScreen({ navigation, route }) {
           {/* Duration & Max Pax */}
           <View style={styles.row}>
             <View style={[styles.field, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Duration (hours)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.duration_hours}
-                onChangeText={(value) => updateField('duration_hours', value)}
-                placeholder="4"
-                keyboardType="numeric"
-              />
+              <Text style={styles.label}>Duration *</Text>
+              <TouchableOpacity
+                style={styles.durationButton}
+                onPress={() => setShowDurationPicker(true)}
+              >
+                <Ionicons name="time-outline" size={20} color={MAROON} />
+                <Text style={styles.durationButtonText}>
+                  {formData.duration_display || formData.duration_hours ? 
+                    (formData.duration_display || `${formData.duration_hours}h`) : 
+                    'Set Duration'}
+                </Text>
+              </TouchableOpacity>
             </View>
             <View style={[styles.field, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.label}>Max Passengers</Text>
@@ -581,6 +621,60 @@ export default function CreateTourPackageScreen({ navigation, route }) {
               onChange={onTimeChange}
             />
           )}
+
+          <Modal
+            visible={showDurationPicker}
+            transparent
+            animationType="slide"
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.durationPickerModal}>
+                <Text style={styles.modalTitle}>Set Duration</Text>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerContainer}>
+                    <Text style={styles.pickerLabel}>Hours</Text>
+                    <TextInput
+                      style={styles.durationInput}
+                      value={durationHours.toString()}
+                      onChangeText={(text) => {
+                        const num = parseInt(text) || 0;
+                        if (num >= 0 && num <= 24) setDurationHours(num);
+                      }}
+                      keyboardType="numeric"
+                      placeholder="0"
+                    />
+                  </View>
+                  <View style={styles.pickerContainer}>
+                    <Text style={styles.pickerLabel}>Minutes</Text>
+                    <TextInput
+                      style={styles.durationInput}
+                      value={durationMinutes.toString()}
+                      onChangeText={(text) => {
+                        const num = parseInt(text) || 0;
+                        if (num >= 0 && num <= 59) setDurationMinutes(num);
+                      }}
+                      keyboardType="numeric"
+                      placeholder="0"
+                    />
+                  </View>
+                </View>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setShowDurationPicker(false)}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.confirmButton]}
+                    onPress={handleDurationConfirm}
+                  >
+                    <Text style={styles.confirmButtonText}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
         </View>
       </ScrollView>
 
@@ -692,6 +786,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dateButtonText: {
+    fontSize: 16,
+    color: '#666',
+    flex: 1,
+  },
+  durationButton: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  durationButtonText: {
     fontSize: 16,
     color: '#666',
     flex: 1,
@@ -830,5 +944,75 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  durationPickerModal: {
+    backgroundColor: CARD,
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: MAROON,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 24,
+  },
+  pickerContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  pickerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  durationInput: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F0F0F0',
+  },
+  confirmButton: {
+    backgroundColor: MAROON,
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
