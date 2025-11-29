@@ -871,10 +871,28 @@ export default function DriverBookScreen({ navigation }) {
               { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
             ]
           );
-        } else if (result.error_code === 'NO_AVAILABLE_CARRIAGE') {
+        } else if (result.error_code === 'NO_AVAILABLE_CARRIAGE' || result.error_code === 'CARRIAGE_NOT_AVAILABLE') {
           Alert.alert(
             '🚗 Carriage Not Available',
             result.friendly_message || 'Your assigned carriage is not available. Please ensure your carriage status is set to available.',
+            [
+              { text: 'OK' },
+              { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else if (result.error_code === 'CARRIAGE_SUSPENDED') {
+          Alert.alert(
+            '⚠️ Carriage Suspended',
+            result.friendly_message || 'Your carriage is currently suspended. Please contact admin to resolve this issue.',
+            [
+              { text: 'OK' },
+              { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else if (result.error_code === 'NO_ELIGIBLE_CARRIAGE' || result.error_code === 'CARRIAGE_CHECK_FAILED') {
+          Alert.alert(
+            '🚗 Carriage Eligibility Issue',
+            result.friendly_message || 'Unable to verify your carriage eligibility. Please contact admin.',
             [
               { text: 'OK' },
               { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }

@@ -105,6 +105,18 @@ export async function driverAcceptBooking(bookingId, driverData) {
   try {
     console.log('Accepting booking:', bookingId, 'for driver:', driverData);
     
+    // Check carriage eligibility before accepting
+    const eligibilityCheck = await checkCarriageEligibility(driverData.driver_id);
+    if (!eligibilityCheck.eligible) {
+      return {
+        success: false,
+        error: eligibilityCheck.reason || 'No eligible carriage assigned',
+        error_code: eligibilityCheck.error_code || 'NO_ELIGIBLE_CARRIAGE',
+        friendly_message: eligibilityCheck.friendly_message || 'You need an eligible tartanilla carriage to accept tour package bookings.',
+        can_view_only: true
+      };
+    }
+    
     const endpoint = `${API_BASE_URL}/driver-accept/${bookingId}/`;
     const result = await apiClient.post(endpoint, driverData);
     
@@ -541,6 +553,79 @@ export async function driverCancelBooking(bookingId, driverId, reason = 'Cancell
       return { success: false, error: 'Request timeout. Please try again.' };
     }
     throw error;
+  }
+}
+
+/**
+ * Check if driver has an eligible carriage for tour packages
+ * @param {string} driverId - The driver's ID
+ * @returns {Promise<Object>} Eligibility check result
+ */
+export async function checkCarriageEligibility(driverId) {
+  try {
+    const { carriageService } = require('../tourpackage/fetchCarriage');
+    
+    // Get driver's assigned carriages
+    const carriages = await carriageService.getByDriver(driverId);
+    
+    if (!carriages || carriages.length === 0) {
+      return {
+        eligible: false,
+        error_code: 'NO_CARRIAGE_ASSIGNED',
+        reason: 'No carriage assigned to driver',
+        friendly_message: 'You need a tartanilla carriage assigned to you to accept tour package bookings. Please contact admin.'
+      };
+    }
+    
+    // Check if any carriage is available and not suspended
+    const eligibleCarriage = carriages.find(c => 
+      c.status === 'available' && 
+      !c.is_suspended && 
+      c.is_active !== false
+    );
+    
+    if (!eligibleCarriage) {
+      // Check specific reasons
+      const suspendedCarriage = carriages.find(c => c.is_suspended);
+      if (suspendedCarriage) {
+        return {
+          eligible: false,
+          error_code: 'CARRIAGE_SUSPENDED',
+          reason: 'Assigned carriage is suspended',
+          friendly_message: 'Your carriage is currently suspended. Please contact admin to resolve this issue.'
+        };
+      }
+      
+      const unavailableCarriage = carriages.find(c => c.status !== 'available');
+      if (unavailableCarriage) {
+        return {
+          eligible: false,
+          error_code: 'CARRIAGE_NOT_AVAILABLE',
+          reason: 'Assigned carriage is not available',
+          friendly_message: `Your carriage status is "${unavailableCarriage.status}". Please set it to "available" to accept bookings.`
+        };
+      }
+      
+      return {
+        eligible: false,
+        error_code: 'NO_ELIGIBLE_CARRIAGE',
+        reason: 'No eligible carriage found',
+        friendly_message: 'Your carriage is not eligible for bookings. Please check carriage status or contact admin.'
+      };
+    }
+    
+    return {
+      eligible: true,
+      carriage: eligibleCarriage
+    };
+  } catch (error) {
+    console.error('[checkCarriageEligibility] Error:', error.message);
+    return {
+      eligible: false,
+      error_code: 'CARRIAGE_CHECK_FAILED',
+      reason: 'Failed to verify carriage eligibility',
+      friendly_message: 'Unable to verify your carriage status. Please try again or contact admin.'
+    };
   }
 }
 
