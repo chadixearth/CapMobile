@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -53,19 +53,28 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
       ]);
       
       if (calendarResult.success) {
-        setCalendar(calendarResult.data || []);
+        setCalendar(Array.isArray(calendarResult.data) ? calendarResult.data : []);
+      } else {
+        console.warn('[DriverScheduleModal] Calendar fetch failed:', calendarResult.error);
+        setCalendar([]);
       }
       
       if (scheduleResult.success) {
-        setSchedule(scheduleResult.data || []);
+        setSchedule(Array.isArray(scheduleResult.data) ? scheduleResult.data : []);
+      } else {
+        console.warn('[DriverScheduleModal] Schedule fetch failed:', scheduleResult.error);
+        setSchedule([]);
       }
       
       if (!calendarResult.success && !scheduleResult.success) {
-        Alert.alert('Error', 'Failed to load schedule data');
+        const errorMsg = calendarResult.errorType === 'NETWORK' || scheduleResult.errorType === 'NETWORK'
+          ? 'Network error. Please check your connection.'
+          : 'Failed to load schedule data';
+        Alert.alert('Error', errorMsg);
       }
     } catch (error) {
-      console.error('Error loading calendar:', error);
-      Alert.alert('Error', 'Network error loading schedule. Please check your connection and try again.');
+      console.error('[DriverScheduleModal] Error loading calendar:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setRefreshing(false);
     }
@@ -85,7 +94,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     });
   };
 
-  const getDaysInMonth = () => {
+  const daysInMonth = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1);
@@ -104,7 +113,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     }
     
     return days;
-  };
+  }, [currentDate]);
 
   const hasBookingOnDate = (day) => {
     if (!day) return false;
@@ -224,7 +233,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
               
               {/* Calendar Grid */}
               <View style={styles.calendarGrid}>
-                {getDaysInMonth().map((day, index) => {
+                {daysInMonth.map((day, index) => {
                   const isToday = day && 
                     new Date().getDate() === day && 
                     new Date().getMonth() === currentDate.getMonth() && 

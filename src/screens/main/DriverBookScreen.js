@@ -39,6 +39,7 @@ import VerificationPhotoModal from '../../components/VerificationPhotoModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import DriverCancellationModal from '../../components/DriverCancellationModal';
 import LeafletMapView from '../../components/LeafletMapView';
+import RideMapWithLocation from '../../components/RideMapWithLocation';
 import { fetchMapData } from '../../services/map/fetchMap';
 import { apiBaseUrl } from '../../services/networkConfig';
 import {
@@ -56,119 +57,7 @@ import DriverScheduleModal from '../../components/DriverScheduleModal';
 
 const MAROON = '#6B2E2B';
 
-const RideMap = ({ ride }) => {
-  const [mapData, setMapData] = useState(null);
-  
-  useEffect(() => {
-    loadMapData();
-  }, [ride]);
-  
-  const loadMapData = async () => {
-    try {
-      let pickupCoords = { latitude: 10.295, longitude: 123.89 };
-      let dropoffCoords = { latitude: 10.305, longitude: 123.90 };
-      
-      // Parse actual coordinates from notes
-      if (ride.notes) {
-        const pickupMatch = ride.notes.match(/Pickup: ([\d.-]+), ([\d.-]+)/);
-        const dropoffMatch = ride.notes.match(/Dropoff: ([\d.-]+), ([\d.-]+)/);
-        
-        if (pickupMatch) {
-          pickupCoords = {
-            latitude: parseFloat(pickupMatch[1]),
-            longitude: parseFloat(pickupMatch[2])
-          };
-        }
-        
-        if (dropoffMatch) {
-          dropoffCoords = {
-            latitude: parseFloat(dropoffMatch[1]),
-            longitude: parseFloat(dropoffMatch[2])
-          };
-        }
-      }
-      
-      // Calculate region
-      const centerLat = (pickupCoords.latitude + dropoffCoords.latitude) / 2;
-      const centerLng = (pickupCoords.longitude + dropoffCoords.longitude) / 2;
-      const deltaLat = Math.max(Math.abs(pickupCoords.latitude - dropoffCoords.latitude) * 1.5, 0.01);
-      const deltaLng = Math.max(Math.abs(pickupCoords.longitude - dropoffCoords.longitude) * 1.5, 0.01);
-      
-      // Fetch OSRM route
-      let routes = [];
-      try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.longitude},${pickupCoords.latitude};${dropoffCoords.longitude},${dropoffCoords.latitude}?overview=full&geometries=geojson`;
-        const osrmResponse = await fetch(osrmUrl);
-        
-        if (osrmResponse.ok) {
-          const osrmData = await osrmResponse.json();
-          if (osrmData.routes && osrmData.routes.length > 0) {
-            const route = osrmData.routes[0];
-            routes = [{
-              coordinates: route.geometry.coordinates.map(coord => ({
-                latitude: coord[1],
-                longitude: coord[0]
-              })),
-              color: '#FF9800',
-              weight: 5,
-              opacity: 0.8
-            }];
-          }
-        }
-      } catch (error) {
-        console.log('Could not load OSRM route:', error);
-      }
-      
-      setMapData({
-        region: {
-          latitude: centerLat,
-          longitude: centerLng,
-          latitudeDelta: deltaLat,
-          longitudeDelta: deltaLng
-        },
-        markers: [
-          {
-            latitude: pickupCoords.latitude,
-            longitude: pickupCoords.longitude,
-            title: 'Pickup',
-            description: ride.pickup_address,
-            iconColor: '#2E7D32'
-          },
-          {
-            latitude: dropoffCoords.latitude,
-            longitude: dropoffCoords.longitude,
-            title: 'Destination',
-            description: ride.dropoff_address,
-            iconColor: '#C62828'
-          }
-        ],
-        roads: [],
-        routes
-      });
-    } catch (error) {
-      console.error('Error loading map data:', error);
-    }
-  };
-  
-  if (!mapData) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#FF9800" />
-        <Text style={{ marginTop: 8, color: '#666' }}>Loading map...</Text>
-      </View>
-    );
-  }
-  
-  return (
-    <LeafletMapView
-      region={mapData.region}
-      markers={mapData.markers}
-      roads={mapData.roads}
-      routes={mapData.routes}
-      showSatellite={false}
-    />
-  );
-};
+
 
 export default function DriverBookScreen({ navigation }) {
   // Hide the default stack header (avoid double headers)
@@ -2012,7 +1901,7 @@ const getCustomTitle = (r) => (
             )}
             
             <View style={styles.mapContainer}>
-              {selectedRide && <RideMap ride={selectedRide} />}
+              {selectedRide && <RideMapWithLocation ride={selectedRide} />}
             </View>
             
             <TouchableOpacity 

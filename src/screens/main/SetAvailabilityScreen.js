@@ -19,7 +19,6 @@ import { TIME_SLOTS, formatTime, isTimeInPast, isDateInPast, getValidTimeSlotsFo
 const MAROON = '#6B2E2B';
 
 export default function SetAvailabilityScreen({ navigation, route }) {
-  // Hide the default stack header (avoid double headers)
   React.useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
@@ -38,12 +37,10 @@ export default function SetAvailabilityScreen({ navigation, route }) {
   const [showToTimePicker, setShowToTimePicker] = useState(false);
   const [hasNonContinuousSlots, setHasNonContinuousSlots] = useState(false);
 
-  // Load existing availability when date changes
   React.useEffect(() => {
     const loadExistingAvailability = async () => {
       if (!user?.id || !selectedDate) return;
       
-      // Check if selected date is in the past
       if (isDateInPast(selectedDate)) {
         Alert.alert(
           'Invalid Date', 
@@ -64,7 +61,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
             const availableTimes = TIME_SLOTS.filter(time => !schedule.unavailable_times.includes(time));
             
             if (availableTimes.length > 0) {
-              // Check if it's a continuous range
               const isRange = availableTimes.every((time, index) => {
                 if (index === 0) return true;
                 const prevHour = parseInt(availableTimes[index - 1].split(':')[0]);
@@ -84,7 +80,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
             }
           }
         } else {
-          // Reset to defaults for new date
           setIsAvailable(true);
           setAvailabilityMode('range');
           setSelectedTimeSlots([]);
@@ -106,7 +101,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
     
     setSelectedTimeSlots(newSlots);
     
-    // Check for non-continuous slots
     if (newSlots.length > 1) {
       const isContinuous = newSlots.every((slot, index) => {
         if (index === 0) return true;
@@ -124,12 +118,10 @@ export default function SetAvailabilityScreen({ navigation, route }) {
     setAvailableFromTime(time);
     setShowFromTimePicker(false);
     
-    // Auto-adjust 'to' time if it's not later than 'from' time
     const fromHour = parseInt(time.split(':')[0]);
     const toHour = parseInt(availableToTime.split(':')[0]);
     
     if (toHour <= fromHour) {
-      // Find next available slot, default to 8 hours or end of day
       const maxHour = Math.min(fromHour + 8, 20);
       const nextSlot = TIME_SLOTS.find(slot => parseInt(slot.split(':')[0]) >= maxHour);
       setAvailableToTime(nextSlot || '20:00');
@@ -142,7 +134,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
   };
 
   const saveAvailability = async () => {
-    // Show confirmation for non-continuous slots
     if (hasNonContinuousSlots && availabilityMode === 'custom') {
       Alert.alert(
         'Non-Continuous Hours',
@@ -161,7 +152,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
   const performSave = async () => {
     setSaving(true);
     try {
-      // Validate times are not in the past
       if (isAvailable) {
         if (availabilityMode === 'range') {
           if (isTimeInPast(selectedDate, availableFromTime)) {
@@ -203,7 +193,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
         unavailableTimes = TIME_SLOTS;
         notes = 'Not available';
       } else {
-        
         if (availabilityMode === 'range') {
           const fromHour = parseInt(availableFromTime.split(':')[0]);
           const toHour = parseInt(availableToTime.split(':')[0]);
@@ -276,7 +265,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
       />
 
       <ScrollView style={styles.content}>
-        {/* Date Info */}
         <View style={styles.selectedDateInfo}>
           <Text style={styles.sectionTitle}>
             {passedDate ? 'Setting availability for:' : 'Today\'s Availability'}
@@ -294,7 +282,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Availability Toggle */}
         <View style={styles.availabilitySection}>
           <Text style={styles.sectionTitle}>Available on this day</Text>
           <View style={styles.switchRow}>
@@ -310,10 +297,8 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Dynamic Availability Options */}
         {isAvailable && (
           <View style={styles.timeSlotsSection}>
-            {/* Mode Selection */}
             <View style={styles.modeSelection}>
               <TouchableOpacity 
                 style={[styles.modeBtn, availabilityMode === 'range' && styles.modeBtnActive]}
@@ -361,7 +346,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
                   </View>
                 </View>
                 
-                {/* Quick Presets */}
                 <View style={styles.presetsContainer}>
                   <Text style={styles.presetsTitle}>Quick Presets:</Text>
                   <View style={styles.presetsRow}>
@@ -400,12 +384,10 @@ export default function SetAvailabilityScreen({ navigation, route }) {
             ) : (
               <>
                 <Text style={styles.sectionTitle}>Select Available Hours</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Tap the hours when you're available
-                </Text>
+                <Text style={styles.sectionSubtitle}>Tap the hours when you're available</Text>
                 
                 <View style={styles.timeGrid}>
-                  {validTimeSlots.map((time) => (
+                  {validTimeSlots && validTimeSlots.length > 0 ? validTimeSlots.map((time) => (
                     <TouchableOpacity
                       key={time}
                       style={[
@@ -421,7 +403,9 @@ export default function SetAvailabilityScreen({ navigation, route }) {
                         {formatTime(time)}
                       </Text>
                     </TouchableOpacity>
-                  ))}
+                  )) : (
+                    <Text style={styles.sectionSubtitle}>No available time slots for this date</Text>
+                  )}
                 </View>
                 
                 {selectedTimeSlots.length > 0 && (
@@ -443,7 +427,6 @@ export default function SetAvailabilityScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Save Button */}
         <TouchableOpacity
           style={[
             styles.saveBtn, 
@@ -487,7 +470,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f8f8'
   },
-
   content: {
     flex: 1,
     padding: 16
@@ -504,29 +486,23 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 16
   },
-  dateScroll: {
+  selectedDateInfo: {
     marginBottom: 20
   },
-  dateCard: {
+  dateInfoCard: {
     backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#eee'
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: MAROON
   },
-  selectedDateCard: {
-    backgroundColor: MAROON,
-    borderColor: MAROON
-  },
-  dateLabel: {
-    fontSize: 14,
+  dateInfoText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
-    fontWeight: '500'
-  },
-  selectedDateLabel: {
-    color: '#fff'
+    marginLeft: 12
   },
   availabilitySection: {
     backgroundColor: '#fff',
@@ -548,66 +524,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 20
-  },
-  timeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8
-  },
-  timeSlot: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#eee'
-  },
-  unavailableTimeSlot: {
-    backgroundColor: '#ffebee',
-    borderColor: '#f44336'
-  },
-  timeSlotText: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500'
-  },
-  unavailableTimeSlotText: {
-    color: '#f44336'
-  },
-  saveBtn: {
-    backgroundColor: MAROON,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 40
-  },
-  saveBtnDisabled: {
-    opacity: 0.6
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  selectedDateInfo: {
-    marginBottom: 20
-  },
-  dateInfoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: MAROON
-  },
-  dateInfoText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 12
   },
   modeSelection: {
     flexDirection: 'row',
@@ -697,12 +613,37 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center'
   },
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between'
+  },
+  timeSlot: {
+    width: '31%',
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  timeSlotText: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
+    textAlign: 'center'
+  },
   selectedTimeSlot: {
     backgroundColor: MAROON,
     borderColor: MAROON
   },
   selectedTimeSlotText: {
-    color: '#fff'
+    color: '#fff',
+    fontWeight: '600'
   },
   selectedSummary: {
     backgroundColor: '#e8f5e8',
@@ -735,6 +676,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#f57c00',
     marginLeft: 6,
+    fontWeight: '600'
+  },
+  saveBtn: {
+    backgroundColor: MAROON,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40
+  },
+  saveBtnDisabled: {
+    opacity: 0.6
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600'
   },
   loadingContainer: {

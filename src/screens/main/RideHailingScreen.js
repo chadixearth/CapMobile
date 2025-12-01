@@ -105,8 +105,6 @@ export default function RideHailingScreen({ navigation }) {
     }
   };
 
-
-
   const onRefresh = async () => {
     setRefreshing(true);
     await initializeScreen();
@@ -118,6 +116,11 @@ export default function RideHailingScreen({ navigation }) {
     try {
       const location = await LocationService.getCurrentLocation();
       setPickupAddress('Current Location (GPS)');
+      setPickupLocation({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        name: 'Current Location'
+      });
       Alert.alert('Location Found', 'Your current location has been set as pickup point.');
     } catch (error) {
       console.error('Error getting location:', error);
@@ -152,12 +155,17 @@ export default function RideHailingScreen({ navigation }) {
         roads, 
         location.latitude, 
         location.longitude,
-        500 // 500 meters max distance
+        500
       );
 
       if (nearestRoadPoint) {
         setNearestRoad(nearestRoadPoint);
         setPickupAddress(`${nearestRoadPoint.name} (${Math.round(nearestRoadPoint.distance)}m away)`);
+        setPickupLocation({
+          latitude: nearestRoadPoint.latitude,
+          longitude: nearestRoadPoint.longitude,
+          name: nearestRoadPoint.name
+        });
         Alert.alert(
           'Nearest Road Found', 
           `Found ${nearestRoadPoint.name} approximately ${Math.round(nearestRoadPoint.distance)} meters from your location.`
@@ -232,7 +240,6 @@ export default function RideHailingScreen({ navigation }) {
   const openMapForSelection = async (type) => {
     setSelectingLocation(type);
     console.log('[RideHailing] Opening map, current roads:', mapData?.roads?.length || 0);
-    // Always reload to get fresh road data
     await loadMapData();
     setShowMap(true);
   };
@@ -249,13 +256,25 @@ export default function RideHailingScreen({ navigation }) {
     }
 
     try {
-      const result = await createRideBooking({
+      const bookingData = {
         customer_id: user.id,
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
         passenger_count: parseInt(passengerCount),
         notes: 'Ride created from mobile app'
-      });
+      };
+      
+      if (pickupLocation) {
+        bookingData.pickup_latitude = pickupLocation.latitude;
+        bookingData.pickup_longitude = pickupLocation.longitude;
+      }
+      
+      if (dropoffLocation) {
+        bookingData.dropoff_latitude = dropoffLocation.latitude;
+        bookingData.dropoff_longitude = dropoffLocation.longitude;
+      }
+      
+      const result = await createRideBooking(bookingData);
 
       if (result.success) {
         Alert.alert(
@@ -306,12 +325,6 @@ export default function RideHailingScreen({ navigation }) {
       }
     }
   };
-
-
-
-
-
-
 
   if (loading) {
     return (
@@ -444,7 +457,6 @@ export default function RideHailingScreen({ navigation }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Map Modal */}
       {showMap && (
         <View style={styles.mapModal}>
           <View style={styles.mapHeader}>
@@ -594,11 +606,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 12,
-  },
   addressInput: {
     borderWidth: 1,
     borderColor: '#E5E5E5',
@@ -686,49 +693,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 18,
-  },
-  rideCard: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E9ECEF',
-  },
-  rideHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  rideDest: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  rideSpots: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  rideStatus: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  joinButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  joinButtonDisabled: {
-    backgroundColor: '#CCC',
-  },
-  joinButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
   },
   mapModal: {
     position: 'absolute',
