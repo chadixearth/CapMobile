@@ -59,11 +59,21 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
     return ownerName || 'Unknown';
   };
 
-  const carriageStatuses = [
-    { value: 'available', label: 'Available', icon: 'checkmark-circle', color: SUCCESS },
-    { value: 'in_use', label: 'In Use', icon: 'time', color: WARNING },
-    { value: 'maintenance', label: 'Maintenance', icon: 'build', color: '#FF9800' },
-  ];
+  const getAvailableStatuses = (carriage) => {
+    // If carriage is in maintenance, driver can't change to available or in_use
+    if (carriage?.status === 'maintenance') {
+      return [
+        { value: 'maintenance', label: 'Maintenance', icon: 'build', color: '#FF9800' },
+      ];
+    }
+    
+    // Normal statuses for drivers
+    return [
+      { value: 'available', label: 'Available', icon: 'checkmark-circle', color: SUCCESS },
+      { value: 'in_use', label: 'In Use', icon: 'time', color: WARNING },
+      { value: 'maintenance', label: 'Maintenance', icon: 'build', color: '#FF9800' },
+    ];
+  };
 
   useEffect(() => {
     fetchUserAndCarriages();
@@ -274,6 +284,22 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   };
 
   const handleUpdateCarriageStatus = async (carriageId, newStatus) => {
+    // Prevent drivers from changing status if carriage is in maintenance
+    const carriage = carriages.find(c => c.id === carriageId);
+    if (carriage?.status === 'maintenance' && newStatus !== 'maintenance') {
+      CustomAlert.error('Cannot Change Status', 'This carriage is in maintenance mode. Only the owner can change it back to service.');
+      return;
+    }
+    
+    // Prevent having two carriages in use at the same time
+    if (newStatus === 'in_use') {
+      const inUseCount = assignedCarriages.filter(c => c.status === 'in_use' && c.id !== carriageId).length;
+      if (inUseCount >= 1) {
+        CustomAlert.error('Cannot Set In Use', 'You can only have one carriage in use at a time.');
+        return;
+      }
+    }
+    
     setUpdatingStatus(true);
     try {
       const response = await updateCarriageStatus(carriageId, newStatus);
@@ -293,9 +319,17 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
   };
 
   const handleSelectCarriage = async (carriageId) => {
+    const carriage = carriages.find(c => c.id === carriageId);
+    
+    // Prevent selecting carriage if it's in maintenance
+    if (carriage?.status === 'maintenance') {
+      CustomAlert.error('Cannot Select', 'This carriage is in maintenance mode and cannot be used.');
+      return;
+    }
+    
     const inUseCount = assignedCarriages.filter(c => c.status === 'in_use').length;
-    if (inUseCount >= 2) {
-      CustomAlert.error('Limit Reached', 'You can only have 2 carriages in use at a time.');
+    if (inUseCount >= 1) {
+      CustomAlert.error('Limit Reached', 'You can only have 1 carriage in use at a time.');
       return;
     }
 
@@ -465,7 +499,7 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         {/* Assigned Carriages */}
         {assignedCarriages.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>My Carriages ({assignedCarriages.length}/2)</Text>
+            <Text style={styles.sectionTitle}>My Carriages ({assignedCarriages.length})</Text>
             <View style={assignedCarriages.length === 1 ? styles.singleCarriageContainer : styles.carriageGrid}>
             {assignedCarriages.map((carriage) => (
               <View key={carriage.id} style={[styles.carriageCard, assignedCarriages.length === 1 ? styles.fullWidthCard : styles.gridCard]}>
@@ -536,13 +570,30 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                       )}
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity
-                    style={styles.statusButton}
-                    onPress={() => openStatusModal(carriage)}
-                  >
-                    <Ionicons name={getStatusIcon(carriage.status)} size={16} color={MAROON} />
-                    <Text style={styles.statusButtonText}>Change Status</Text>
-                  </TouchableOpacity>
+                  {carriage.status === 'maintenance' && (
+                    <View style={styles.maintenanceBanner}>
+                      <Ionicons name="build" size={16} color="#fff" />
+                      <Text style={styles.maintenanceBannerText}>Under Maintenance</Text>
+                    </View>
+                  )}
+                  {carriage.status !== 'maintenance' && (
+                    <TouchableOpacity
+                      style={styles.statusButton}
+                      onPress={() => openStatusModal(carriage)}
+                    >
+                      <Ionicons name={getStatusIcon(carriage.status)} size={16} color={MAROON} />
+                      <Text style={styles.statusButtonText}>Change Status</Text>
+                    </TouchableOpacity>
+                  )}
+                  {carriage.status === 'maintenance' && (
+                    <TouchableOpacity
+                      style={[styles.statusButton, styles.disabledButton]}
+                      disabled={true}
+                    >
+                      <Ionicons name="lock-closed" size={16} color="#9CA3AF" />
+                      <Text style={[styles.statusButtonText, { color: '#9CA3AF' }]}>Owner Control Only</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             ))}
@@ -599,7 +650,16 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
             
             <Text style={styles.statusLabel}>Select new status:</Text>
             
-            {carriageStatuses.map((status) => (
+            {selectedCarriage?.status === 'maintenance' && (
+              <View style={styles.maintenanceNotice}>
+                <Ionicons name="information-circle" size={16} color="#F59E0B" />
+                <Text style={styles.maintenanceNoticeText}>
+                  This carriage is in maintenance mode. Only the owner can change it back to service.
+                </Text>
+              </View>
+            )}
+            
+            {getAvailableStatuses(selectedCarriage).map((status) => (
               <TouchableOpacity
                 key={status.value}
                 style={[
@@ -955,5 +1015,42 @@ const styles = StyleSheet.create({
   fullWidthCard: {
     marginHorizontal: 0,
     marginBottom: 16,
+  },
+  maintenanceNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  maintenanceNoticeText: {
+    fontSize: 14,
+    color: '#92400E',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 20,
+  },
+  maintenanceBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF9800',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 6,
+  },
+  maintenanceBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  disabledButton: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.7,
   },
 });
