@@ -25,13 +25,13 @@ const RideStatusCard = ({ ride, onRefresh }) => {
   useEffect(() => {
     if (ride.status === 'waiting_for_driver') {
       if (!waitStartTime) {
-        setWaitStartTime(Date.now());
+        setWaitStartTime(new Date(ride.created_at).getTime());
       }
     } else {
       setWaitingTime(0);
       setWaitStartTime(null);
     }
-  }, [ride.status]);
+  }, [ride.status, ride.created_at]);
 
   useEffect(() => {
     if (ride.status === 'waiting_for_driver' && waitStartTime) {

@@ -37,13 +37,14 @@ const LeafletMapView = ({
         title: marker.title || marker.name || 'Location',
         description: marker.description || '',
         color: marker.iconColor || marker.color || '#FF0000',
-        type: marker.pointType || marker.type || 'default',
+        type: marker.type || marker.pointType || 'default',
         image_urls: marker.image_urls || [],
-        id: marker.id
+        id: marker.id,
+        isDriver: marker.isDriver || marker.type === 'driver' || marker.pointType === 'driver'
       };
       
       // Debug driver markers
-      if (processedMarker.type === 'driver' || processedMarker.id === 'driver_location') {
+      if (processedMarker.type === 'driver' || processedMarker.isDriver) {
         console.log('🐎 Processing driver marker:', processedMarker);
       }
       
@@ -265,12 +266,12 @@ const LeafletMapView = ({
             
             console.log('getMarkerIcon called with - color:', color, 'type:', type, 'id:', id);
             
-            if (type === 'driver' || id === 'driver_location') {
+            if (type === 'driver' || id?.toString().includes('driver')) {
               console.log('🐎 Creating HORSE ICON for driver marker');
               // Horse icon for drivers - make it more prominent
-              iconHtml = '<div style="background-color: ' + color + '; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 3px 10px rgba(0,0,0,0.4); animation: pulse 2s infinite;">🐎</div>';
-              iconSize = [32, 32];
-              iconAnchor = [16, 16];
+              iconHtml = '<div style="background-color: ' + color + '; width: 36px; height: 36px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 3px 10px rgba(0,0,0,0.4); animation: pulse 2s infinite;">🐎</div>';
+              iconSize = [36, 36];
+              iconAnchor = [18, 18];
             } else {
               console.log('Creating regular marker icon for type:', type);
               // Regular colored circle for other markers
@@ -293,8 +294,8 @@ const LeafletMapView = ({
             console.log('Processing marker', index + 1, ':', marker.title, 'at', marker.lat, marker.lng, 'type:', marker.type, 'id:', marker.id);
             
             // Debug driver markers specifically
-            if (marker.type === 'driver' || marker.id === 'driver_location') {
-              console.log('🐎 DRIVER MARKER DETECTED:', marker.title, 'type:', marker.type, 'id:', marker.id);
+            if (marker.type === 'driver' || marker.isDriver || (marker.id && marker.id.toString().includes('driver'))) {
+              console.log('🐎 DRIVER MARKER DETECTED:', marker.title, 'type:', marker.type, 'id:', marker.id, 'isDriver:', marker.isDriver);
             }
             
             if (marker.lat && marker.lng && !isNaN(marker.lat) && !isNaN(marker.lng)) {
@@ -328,9 +329,9 @@ const LeafletMapView = ({
                 
                 if (marker.title || marker.description) {
                   var popupContent = '<div style="text-align: center; min-width: 150px;">';
-                  if (marker.type === 'driver' || marker.id === 'driver_location') {
+                  if (marker.type === 'driver' || marker.isDriver || (marker.id && marker.id.toString().includes('driver'))) {
                     popupContent += '<div style="font-size: 24px; margin-bottom: 8px;">🐎</div>';
-                    popupContent += '<div style="color: #FF6B35; font-weight: bold; margin-bottom: 5px;">Your Driver</div>';
+                    popupContent += '<div style="color: #FF6B35; font-weight: bold; margin-bottom: 5px;">Tartanilla Driver</div>';
                   }
                   if (marker.title) {
                     popupContent += '<strong>' + marker.title + '</strong>';
@@ -338,8 +339,8 @@ const LeafletMapView = ({
                   if (marker.description) {
                     popupContent += '<br><div style="font-size: 12px; color: #666; margin-top: 4px;">' + marker.description + '</div>';
                   }
-                  if (marker.type === 'driver' || marker.id === 'driver_location') {
-                    popupContent += '<br><small style="color: #FF6B35; font-weight: 500;">Driver is on the way to pick you up</small>';
+                  if (marker.type === 'driver' || marker.isDriver || (marker.id && marker.id.toString().includes('driver'))) {
+                    popupContent += '<br><small style="color: #FF6B35; font-weight: 500;">Available for booking</small>';
                   }
                   popupContent += '</div>';
                   leafletMarker.bindPopup(popupContent);

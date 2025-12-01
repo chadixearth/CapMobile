@@ -2,25 +2,57 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
 import LeafletMapView from './LeafletMapView';
 import * as Location from 'expo-location';
+import { updateDriverLocation } from '../services/rideHailingService';
+import { getCurrentUser } from '../services/authService';
 
 export default function RideMapWithLocation({ ride }) {
   const [mapData, setMapData] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
+  const [user, setUser] = useState(null);
   
   useEffect(() => {
-    loadMapData();
-    getDriverLocation();
-  }, [ride]);
+    initUser();
+  }, []);
+  
+  useEffect(() => {
+    if (user) {
+      getDriverLocation();
+      const interval = setInterval(getDriverLocation, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+  
+  useEffect(() => {
+    if (driverLocation) {
+      loadMapData();
+    }
+  }, [driverLocation, ride]);
+  
+  const initUser = async () => {
+    const currentUser = await getCurrentUser();
+    setUser(currentUser);
+  };
   
   const getDriverLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const location = await Location.getCurrentPositionAsync({});
-        setDriverLocation({
+        const newLocation = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude
-        });
+        };
+        setDriverLocation(newLocation);
+        
+        if (user?.id) {
+          await updateDriverLocation(
+            user.id,
+            newLocation.latitude,
+            newLocation.longitude,
+            location.coords.speed || 0,
+            location.coords.heading || 0
+          );
+        }
       }
     } catch (error) {
       console.log('Could not get driver location:', error);
