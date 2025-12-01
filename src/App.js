@@ -19,6 +19,7 @@ import NetworkStatus from './components/NetworkStatus';
 import mobileDiagnostics from './services/mobileDiagnostics';
 import CustomModalProvider from './components/CustomModalProvider';
 import CustomModalService from './services/CustomModalService';
+import paymentTimeoutScheduler from './services/paymentTimeoutScheduler';
 
 // Suppress location-related console errors and UIFrameGuarded warnings
 const originalConsoleError = console.error;
@@ -59,6 +60,9 @@ export default function App() {
     try {
       await mobileDiagnostics.initialize();
       const result = await AppInitService.initialize();
+      
+      // Start payment timeout scheduler for automatic booking cancellation
+      paymentTimeoutScheduler.start();
       
       setTimeout(() => {
         setIsInitializing(false);

@@ -259,9 +259,11 @@ export default function DriverHomeScreen({ navigation }) {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [locationStatus, setLocationStatus] = useState({ isTracking: false, lastUpdateTime: null, error: null });
   const [locationToggling, setLocationToggling] = useState(false);
+  const [activeRideBooking, setActiveRideBooking] = useState(null);
 
   useEffect(() => {
     fetchUserAndEarnings();
+    checkActiveRideBooking();
 
     const init = async () => {
       try {
@@ -515,7 +517,26 @@ export default function DriverHomeScreen({ navigation }) {
     setRefreshing(true);
     setLastRefresh(new Date());
     await fetchUserAndEarnings();
+    await checkActiveRideBooking();
     setRefreshing(false);
+  };
+
+  const checkActiveRideBooking = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      if (currentUser?.id) {
+        const { getActiveRides } = await import('../../services/rideHailingService');
+        const result = await getActiveRides(currentUser.id, 'driver');
+        if (result.success && result.data && result.data.length > 0) {
+          setActiveRideBooking(result.data[0]);
+        } else {
+          setActiveRideBooking(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking active ride:', error);
+      setActiveRideBooking(null);
+    }
   };
 
   const navigateToEarningsDetail = () => {
@@ -586,6 +607,38 @@ export default function DriverHomeScreen({ navigation }) {
 
       {/* Modern Location Card (time updates on each location ping) */}
       <LocationCard locationStatus={locationStatus} onToggle={handleLocationToggle} />
+
+      {/* Active Ride Booking Card */}
+      {activeRideBooking && (
+        <TouchableOpacity 
+          style={styles.activeRideCard}
+          onPress={() => navigation.navigate('DriverRideTracking')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.activeRideHeader}>
+            <View style={styles.activeRideIcon}>
+              <Ionicons name="navigate" size={24} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeRideTitle}>Active Ride</Text>
+              <Text style={styles.activeRideSubtitle}>
+                {activeRideBooking.status === 'driver_assigned' ? 'Going to pickup' : 'In progress'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={MAROON} />
+          </View>
+          <View style={styles.activeRideDetails}>
+            <View style={styles.activeRideRow}>
+              <Ionicons name="location" size={14} color="#666" />
+              <Text style={styles.activeRideText} numberOfLines={1}>{activeRideBooking.pickup_address}</Text>
+            </View>
+            <View style={styles.activeRideRow}>
+              <Ionicons name="flag" size={14} color="#666" />
+              <Text style={styles.activeRideText} numberOfLines={1}>{activeRideBooking.dropoff_address}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
 
       <ScrollView
         style={styles.container}
@@ -1241,6 +1294,59 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontWeight: '600',
   },
-  
+
+  /* Active Ride Card */
+  activeRideCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#2E7D32',
+    shadowColor: '#2E7D32',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  activeRideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  activeRideIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2E7D32',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  activeRideTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: TEXT,
+  },
+  activeRideSubtitle: {
+    fontSize: 13,
+    color: '#2E7D32',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  activeRideDetails: {
+    gap: 6,
+  },
+  activeRideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activeRideText: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
+  },
 
 });

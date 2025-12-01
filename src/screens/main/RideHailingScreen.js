@@ -72,36 +72,11 @@ export default function RideHailingScreen({ navigation }) {
     try {
       console.log('[RideHailing] Loading map data...');
       const data = await fetchMapData({ forceRefresh: false });
-      const { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap } = await import('../../services/roadHighlightsService');
-      
-      console.log('[RideHailing] Fetching road highlights...');
-      const roadData = await getAllRoadHighlightsWithPoints();
-      console.log('[RideHailing] Road data result:', roadData.success, 'roads:', roadData.roadHighlights?.length);
-      
-      if (roadData.success && roadData.roadHighlights.length > 0) {
-        const processedRoads = processRoadHighlightsForMap(roadData.roadHighlights);
-        console.log('[RideHailing] Processed roads with coordinates:', processedRoads.length);
-        
-        const allPoints = [
-          ...(data?.points || []),
-          ...(roadData.pickupPoints || []),
-          ...(roadData.dropoffPoints || [])
-        ];
-        
-        console.log('[RideHailing] Setting map data with', processedRoads.length, 'roads');
-        setMapData({ 
-          ...data,
-          points: allPoints,
-          roads: processedRoads
-        });
-      } else {
-        console.log('[RideHailing] No road highlights, using basic map data');
-        setMapData(data);
-      }
+      console.log('[RideHailing] Map data loaded:', data?.points?.length, 'points,', data?.roads?.length, 'roads');
+      setMapData(data);
     } catch (error) {
       console.error('[RideHailing] Error loading map data:', error);
-      const data = await fetchMapData({ forceRefresh: false });
-      setMapData(data);
+      setMapData(null);
     }
   };
 

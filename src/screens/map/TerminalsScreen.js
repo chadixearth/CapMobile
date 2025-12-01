@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LeafletMapView from '../../components/LeafletMapView';
@@ -10,6 +10,8 @@ import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
 import { useAuth } from '../../hooks/useAuth';
 import { createRideHailingDriverReview, checkExistingReviews } from '../../services/reviews';
+import { subscribeToDataChanges, DATA_EVENTS } from '../../services/dataInvalidationService';
+import { useFocusEffect } from '@react-navigation/native';
 
 const DEFAULT_REGION = {
   latitude: 10.307,
@@ -36,13 +38,39 @@ const TerminalsScreen = ({ navigation, route }) => {
   const [submittingRating, setSubmittingRating] = useState(false);
   const [reviewedRides, setReviewedRides] = useState(new Set());
 
+  useFocusEffect(
+    React.useCallback(() => {
+      if (role === 'tourist' && showRides) {
+        fetchActiveRides();
+      }
+    }, [role, showRides])
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (role === 'tourist' && showRides) {
+        console.log('[TerminalsScreen] Screen focused, refreshing active rides');
+        fetchActiveRides();
+      }
+    }, [role, showRides])
+  );
+
   useEffect(() => {
     if (role === 'tourist') {
       fetchActiveRides();
       fetchRideHistory();
     }
     loadMapData();
-  }, []);
+    
+    // Subscribe to ride changes
+    const unsubscribe = subscribeToDataChanges(DATA_EVENTS.RIDE_CHANGED, () => {
+      if (role === 'tourist') {
+        console.log('[TerminalsScreen] Ride data changed, refreshing');
+        fetchActiveRides();
+      }
+    });
+    return unsubscribe;
+  }, [role]);
 
   const loadMapData = async () => {
     try {

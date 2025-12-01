@@ -97,9 +97,14 @@ export default function EnhancedDriverBookScreen({ navigation }) {
                   'You have successfully accepted this ride. The passenger has been notified.',
                   [
                     {
-                      text: 'OK',
+                      text: 'Start Navigation',
                       onPress: () => {
-                        // Navigate to active ride screen or refresh bookings
+                        navigation.navigate('DriverRideTracking');
+                      }
+                    },
+                    {
+                      text: 'Later',
+                      onPress: () => {
                         navigation.navigate('DriverHome');
                       }
                     }

@@ -42,6 +42,7 @@ import ReviewSubmissionScreen from '../screens/main/ReviewSubmissionScreen';
 
 import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
 import ForcePasswordChangeScreen from '../screens/auth/ForcePasswordChangeScreen';
+import DriverRideTrackingScreen from '../screens/main/DriverRideTrackingScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -148,6 +149,7 @@ export default function RootNavigator() {
           <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
           <Stack.Screen name="ReviewSubmission" component={ReviewSubmissionScreen} />
           <Stack.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} />
+          <Stack.Screen name="DriverRideTracking" component={DriverRideTrackingScreen} />
         </>
       )}
       </Stack.Navigator>

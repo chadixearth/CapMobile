@@ -96,6 +96,8 @@ export default function DriverBookScreen({ navigation }) {
   const acceptAnim = useRef(new Animated.Value(0)).current;
   const completeAnim = useRef(new Animated.Value(0)).current;
 
+
+
   // Auto-refresh when data changes (debounced)
   useScreenAutoRefresh('DRIVER_BOOK', React.useCallback(() => {
     console.log('[DriverBookScreen] Auto-refreshing due to data changes');
