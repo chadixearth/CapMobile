@@ -31,11 +31,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     console.log('================================');
   }, [carriages]);
 
+  const [loading, setLoading] = useState(true);
+  
   // Debug render - only in development
   if (__DEV__) {
     console.log('RENDER DEBUG - Loading:', loading, 'Auth loading:', auth.loading, 'Authenticated:', auth.isAuthenticated);
   }
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -62,12 +63,18 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const normalizedStatusRef = useRef(new Set()); // ids already normalized from driver_assigned -> available
 
   // All callback functions need to be defined before the conditional return
-  const fetchAllDrivers = async () => {
+  const fetchAllDrivers = async (retryCount = 0) => {
     try {
+      // Exponential backoff: 2s, 4s, 8s
+      const delay = Math.min(2000 * Math.pow(2, retryCount), 8000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
       const drivers = await driverService.getAllDrivers();
+      console.log('Fetched drivers:', drivers);
       const list = Array.isArray(drivers) ? drivers : [];
+      console.log('Driver list:', list);
       setAvailableDrivers(list);
-      // Seed cache by id and user_id for immediate resolution in cards
+      
       if (list.length) {
         const updates = {};
         list.forEach(d => {
@@ -80,6 +87,13 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       }
     } catch (error) {
       console.error('Error fetching drivers:', error);
+      
+      // Retry on 429 errors up to 3 times
+      if (error.message?.includes('429') && retryCount < 3) {
+        console.log(`Rate limited, retrying in ${Math.min(2000 * Math.pow(2, retryCount + 1), 8000)}ms...`);
+        return fetchAllDrivers(retryCount + 1);
+      }
+      
       Alert.alert('Error', error.message || 'Failed to load drivers');
     }
   };
@@ -132,6 +146,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   const openDriverModal = async (carriage) => {
     setSelectedCarriage(carriage);
     setShowDriverModal(true);
+    setAvailableDrivers([]);
     await fetchAllDrivers();
   };
 
@@ -293,6 +308,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         console.log('Carriages array type:', Array.isArray(carriageData));
         console.log('First carriage data:', carriageData[0]);
         
+        // Debug TETS carriage specifically
+        const testsCarriage = carriageData.find(c => c.plate_number === 'TETS');
+        if (testsCarriage) {
+          console.log('TETS carriage details:', testsCarriage);
+        }
+        
         // Force state update with a new array reference
         const newCarriages = Array.isArray(carriageData) ? [...carriageData] : [];
         setCarriages(newCarriages);
@@ -358,80 +379,70 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   useEffect(() => {
     const fetchMissingDrivers = async () => {
       try {
-        const idsToFetch = (carriages || [])
-          .map(c => c.assigned_driver ? null : c.assigned_driver_id)
-          .filter(id => !!id && !driverCache[id]);
+        // Get all unique assigned driver IDs from carriages
+        const allAssignedIds = [...new Set((carriages || [])
+          .filter(c => c.assigned_driver_id)
+          .map(c => c.assigned_driver_id))];
 
-        if (idsToFetch.length === 0) return;
+        if (allAssignedIds.length === 0) return;
 
-        let unresolved = new Set(idsToFetch);
+        // Check which drivers need real data (not just placeholders)
+        const needsRealData = allAssignedIds.filter(id => {
+          const cached = driverCache[id] || driverCache[String(id)];
+          return !cached || cached.email === 'Unknown Driver';
+        });
 
-        // First, try per-ID fetches
-        for (const id of idsToFetch) {
+        console.log('All assigned driver IDs:', allAssignedIds);
+        console.log('Drivers needing real data:', needsRealData);
+        console.log('Current cache keys:', Object.keys(driverCache));
+        
+        // Fetch real driver data
+        if (needsRealData.length > 0) {
           try {
-            const d = await driverService.getDriverById(id);
-            if (d) {
-              setDriverCache(prev => ({ ...prev, [id]: d }));
-              unresolved.delete(id);
-            }
-          } catch (e) {
-            // will try bulk fallback below
-          }
-        }
-
-        // Bulk fallback if any unresolved
-        if (unresolved.size > 0) {
-          try {
-            const all = await driverService.getAllDrivers();
-            const byId = new Map();
-            const byUserId = new Map();
-            (Array.isArray(all) ? all : []).forEach(d => {
-              if (d?.id) byId.set(String(d.id), d);
-              if (d?.user_id) byUserId.set(String(d.user_id), d);
-            });
-
+            const allDrivers = await driverService.getAllDrivers();
             const updates = {};
-            unresolved.forEach(id => {
-              const key = String(id);
-              const d = byId.get(key) || byUserId.get(key);
-              if (d) updates[key] = d;
-            });
+            
+            for (const id of needsRealData) {
+              // Find driver in available drivers list
+              const driver = allDrivers.find(d => 
+                String(d.id) === String(id) || String(d.user_id) === String(id)
+              );
+              
+              if (driver) {
+                updates[String(id)] = driver;
+                updates[id] = driver;
+                console.log('✓ Found driver:', id, driver.email || driver.name);
+              } else {
+                // Create placeholder if not found
+                const driverObj = {
+                  id: id,
+                  email: 'Unknown Driver',
+                  name: 'Unknown Driver'
+                };
+                updates[String(id)] = driverObj;
+                updates[id] = driverObj;
+                console.log('✓ Created placeholder for:', id);
+              }
+            }
+            
             if (Object.keys(updates).length > 0) {
               setDriverCache(prev => ({ ...prev, ...updates }));
             }
           } catch (e) {
-            // swallow; not critical for UI
+            console.log('✗ Failed to fetch drivers:', e.message);
           }
         }
       } catch (e) {
-        // ignore
+        console.error('Error in fetchMissingDrivers:', e);
       }
     };
-    fetchMissingDrivers();
-  }, [carriages, driverCache]);
-
-  // Normalize backend status: convert 'driver_assigned' to 'available' once per carriage
-  useEffect(() => {
-    (async () => {
-      try {
-        const items = Array.isArray(carriages) ? carriages : [];
-        const toNormalize = items.filter(c => c?.id && c.status === 'driver_assigned' && !normalizedStatusRef.current.has(c.id));
-        for (const c of toNormalize) {
-          try {
-            await carriageService.updateCarriage(c.id, { status: 'available' });
-            normalizedStatusRef.current.add(c.id);
-            // Optimistically update local state
-            setCarriages(prev => prev.map(x => x.id === c.id ? { ...x, status: 'available' } : x));
-          } catch (e) {
-            // Skip failures but don't loop endlessly
-            normalizedStatusRef.current.add(c.id);
-          }
-        }
-      } catch (_) {
-        // ignore
-      }
-    })();
+    
+    if (carriages.length > 0) {
+      fetchMissingDrivers();
+    }
   }, [carriages]);
+
+
 
   // Show loading while checking authentication
   if (auth.loading) {
@@ -652,7 +663,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     setEditingCarriage(carriage);
     setEditForm({
       capacity: String(carriage.capacity || '4'),
-      status: (carriage.status && carriage.status !== 'driver_assigned') ? carriage.status : 'available',
+      status: ['maintenance', 'out_of_service'].includes(carriage.status) ? carriage.status : '',
       notes: carriage.notes || ''
     });
     setShowEditModal(true);
@@ -684,7 +695,22 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       // Clean undefined
       Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
 
+      // Update carriage status
       await carriageService.updateCarriage(editingCarriage.id, updates);
+
+      // If status is set to maintenance, also update the assigned driver's status
+      if (editForm.status === 'maintenance' && editingCarriage.assigned_driver_id) {
+        try {
+          // Update driver status to maintenance as well
+          const { apiClient } = await import('../../services/improvedApiClient');
+          await apiClient.patch(`/accounts/api/users/${editingCarriage.assigned_driver_id}/`, {
+            carriage_status: 'maintenance'
+          });
+        } catch (driverUpdateError) {
+          console.warn('Failed to update driver status:', driverUpdateError);
+          // Don't fail the whole operation if driver update fails
+        }
+      }
 
       setShowEditModal(false);
       setEditingCarriage(null);
@@ -759,7 +785,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     const statusKey = carriage.status?.toLowerCase() || 'default';
     const status = statusConfig[statusKey] || statusConfig.default;
     const isDriver = user?.role === 'driver';
-    const cached = driverCache[carriage.assigned_driver_id];
+    const cached = driverCache[carriage.assigned_driver_id] || driverCache[String(carriage.assigned_driver_id)];
 
     const buildName = (d) => {
       if (!d) return null;
@@ -775,6 +801,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       );
     };
 
+    console.log('Carriage driver info:', {
+      carriage_id: carriage.id,
+      assigned_driver_id: carriage.assigned_driver_id,
+      assigned_driver: carriage.assigned_driver,
+      cached: cached
+    });
     const driverName = buildName(carriage.assigned_driver) || buildName(cached) || (carriage.assigned_driver_id ? 'Unknown Driver' : 'No driver assigned');
     const driverEmail = carriage.assigned_driver?.email || cached?.email || '';
     const driverPhone = carriage.assigned_driver?.phone || carriage.assigned_driver?.mobile || carriage.assigned_driver?.phone_number || cached?.phone || cached?.mobile || cached?.phone_number || '';
@@ -1111,7 +1143,21 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                     activeOpacity={0.7}
                   >
                     <View style={styles.driverAvatar}>
-                      <Ionicons name="person-circle-outline" size={40} color={MAROON} />
+                      {(() => {
+                        console.log('Driver object keys:', Object.keys(item));
+                        console.log('Driver object:', item);
+                        const profileUrl = item.profile_photo_url || item.profile_image;
+                        console.log('Profile URL found:', profileUrl);
+                        return profileUrl ? (
+                          <Image 
+                            source={{ uri: profileUrl }} 
+                            style={styles.driverProfileImage}
+                            onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
+                          />
+                        ) : (
+                          <Ionicons name="person-circle-outline" size={40} color={MAROON} />
+                        );
+                      })()}
                     </View>
                     <View style={styles.driverInfo}>
                       <Text style={styles.driverName}>
@@ -1241,10 +1287,9 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <View style={styles.editFormSection}>
               <Text style={styles.editLabel}>Status</Text>
               <View style={styles.editStatusGrid}>
-                {['available', 'in_use', 'maintenance', 'out_of_service'].map((status) => {
+                {['available', 'maintenance', 'out_of_service'].map((status) => {
                   const statusConfig = {
                     available: { icon: 'checkmark-circle', color: '#10B981', text: 'Available' },
-                    in_use: { icon: 'time', color: '#EF4444', text: 'In Use' },
                     maintenance: { icon: 'build', color: '#F59E0B', text: 'Maintenance' },
                     out_of_service: { icon: 'close-circle', color: '#EF4444', text: 'Out of Service' },
                   };
@@ -1952,6 +1997,11 @@ const styles = StyleSheet.create({
   },
   driverAvatar: {
     marginRight: 12,
+  },
+  driverProfileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   driverInfo: {
     flex: 1,

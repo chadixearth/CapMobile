@@ -211,4 +211,6 @@ export async function updateCarriageStatus(carriageId, newStatus) {
     }
     throw error;
   }
-} 
+}
+
+ 

@@ -2,8 +2,8 @@
 // Driver service using centralized API request with JWT expiry handling
 import { apiRequest } from '../authService';
 
-// Helper for API calls using centralized request
-async function apiCall(endpoint, options = {}) {
+// Helper for API calls using centralized request with rate limiting protection
+async function apiCall(endpoint, options = {}, retryCount = 0) {
   try {
     const result = await apiRequest(endpoint, options);
     if (result.success) {
@@ -11,6 +11,13 @@ async function apiCall(endpoint, options = {}) {
     }
     throw new Error(result.data?.error || result.error || `HTTP ${result.status}: Request failed`);
   } catch (error) {
+    // Handle rate limiting with exponential backoff
+    if (error.message?.includes('429') && retryCount < 3) {
+      const delay = Math.min(2000 * Math.pow(2, retryCount), 8000);
+      console.log(`Rate limited, retrying ${endpoint} in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return apiCall(endpoint, options, retryCount + 1);
+    }
     throw error;
   }
 }
@@ -45,6 +52,8 @@ export const driverService = {
     const data = await apiCall(`/tartanilla-carriages/get_available_drivers/${queryString}`);
     return unwrapList(data);
   },
+
+
 
   // Retrieve a driver by ID (resolve from available drivers list only)
   async getDriverById(driverId) {
