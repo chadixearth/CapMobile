@@ -1,6 +1,6 @@
 // API Configuration
 import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from '../networkConfig';
+import { buildApiUrl, validateApiUrl } from '../urlValidator';
 function getDevServerHost() {
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL || '';
@@ -10,7 +10,7 @@ function getDevServerHost() {
     return null;
   }
 }
-const API_BASE_URL = `${apiBaseUrl()}/tour-booking/`; 
+const API_BASE_URL = buildApiUrl('/tour-booking/'); 
 import { getAccessToken, getCurrentUser } from '../authService';
 import { syncUserToBackend } from '../userSync';
 import NotificationService from '../notificationService';
@@ -19,7 +19,9 @@ import NotificationService from '../notificationService';
 async function createTouristRecord(user) {
   try {
     const token = await getAccessToken();
-    const response = await fetch(`${API_BASE_URL.replace('/tour-booking/', '/auth/sync-user/')}`, {
+    const url = buildApiUrl('/auth/sync-user/');
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -135,7 +137,8 @@ export async function createBooking(bookingData) {
     
     try {
       const token = await getAccessToken();
-      const response = await fetch(`${API_BASE_URL}`, {
+      if (!validateApiUrl(API_BASE_URL)) throw new Error('Invalid API URL');
+      const response = await fetch(API_BASE_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -277,7 +280,7 @@ export async function getBookings(filters = {}) {
     });
     
     const url = `${API_BASE_URL}?${queryParams.toString()}`;
-    
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
@@ -309,8 +312,10 @@ export async function getBooking(bookingId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const url = `${API_BASE_URL}${bookingId}/`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     const token = await getAccessToken();
-    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
+    const response = await fetch(url, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -337,8 +342,10 @@ export async function updateBookingStatus(bookingId, status) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const url = `${API_BASE_URL}${bookingId}/`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     const token = await getAccessToken();
-    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
+    const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -368,8 +375,10 @@ export async function cancelBooking(bookingId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const url = `${API_BASE_URL}${bookingId}/`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     const token = await getAccessToken();
-    const response = await fetch(`${API_BASE_URL}${bookingId}/`, {
+    const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -397,8 +406,10 @@ export async function getBookingByReference(reference) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
+    const url = `${API_BASE_URL}reference/${reference}/`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     const token = await getAccessToken();
-    const response = await fetch(`${API_BASE_URL}reference/${reference}/`, {
+    const response = await fetch(url, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -439,6 +450,7 @@ export async function getCustomerBookings(customerId, filters = {}) {
       });
 
       const url = `${API_BASE_URL}customer/${customerId}/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      if (!validateApiUrl(url)) throw new Error('Invalid API URL');
       console.log('Fetching customer bookings from:', url);
 
       const token = await getAccessToken().catch(() => null);
@@ -480,6 +492,7 @@ export async function getCustomerBookings(customerId, filters = {}) {
     });
 
     const url = `${API_BASE_URL}customer/${customerId}/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
     console.log('Fetching customer bookings (no-timeout) from:', url);
     const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
@@ -531,7 +544,9 @@ export async function getBookingStats() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch(`${API_BASE_URL}stats/`, {
+    const url = `${API_BASE_URL}stats/`;
+    if (!validateApiUrl(url)) throw new Error('Invalid API URL');
+    const response = await fetch(url, {
       signal: controller.signal,
     });
     

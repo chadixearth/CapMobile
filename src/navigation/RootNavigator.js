@@ -41,13 +41,14 @@ import BookingHistoryScreen from '../screens/main/BookingHistoryScreen';
 import ReviewSubmissionScreen from '../screens/main/ReviewSubmissionScreen';
 
 import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
-
+import ForcePasswordChangeScreen from '../screens/auth/ForcePasswordChangeScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { isAuthenticated, role, loading } = useAuth();
   const navigationRef = React.useRef();
+  const [activeRole, setActiveRole] = React.useState(null);
 
   React.useEffect(() => {
     if (navigationRef.current) {
@@ -60,22 +61,32 @@ export default function RootNavigator() {
     if (navigationRef.current && navigationRef.current.isReady()) {
       global.navigationRef = navigationRef.current;
     }
-  }, [isAuthenticated, role, loading]);
+  }, [isAuthenticated, role, activeRole, loading]);
 
   React.useEffect(() => {
-    console.log('[RootNavigator] State changed:', { isAuthenticated, role, loading });
-  }, [isAuthenticated, role, loading]);
+    console.log('[RootNavigator] State changed:', { isAuthenticated, role, activeRole, loading });
+  }, [isAuthenticated, role, activeRole, loading]);
 
-  console.log('[RootNavigator] Current render state:', { isAuthenticated, role, loading });
-
-  // Force re-render when auth state changes
+  // Initialize activeRole when user logs in
   React.useEffect(() => {
-    if (!loading) {
-      console.log('[RootNavigator] Auth state settled:', { isAuthenticated, role });
+    if (isAuthenticated && role && !activeRole) {
+      const defaultRole = role === 'driver-owner' ? 'driver' : role;
+      setActiveRole(defaultRole);
+      global.switchActiveRole = setActiveRole;
     }
-  }, [isAuthenticated, role, loading]);
+  }, [isAuthenticated, role, activeRole]);
 
-  if (loading) {
+  // Reset navigation when role changes
+  React.useEffect(() => {
+    if (isAuthenticated && activeRole && navigationRef.current?.isReady()) {
+      navigationRef.current.reset({
+        index: 0,
+        routes: [{ name: Routes.MAIN }],
+      });
+    }
+  }, [activeRole]);
+
+  if (loading || (isAuthenticated && !activeRole)) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#6B2E2B" />
@@ -83,9 +94,10 @@ export default function RootNavigator() {
     );
   }
 
+  const displayRole = activeRole || role;
+
   return (
     <>
-      {/* Global Notification Manager - works across all tabs */}
       {isAuthenticated && <NotificationManager navigation={navigationRef.current} />}
       
       <Stack.Navigator ref={navigationRef} screenOptions={{ headerShown: false }}>
@@ -95,13 +107,18 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
           <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
           <Stack.Screen name={Routes.FORGOT_PASSWORD} component={ForgotPasswordScreen} />
+          <Stack.Screen name={Routes.FORCE_PASSWORD_CHANGE} component={ForcePasswordChangeScreen} />
           <Stack.Screen name={Routes.ROLE_SELECTION} component={RoleSelectionScreen} />
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
         </>
       ) : (
         <>
           <Stack.Screen name={Routes.MAIN}>
-            {props => (role === 'driver' ? <DriverTabs {...props} /> : role === 'owner' ? <OwnerTabs {...props} /> : <MainTabs {...props} />)}
+            {props => {
+              if (displayRole === 'driver') return <DriverTabs {...props} />;
+              if (displayRole === 'owner') return <OwnerTabs {...props} />;
+              return <MainTabs {...props} />;
+            }}
           </Stack.Screen>
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
           <Stack.Screen name={Routes.ACCOUNT_DETAILS} component={AccountDetailsScreen} />
@@ -127,14 +144,10 @@ export default function RootNavigator() {
           <Stack.Screen name="DriverCarriageAssignments" component={DriverCarriageAssignmentsScreen} />
           <Stack.Screen name="Chat" component={ChatNavigator} />
           <Stack.Screen name="Communication" component={Communication} />
-          <Stack.Screen name={Routes.TOURIST_REFUND} // 'TouristRefundScreen' per your routes.js
-              component={TouristRefundScreen}
-            />
+          <Stack.Screen name={Routes.TOURIST_REFUND} component={TouristRefundScreen} />
           <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
           <Stack.Screen name="ReviewSubmission" component={ReviewSubmissionScreen} />
-
           <Stack.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} />
-
         </>
       )}
       </Stack.Navigator>

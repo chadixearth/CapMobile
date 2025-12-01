@@ -1,3 +1,4 @@
+// screens/main/MenuScreen.jsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -25,6 +26,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { requestAccountDeletion } from '../../services/accountDeletionService';
 import { useAuthData } from '../../hooks/useAuthData';
+import { getMyActiveRides } from '../../services/rideHailingService';
+import { switchRole, getAvailableRoles } from '../../services/roleSwitchService';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -44,8 +47,8 @@ export default function MenuScreen({ navigation }) {
   const [termsVisible, setTermsVisible] = useState(false);
   const [privacyVisible, setPrivacyVisible] = useState(false);
   const [roleSwitchVisible, setRoleSwitchVisible] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState([]);
   const [switchingRole, setSwitchingRole] = useState(false);
-  const [currentRole, setCurrentRole] = useState(null);
   const auth = useAuth();
   const { bookings, userCarriages, hasData } = useAuthData();
 
@@ -84,16 +87,23 @@ export default function MenuScreen({ navigation }) {
     setFetching(false);
   };
 
+  const loadAvailableRoles = async () => {
+    const result = await getAvailableRoles();
+    if (result.success) {
+      setAvailableRoles(result.available_roles || []);
+    }
+  };
+
   useEffect(() => {
     fetchUser();
-    setCurrentRole(auth.user?.role);
-  }, [auth.user?.role]);
+    loadAvailableRoles();
+  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       fetchUser();
-      setCurrentRole(auth.user?.role);
-    }, [auth.user?.role])
+      loadAvailableRoles();
+    }, [])
   );
 
   const openLogoutConfirm = () => setLogoutVisible(true);
@@ -169,11 +179,23 @@ export default function MenuScreen({ navigation }) {
   const handleRoleSwitch = async (newRole) => {
     setSwitchingRole(true);
     try {
-      if (global.switchActiveRole) {
-        global.switchActiveRole(newRole);
-        setCurrentRole(newRole);
-        setRoleSwitchVisible(false);
-        Alert.alert('Success', `Switched to ${newRole} role`);
+      const result = await switchRole(newRole);
+      if (result.success) {
+        Alert.alert(
+          'Role Switched',
+          `You have successfully switched from ${result.previous_role} to ${result.new_role}.\n\nYou will now be logged out to apply the changes.`,
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                setRoleSwitchVisible(false);
+                await auth.logout();
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to switch role');
       }
     } catch (error) {
       Alert.alert('Error', error.message || 'Failed to switch role');
@@ -207,18 +229,20 @@ export default function MenuScreen({ navigation }) {
     }
   };
 
-  const displayRole = (currentRole || auth.user?.role || '').toLowerCase();
-  const isDualRole = displayRole === 'driver-owner';
+  const role = (auth.user?.role || '').toLowerCase();
 
   return (
     <View style={styles.container}>
+      {/* Compact header area */}
       <View style={styles.hero}>
+        {/* Your requested TARTRACKHeader usage (shows chat+bell via handlers) */}
         <TARTRACKHeader
           onMessagePress={() => navigation.navigate('Chat')}
           onNotificationPress={() => navigation.navigate('Notification')}
         />
       </View>
 
+      {/* Floating profile card */}
       <View style={styles.profileCard}>
         <View style={styles.profileLeft}>
           <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
@@ -234,6 +258,7 @@ export default function MenuScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Icon-only edit */}
         <TouchableOpacity
           style={styles.editIconBtn}
           onPress={() => navigation.navigate(Routes.ACCOUNT_DETAILS)}
@@ -251,6 +276,7 @@ export default function MenuScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Activity */}
         <Text style={styles.sectionTitle}>Activity</Text>
         <View style={styles.card}>
           <ProfileItem
@@ -265,7 +291,8 @@ export default function MenuScreen({ navigation }) {
             onPress={() => navigation.navigate('BookingHistory')}
           />
 
-          {(displayRole === 'tourist' || displayRole === 'driver-owner') && (
+          {/* Tourist-only */}
+          {role === 'tourist' && (
             <>
               <Divider />
               <ProfileItem
@@ -276,7 +303,8 @@ export default function MenuScreen({ navigation }) {
             </>
           )}
 
-          {(displayRole === 'owner' || displayRole === 'driver-owner') && (
+          {/* Owner-only */}
+          {role === 'owner' && (
             <>
               <Divider />
               <ProfileItem
@@ -287,7 +315,8 @@ export default function MenuScreen({ navigation }) {
             </>
           )}
 
-          {(displayRole === 'driver' || displayRole === 'driver-owner') && (
+          {/* Driver-only */}
+          {role === 'driver' && (
             <>
               <Divider />
               <ProfileItem
@@ -318,19 +347,21 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
-        {isDualRole && (
+        {/* Role Switch - Show if user has multiple roles available */}
+        {availableRoles.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Role Management</Text>
             <View style={styles.card}>
               <ProfileItem
                 icon={<MaterialIcons name="swap-horiz" size={22} color={MAROON} />}
-                label={`Switch Role (Current: ${currentRole})`}
+                label={`Switch Role (Current: ${role})`}
                 onPress={() => setRoleSwitchVisible(true)}
               />
             </View>
           </>
         )}
 
+        {/* Support */}
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.card}>
           <ProfileItem
@@ -352,6 +383,7 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
+        {/* Legal */}
         <Text style={styles.sectionTitle}>Legal</Text>
         <View style={styles.card}>
           <ProfileItem
@@ -367,6 +399,7 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
+        {/* Log Out (inside scroll, right below Legal) */}
         <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
           <Button
             title={
@@ -389,9 +422,11 @@ export default function MenuScreen({ navigation }) {
           />
         </View>
 
+        {/* Version label right after logout */}
         <Text style={styles.versionText}>TarTrack v1.0.0</Text>
       </ScrollView>
 
+      {/* Logout Modal */}
       <Modal
         visible={logoutVisible}
         transparent
@@ -438,6 +473,7 @@ export default function MenuScreen({ navigation }) {
         </View>
       </Modal>
 
+      {/* Deactivate Account Modal */}
       <Modal
         visible={deleteAccountVisible}
         transparent
@@ -495,6 +531,7 @@ export default function MenuScreen({ navigation }) {
         </View>
       </Modal>
 
+      {/* Role Switch Modal */}
       <Modal
         visible={roleSwitchVisible}
         transparent
@@ -509,29 +546,25 @@ export default function MenuScreen({ navigation }) {
 
             <Text style={styles.modalTitle}>Switch Role</Text>
             <Text style={styles.modalDesc}>
-              Select a role to switch to.
+              Select a role to switch to. You will be logged out to apply the changes.
             </Text>
 
             <View style={styles.roleButtonsContainer}>
-              {['driver', 'owner'].map((role) => (
+              {availableRoles.map((availableRole) => (
                 <TouchableOpacity
-                  key={role}
+                  key={availableRole}
                   style={[
                     styles.roleButton,
-                    currentRole === role && styles.roleButtonActive,
                     switchingRole && { opacity: 0.6 }
                   ]}
-                  onPress={() => handleRoleSwitch(role)}
+                  onPress={() => handleRoleSwitch(availableRole)}
                   disabled={switchingRole}
                 >
                   {switchingRole ? (
                     <ActivityIndicator size="small" color={MAROON} />
                   ) : (
-                    <Text style={[
-                      styles.roleButtonText,
-                      currentRole === role && styles.roleButtonTextActive
-                    ]}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
+                    <Text style={styles.roleButtonText}>
+                      {availableRole.charAt(0).toUpperCase() + availableRole.slice(1)}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -551,6 +584,7 @@ export default function MenuScreen({ navigation }) {
         </View>
       </Modal>
 
+      {/* About Modal */}
       <Modal visible={aboutVisible} transparent animationType="slide" onRequestClose={() => setAboutVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setAboutVisible(false)}>
           <View style={styles.contentModal} onStartShouldSetResponder={() => true}>
@@ -563,7 +597,17 @@ export default function MenuScreen({ navigation }) {
             <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.contentSubtitle}>Welcome to TarTrack</Text>
               <Text style={styles.contentText}>
-                TarTrack is the premier mobile application connecting tourists with authentic tartanilla experiences in Cebu City.
+                TarTrack is the premier mobile application connecting tourists with authentic tartanilla experiences in Cebu City. Our platform bridges the gap between traditional horse-drawn carriage transportation and modern booking convenience.
+              </Text>
+              <Text style={styles.contentSubtitle}>Our Mission</Text>
+              <Text style={styles.contentText}>
+                To preserve and promote the cultural heritage of tartanilla transportation while providing tourists with safe, reliable, and memorable experiences throughout Cebu City's historic districts.
+              </Text>
+              <Text style={styles.contentSubtitle}>Contact Information</Text>
+              <Text style={styles.contentText}>
+                Email: support@tartrack.ph{"\n"}
+                Phone: +63 32 123 4567{"\n"}
+                Address: Cebu City, Philippines
               </Text>
               <Text style={styles.versionText}>Version 1.0.0</Text>
             </ScrollView>
@@ -571,13 +615,19 @@ export default function MenuScreen({ navigation }) {
         </Pressable>
       </Modal>
 
+      {/* Help Center Modal */}
       <HelpCenter visible={helpVisible} onClose={() => setHelpVisible(false)} />
+
+      {/* Terms Modal */}
       <TermsModal visible={termsVisible} onClose={() => setTermsVisible(false)} />
+
+      {/* Privacy Modal */}
       <PrivacyModal visible={privacyVisible} onClose={() => setPrivacyVisible(false)} />
     </View>
   );
 }
 
+/* Divider helper */
 function Divider() {
   return (
     <View
@@ -592,15 +642,19 @@ function Divider() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
+
+  // Compact header container (just enough space for the header)
   hero: {
     backgroundColor: MAROON,
     paddingTop: 6,
-    paddingBottom: 18,
+    paddingBottom: 18, // minimal to keep it tight
     paddingHorizontal: 16,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     overflow: 'hidden',
   },
+
+  // Floating profile card
   profileCard: {
     marginHorizontal: 16,
     marginTop: -12,
@@ -611,6 +665,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+
     borderWidth: 1,
     borderColor: '#EFE7E4',
     shadowColor: '#000',
@@ -652,7 +707,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8DCD8',
   },
+
+  // Content
   sections: { flex: 1, marginTop: 10 },
+
   sectionTitle: {
     color: '#8A8A8A',
     fontSize: 13,
@@ -662,6 +720,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.4,
   },
+
   card: {
     backgroundColor: CARD,
     borderRadius: 16,
@@ -676,12 +735,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0E7E3',
   },
+
   versionText: {
     textAlign: 'center',
     color: '#9A9A9A',
     fontSize: 12,
     marginTop: 10,
   },
+
+  /* Modals */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -756,6 +818,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
+
+  // Role switch specific styles
   roleButtonsContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -773,17 +837,13 @@ const styles = StyleSheet.create({
     minWidth: '40%',
     alignItems: 'center',
   },
-  roleButtonActive: {
-    backgroundColor: MAROON,
-  },
   roleButtonText: {
     color: MAROON,
     fontWeight: '600',
     fontSize: 14,
   },
-  roleButtonTextActive: {
-    color: '#fff',
-  },
+
+  // Content modal styles
   contentModal: {
     width: '90%',
     height: '80%',
@@ -828,5 +888,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#4B5563',
     marginBottom: 12,
+  },
+  boldText: {
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  lastUpdated: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 16,
   },
 });

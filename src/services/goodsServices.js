@@ -1,7 +1,7 @@
 // Goods & Services Posts API service
 // Provides list/create/update/delete helpers for the goods_services_post endpoints
 import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from './networkConfig';
+import { buildApiUrl, validateApiUrl } from './urlValidator';
 
 function getDevServerHost() {
   try {
@@ -13,14 +13,18 @@ function getDevServerHost() {
   }
 }
 
-const API_BASE_URL = apiBaseUrl();
+
 
 async function request(path, { method = 'GET', headers = {}, body = null, timeoutMs = 15000 } = {}) {
+  const url = buildApiUrl(path);
+  if (!validateApiUrl(url)) {
+    throw new Error('Invalid API URL');
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    console.log(`[goodsServices] Making request to: ${API_BASE_URL}${path}`);
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    console.log(`[goodsServices] Making request to: ${url}`);
+    const response = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -216,7 +220,11 @@ export async function uploadGoodsServicesMedia(userId, filesOrUris = []) {
 
           console.log(`[uploadGoodsServicesMedia] Uploading file ${i + 1} with filename:`, payload.filename);
 
-          const uploadRes = await fetch(`${API_BASE_URL}/upload/goods-storage/`, {
+          const uploadUrl = buildApiUrl('/upload/goods-storage/');
+          if (!validateApiUrl(uploadUrl)) {
+            throw new Error('Invalid upload URL');
+          }
+          const uploadRes = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

@@ -321,7 +321,13 @@ const RegistrationScreen = ({ navigation, route }) => {
           );
         }
       } else {
-        ErrorHandlingService.handleError(result.error || 'Registration failed.');
+        if (result.error_type === 'duplicate_email') {
+          Alert.alert('Email Already Registered', result.error + '\n\n' + result.suggestion);
+        } else if (result.error_type === 'duplicate_phone') {
+          Alert.alert('Phone Already Registered', result.error + '\n\n' + result.suggestion);
+        } else {
+          ErrorHandlingService.handleError(result.error || 'Registration failed.');
+        }
       }
     } catch (e) {
       setLoading(false);

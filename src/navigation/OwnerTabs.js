@@ -22,7 +22,8 @@ export default function OwnerTabs({ setRole }) {
   // Authentication and role state transitions are handled by RootNavigator
 
   // Show loading or redirect if not authenticated or wrong role
-  if (auth.loading || !auth.isAuthenticated || auth.role !== 'owner') {
+  const isOwner = auth.role === 'owner' || (auth.role === 'driver-owner' && global.switchActiveRole);
+  if (auth.loading || !auth.isAuthenticated || !isOwner) {
     return null;
   }
 

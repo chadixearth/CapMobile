@@ -109,6 +109,17 @@ export default function LoginScreen({ navigation }) {
       const result = await loginUser(email, password, allowedRoles);
       console.log('[LoginScreen] Login result:', result);
       
+      // Check if password change is required on first login
+      if (result.success && result.force_password_change) {
+        console.log('[LoginScreen] Force password change required for user:', result.user?.id);
+        setLoading(false);
+        navigation.navigate(Routes.FORCE_PASSWORD_CHANGE, {
+          user: result.user,
+          tempPassword: password,
+        });
+        return;
+      }
+      
       // Use AccountDeletionHandler to handle login result
       AccountDeletionHandler.handleLoginResult(result, async (successResult) => {
         // Check if user is suspended

@@ -1,6 +1,6 @@
 // API Configuration
 import { Platform, NativeModules } from 'react-native';
-import { apiBaseUrl } from './networkConfig';
+import { buildApiUrl, validateApiUrl } from './urlValidator';
 
 function getDevServerHost() {
   try {
@@ -12,7 +12,7 @@ function getDevServerHost() {
   }
 }
 
-const API_BASE_URL = apiBaseUrl();
+
 
 export async function fetchExampleData() {
   try {
@@ -20,7 +20,11 @@ export async function fetchExampleData() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(`${API_BASE_URL}/example/`, {
+    const url = buildApiUrl('/example/');
+    if (!validateApiUrl(url)) {
+      throw new Error('Invalid API URL');
+    }
+    const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         'Connection': 'close',
@@ -43,7 +47,10 @@ export async function fetchExampleData() {
 }
 
 export async function requestRide({ pickup, destination, userId }) {
-  const url = `${API_BASE_URL}/request-ride/`;
+  const url = buildApiUrl('/request-ride/');
+  if (!validateApiUrl(url)) {
+    throw new Error('Invalid API URL');
+  }
   const body = JSON.stringify({
     pickup,
     destination,
@@ -109,7 +116,11 @@ export async function acceptCarriageAssignment(carriageId, driverId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-accept/`, {
+    const url = buildApiUrl(`/tartanilla-carriages/${carriageId}/driver-accept/`);
+    if (!validateApiUrl(url)) {
+      throw new Error('Invalid API URL');
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,7 +150,11 @@ export async function declineCarriageAssignment(carriageId, driverId) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/driver-decline/`, {
+    const url = buildApiUrl(`/tartanilla-carriages/${carriageId}/driver-decline/`);
+    if (!validateApiUrl(url)) {
+      throw new Error('Invalid API URL');
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -169,7 +184,11 @@ export async function updateCarriageStatus(carriageId, newStatus) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(`${API_BASE_URL}/tartanilla-carriages/${carriageId}/`, {
+    const url = buildApiUrl(`/tartanilla-carriages/${carriageId}/`);
+    if (!validateApiUrl(url)) {
+      throw new Error('Invalid API URL');
+    }
+    const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

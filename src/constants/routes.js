@@ -3,8 +3,10 @@ export const WELCOME = 'Welcome';
 export const LOGIN = 'Login';
 export const REGISTRATION = 'Registration';
 export const FORGOT_PASSWORD = 'ForgotPassword';
+export const FORCE_PASSWORD_CHANGE = 'ForcePasswordChange';
 export const ROLE_SELECTION = 'RoleSelection';
 export const MAIN = 'Main';
+export const MAIN_TABS = 'MainTabs';
 export const MAP_VIEW = 'MapView';
 export const ACCOUNT_DETAILS = 'AccountDetails';
 export const NOTIFICATION = 'Notification';
@@ -19,6 +21,7 @@ export const BOOKING_CONFIRMATION = 'BookingConfirmation';
 export const DRIVER_SCHEDULE = 'DriverSchedule';
 export const SET_AVAILABILITY = 'SetAvailability';
 export const TOURIST_REFUND = 'TouristRefundScreen';
+export const VERIFICATION = 'Verification';
 
 // Tab names
 export const HOME = 'Home';

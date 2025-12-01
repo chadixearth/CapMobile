@@ -327,6 +327,23 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
+  // Email uniqueness check
+  if (!email || email.trim() === '') {
+    return {
+      success: false,
+      error: 'Email address is required.',
+    };
+  }
+
+  // Basic email format validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return {
+      success: false,
+      error: 'Please enter a valid email address.',
+    };
+  }
+
   // Test connection and registration endpoint first
   console.log('[authService] Testing connection before registration...');
   try {
@@ -509,6 +526,27 @@ export async function registerUser(email, password, role, additionalData = {}) {
     };
   }
 
+  // Handle duplicate email
+  const errorMsg = apiResult.data?.error || '';
+  if (errorMsg.toLowerCase().includes('email') && errorMsg.toLowerCase().includes('already')) {
+    return {
+      success: false,
+      error: 'This email is already registered.',
+      error_type: 'duplicate_email',
+      suggestion: 'Try logging in with this email. If you forgot your password, use the "Forgot Password" option.',
+    };
+  }
+
+  // Handle duplicate phone number
+  if (errorMsg.toLowerCase().includes('phone') && errorMsg.toLowerCase().includes('already')) {
+    return {
+      success: false,
+      error: 'This phone number is already registered.',
+      error_type: 'duplicate_phone',
+      suggestion: 'If this is your phone number, try logging in or reset your password.',
+    };
+  }
+
   return {
     success: false,
     error: apiResult.data?.error || 'Registration failed',
@@ -682,6 +720,12 @@ export async function loginUser(email, password, allowedRoles = null) {
       console.log('[authService] Account deletion was automatically cancelled on login');
     }
 
+    // Check if password change is required on first login
+    const forcePasswordChange = apiResult.data.force_password_change || 
+                                apiResult.data.password_change_required || 
+                                false;
+    console.log('[authService] Force password change flag:', forcePasswordChange);
+
     return {
       success: true,
       user: apiResult.data.user,
@@ -690,6 +734,7 @@ export async function loginUser(email, password, allowedRoles = null) {
       deletion_cancelled: apiResult.data.deletion_cancelled,
       account_reactivated: apiResult.data.account_reactivated,
       deletion_info: apiResult.data.deletion_info,
+      force_password_change: forcePasswordChange,
     };
   }
 

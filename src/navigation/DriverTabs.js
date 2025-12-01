@@ -23,7 +23,8 @@ export default function DriverTabs({ setRole }) {
   // Authentication and role state transitions are handled by RootNavigator
 
   // Show loading or redirect if not authenticated or wrong role
-  if (auth.loading || !auth.isAuthenticated || auth.role !== 'driver') {
+  const isDriver = auth.role === 'driver' || (auth.role === 'driver-owner' && global.switchActiveRole);
+  if (auth.loading || !auth.isAuthenticated || !isDriver) {
     return null;
   }
 

@@ -31,7 +31,6 @@ console.error = (...args) => {
       message.includes('UIFrameGuarded') ||
       message.includes('RCTImageView') ||
       message.includes('location') && message.includes('failed')) {
-    // Silently ignore location, UIFrameGuarded, and image errors
     return;
   }
   originalConsoleError.apply(console, args);
@@ -41,7 +40,6 @@ console.warn = (...args) => {
   const message = args.join(' ');
   if (message.includes('UIFrameGuarded') || 
       message.includes('Navigation reset failed')) {
-    // Silently ignore UIFrameGuarded warnings
     return;
   }
   originalConsoleWarn.apply(console, args);
@@ -59,25 +57,19 @@ export default function App() {
 
   const initializeApp = async () => {
     try {
-      // Initialize mobile diagnostics
       await mobileDiagnostics.initialize();
-      
       const result = await AppInitService.initialize();
       
-      // Small delay to show splash screen
       setTimeout(() => {
         setIsInitializing(false);
       }, 500);
     } catch (error) {
       setInitError(error.message);
-      // Still allow app to continue even if initialization fails
       setTimeout(() => {
         setIsInitializing(false);
       }, 1000);
     }
   };
-
-
 
   if (isInitializing) {
     return (
@@ -96,45 +88,40 @@ export default function App() {
       <ErrorProvider>
         <NotificationProvider>
           <NavigationContainer 
-          ref={navRef}
-          onReady={() => {
-            try {
-              // Set navigation reference for error handling service
-              if (navRef.current) {
-                ErrorHandlingService.setNavigationRef(navRef.current);
-                // Make navigation ref globally available for logout
-                global.navigationRef = navRef.current;
-              }
-              
-              // Set up JWT expiry callback with safety checks
-              const handleSessionExpiry = () => {
-                try {
-                  if (navRef.current && navRef.current.isReady()) {
-                    navRef.current.reset({
-                      index: 0,
-                      routes: [{ name: 'Login' }],
-                    });
-                  }
-                } catch (error) {
-                  console.warn('Navigation reset failed:', error);
+            ref={navRef}
+            onReady={() => {
+              try {
+                if (navRef.current) {
+                  ErrorHandlingService.setNavigationRef(navRef.current);
+                  global.navigationRef = navRef.current;
                 }
-              };
-              
-              setSessionExpiredCallback(handleSessionExpiry);
-              
-              // Also set up API client session expiry callback
-              const { apiClient } = require('./services/improvedApiClient');
-              apiClient.setSessionExpiredCallback(handleSessionExpiry);
-              
-              // Set up custom modal service
-              if (modalRef.current) {
-                CustomModalService.setModalRef(modalRef.current);
+                
+                const handleSessionExpiry = () => {
+                  try {
+                    if (navRef.current && navRef.current.isReady()) {
+                      navRef.current.reset({
+                        index: 0,
+                        routes: [{ name: 'Login' }],
+                      });
+                    }
+                  } catch (error) {
+                    console.warn('Navigation reset failed:', error);
+                  }
+                };
+                
+                setSessionExpiredCallback(handleSessionExpiry);
+                
+                const { apiClient } = require('./services/improvedApiClient');
+                apiClient.setSessionExpiredCallback(handleSessionExpiry);
+                
+                if (modalRef.current) {
+                  CustomModalService.setModalRef(modalRef.current);
+                }
+              } catch (error) {
+                console.warn('Navigation setup error:', error);
               }
-            } catch (error) {
-              console.warn('Navigation setup error:', error);
-            }
-          }}
-        >
+            }}
+          >
             <NetworkStatus />
             <RootNavigator />
             <CustomModalProvider ref={modalRef} />

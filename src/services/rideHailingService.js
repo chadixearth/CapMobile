@@ -12,7 +12,10 @@ async function apiCall(endpoint, options = {}) {
         invalidateData.rides();
         invalidateData.bookings();
       }
-      if (endpoint.includes('/complete/') || endpoint.includes('/driver-cancel/') || endpoint.includes('/customer-cancel/')) {
+      if (endpoint.includes('/complete/')) {
+        invalidateData.earnings();
+      }
+      if (endpoint.includes('/driver-cancel/') || endpoint.includes('/customer-cancel/')) {
         invalidateData.earnings();
       }
       if (endpoint.includes('/payment/') || endpoint.includes('/pay/')) {
