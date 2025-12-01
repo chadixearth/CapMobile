@@ -12,6 +12,7 @@ const RideStatusCard = ({ ride, onRefresh }) => {
   const [showMap, setShowMap] = useState(false);
   const [waitingTime, setWaitingTime] = useState(0);
   const [cancelling, setCancelling] = useState(false);
+  const [waitStartTime, setWaitStartTime] = useState(null);
 
   useEffect(() => {
     if (ride.status === 'driver_assigned' && ride.driver_id) {
@@ -23,21 +24,22 @@ const RideStatusCard = ({ ride, onRefresh }) => {
 
   useEffect(() => {
     if (ride.status === 'waiting_for_driver') {
-      let startTime;
-      try {
-        startTime = new Date(ride.created_at).getTime();
-        if (isNaN(startTime)) {
-          startTime = Date.now();
-        }
-      } catch {
-        startTime = Date.now();
+      if (!waitStartTime) {
+        setWaitStartTime(Date.now());
       }
-      
+    } else {
+      setWaitingTime(0);
+      setWaitStartTime(null);
+    }
+  }, [ride.status]);
+
+  useEffect(() => {
+    if (ride.status === 'waiting_for_driver' && waitStartTime) {
       const updateTimer = () => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        setWaitingTime(Math.max(0, elapsed));
+        const elapsed = Math.floor((Date.now() - waitStartTime) / 1000);
+        setWaitingTime(elapsed);
         
-        if (elapsed >= 300 && elapsed < 305) { // Show alert only once between 5:00-5:05
+        if (elapsed >= 300 && elapsed < 305) {
           Alert.alert(
             'Still Looking for Driver',
             'It\'s been 5 minutes. Would you like to rebook or cancel your ride?',
@@ -56,10 +58,8 @@ const RideStatusCard = ({ ride, onRefresh }) => {
       const timer = setInterval(updateTimer, 1000);
       
       return () => clearInterval(timer);
-    } else {
-      setWaitingTime(0);
     }
-  }, [ride.status, ride.created_at, ride.id]);
+  }, [ride.status, waitStartTime, navigation]);
 
   const fetchDriverLocation = async () => {
     try {
@@ -287,12 +287,41 @@ const RideStatusCard = ({ ride, onRefresh }) => {
       >
         <View style={styles.mapModal}>
           <View style={styles.mapHeader}>
-            <Text style={styles.mapTitle}>Tracking {ride.driver_name}</Text>
-            <TouchableOpacity onPress={() => setShowMap(false)}>
-              <Ionicons name="close" size={24} color="#333" />
-            </TouchableOpacity>
+            <View style={styles.mapHeaderContent}>
+              <View style={styles.driverInfo}>
+                <Ionicons name="person-circle" size={40} color="#6B2E2B" />
+                <View style={styles.driverDetails}>
+                  <Text style={styles.driverName}>{ride.driver_display_name || ride.driver_name || 'Driver'}</Text>
+                  {ride.carriage_name && (
+                    <View style={styles.carriageInfo}>
+                      <Ionicons name="car-sport" size={14} color="#666" />
+                      <Text style={styles.carriageText}>{ride.carriage_name}</Text>
+                    </View>
+                  )}
+                  {driverLocation && (
+                    <View style={styles.etaInfo}>
+                      <Ionicons name="time" size={14} color="#FF9500" />
+                      <Text style={styles.etaText}>ETA: 3-8 mins</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setShowMap(false)} style={styles.closeButton}>
+                <Ionicons name="close-circle" size={32} color="#6B2E2B" />
+              </TouchableOpacity>
+            </View>
           </View>
           <LiveTrackingMap ride={ride} />
+          <View style={styles.mapFooter}>
+            <View style={styles.footerRow}>
+              <Ionicons name="location" size={16} color="#2E7D32" />
+              <Text style={styles.footerText} numberOfLines={1}>{ride.pickup_address}</Text>
+            </View>
+            <View style={styles.footerRow}>
+              <Ionicons name="flag" size={16} color="#C62828" />
+              <Text style={styles.footerText} numberOfLines={1}>{ride.dropoff_address}</Text>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -436,18 +465,74 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   mapHeader: {
+    backgroundColor: '#F5E9E2',
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E0CFC2',
+  },
+  mapHeaderContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingTop: 50,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
-  mapTitle: {
-    fontSize: 18,
+  driverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  driverDetails: {
+    flex: 1,
+  },
+  driverName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  carriageInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  carriageText: {
+    fontSize: 13,
+    color: '#666',
     fontWeight: '600',
+  },
+  etaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  etaText: {
+    fontSize: 13,
+    color: '#FF9500',
+    fontWeight: '700',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  mapFooter: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    gap: 8,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 14,
     color: '#333',
+    fontWeight: '500',
+    flex: 1,
   },
 });
 

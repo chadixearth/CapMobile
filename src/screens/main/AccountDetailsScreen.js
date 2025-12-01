@@ -107,12 +107,10 @@ export default function AccountDetailsScreen({ navigation }) {
             }
 
             authorIdForBio = currentUser.id;
-            const fullName = userData.name || userData.full_name || '';
-            const nameParts = fullName.split(' ');
-
-            setFirstName(userData.first_name || nameParts[0] || '');
-            setMiddleName(userData.middle_name || nameParts[1] || '');
-            setLastName(userData.last_name || nameParts[2] || '');
+            
+            setFirstName(userData.first_name || '');
+            setMiddleName(userData.middle_name || '');
+            setLastName(userData.last_name || '');
             setEmail(userData.email || '');
             setPhone(userData.phone || '');
 
@@ -126,11 +124,9 @@ export default function AccountDetailsScreen({ navigation }) {
             const { data } = await supabase.auth.getUser();
             if (data?.user) {
               authorIdForBio = data.user.id;
-              const fullName = data.user.user_metadata?.name || '';
-              const nameParts = fullName.split(' ');
-              setFirstName(nameParts[0] || '');
-              setMiddleName(nameParts[1] || '');
-              setLastName(nameParts[2] || '');
+              setFirstName(data.user.user_metadata?.first_name || '');
+              setMiddleName(data.user.user_metadata?.middle_name || '');
+              setLastName(data.user.user_metadata?.last_name || '');
               setEmail(data.user.email || '');
               setPhone(data.user.user_metadata?.phone || '');
               const authPhotoUrl =

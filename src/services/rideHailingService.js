@@ -338,6 +338,15 @@ export async function acceptRideBooking(bookingId, driverData) {
       body: driverData
     });
     
+    // Handle NO_CARRIAGE_ASSIGNED error
+    if (!result.success && result.error_code === 'NO_CARRIAGE_ASSIGNED') {
+      return {
+        success: false,
+        error: result.error,
+        error_code: 'NO_CARRIAGE_ASSIGNED'
+      };
+    }
+    
     return result;
   } catch (error) {
     console.error('Error accepting ride booking:', error);

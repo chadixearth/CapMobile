@@ -19,7 +19,7 @@ import NetworkStatus from './components/NetworkStatus';
 import mobileDiagnostics from './services/mobileDiagnostics';
 import CustomModalProvider from './components/CustomModalProvider';
 import CustomModalService from './services/CustomModalService';
-import paymentTimeoutScheduler from './services/paymentTimeoutScheduler';
+// import paymentTimeoutScheduler from './services/paymentTimeoutScheduler'; // Disabled - backend not implemented
 
 // Suppress location-related console errors and UIFrameGuarded warnings
 const originalConsoleError = console.error;
@@ -61,8 +61,8 @@ export default function App() {
       await mobileDiagnostics.initialize();
       const result = await AppInitService.initialize();
       
-      // Start payment timeout scheduler for automatic booking cancellation
-      paymentTimeoutScheduler.start();
+      // Payment timeout scheduler disabled - backend endpoints not implemented
+      // paymentTimeoutScheduler.start();
       
       setTimeout(() => {
         setIsInitializing(false);

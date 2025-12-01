@@ -35,7 +35,9 @@ const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel, createdAt 
 
   // Local timer for waiting time
   useEffect(() => {
-    const startTime = createdAt ? new Date(createdAt) : new Date();
+    if (!createdAt) return;
+    
+    const startTime = new Date(createdAt);
     
     const updateTimer = () => {
       const now = new Date();
@@ -94,7 +96,7 @@ const RideMonitor = ({ bookingId, customerId, onRideUpdate, onCancel, createdAt 
           Waiting for driver: {localWaitTime}
         </Text>
         
-        {(waitInfo?.suggest_cancel || localWaitTime.split(':')[0] >= 5) && (
+        {(waitInfo?.suggest_cancel || parseInt(localWaitTime.split(':')[0]) >= 5) && (
           <View style={styles.suggestionContainer}>
             <Text style={styles.suggestionText}>
               🕐 It's been over 5 minutes. Consider cancelling and trying again.

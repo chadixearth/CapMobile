@@ -3,11 +3,13 @@ import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, Alert, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import LeafletMapView from '../../components/LeafletMapView';
 import PointImageModal from '../../components/PointImageModal';
+import PublicLocationToggle from '../../components/PublicLocationToggle';
 import { fetchMapData, fetchRoutes, getMapCacheInfo, clearMapCache } from '../../services/map/fetchMap';
 import { getRoutesByPickup, navigateToNearestRoad } from '../../services/rideHailingService';
 import { fetchRouteSummaries as fetchRouteSummariesService, processMapPointsWithColors, processRoadHighlightsWithColors, buildRouteSummariesFromPickups } from '../../services/routeManagementService';
 import { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap, groupRoadHighlightsByPickup } from '../../services/roadHighlightsService';
 import LocationService from '../../services/locationService';
+import { getSession } from '../../services/authService';
 
 const DEFAULT_REGION = {
   latitude: 10.3157,
@@ -44,6 +46,7 @@ const MapViewScreen = ({ navigation, route }) => {
   const [selectedId, setSelectedId] = useState(null);
   const [driverLocations, setDriverLocations] = useState([]);
   const [showDrivers, setShowDrivers] = useState(true);
+  const [userRole, setUserRole] = useState(null);
   const hasLoadedCache = useRef(false);
   const loadTimeoutRef = useRef(null);
   const driverLocationInterval = useRef(null);
@@ -71,6 +74,7 @@ const MapViewScreen = ({ navigation, route }) => {
       }
     }, 8000); // 8 second timeout
     
+    loadUserRole();
     loadMapDataWithCache();
     startDriverLocationTracking();
     
@@ -110,6 +114,13 @@ const MapViewScreen = ({ navigation, route }) => {
   }, [roads, allRoads, mode, mapData]);
   
 
+
+  const loadUserRole = async () => {
+    const session = await getSession();
+    if (session?.user) {
+      setUserRole(session.user.role);
+    }
+  };
 
   const startDriverLocationTracking = () => {
     // Fetch driver locations immediately
@@ -1198,6 +1209,13 @@ const MapViewScreen = ({ navigation, route }) => {
           </View>
         )}
         
+        {/* Driver Location Toggle */}
+        {userRole === 'driver' && (
+          <View style={styles.driverToggleContainer}>
+            <PublicLocationToggle />
+          </View>
+        )}
+        
         {/* Bottom Info Card */}
         {mapData && (
           <View style={styles.bottomCard}>
@@ -1585,6 +1603,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  driverToggleContainer: {
+    position: 'absolute',
+    top: 20,
+    left: 16,
+    right: 80,
+    zIndex: 10,
   },
 });
 
