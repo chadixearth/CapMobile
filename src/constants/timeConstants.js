@@ -31,18 +31,18 @@ export const isDateInPast = (dateString) => {
 
 export const getValidTimeSlotsForDate = (dateString) => {
   const today = new Date();
-  const checkDate = new Date(dateString);
+  const checkDate = new Date(dateString + 'T00:00:00');
   
-  checkDate.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+  const checkStr = dateString;
   
   // If not today, return all slots
-  if (checkDate.getTime() !== today.getTime()) {
+  if (checkStr !== todayStr) {
     return TIME_SLOTS;
   }
   
   // For today, filter out past hours
-  const currentHour = new Date().getHours();
+  const currentHour = today.getHours();
   return TIME_SLOTS.filter(time => {
     const hour = parseInt(time.split(':')[0]);
     return hour > currentHour;

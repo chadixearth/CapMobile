@@ -577,9 +577,9 @@ export async function checkCarriageEligibility(driverId) {
       };
     }
     
-    // Check if any carriage is available and not suspended
+    // Check if any carriage is available or in_use (driver selected) and not suspended
     const eligibleCarriage = carriages.find(c => 
-      c.status === 'available' && 
+      (c.status === 'available' || c.status === 'in_use' || c.status === 'driver_assigned') && 
       !c.is_suspended && 
       c.is_active !== false
     );

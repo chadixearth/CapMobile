@@ -174,12 +174,14 @@ const UniversalBookingCard = ({
         <View style={styles.overviewItem}>
           <Ionicons name="calendar-outline" size={16} color="#6B2E2B" />
           <Text style={styles.overviewText}>
-            {details.date ? new Date(details.date).toLocaleDateString() : 'TBD'}
+            {details.date ? new Date(details.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
           </Text>
         </View>
         <View style={styles.overviewItem}>
           <Ionicons name="time-outline" size={16} color="#6B2E2B" />
-          <Text style={styles.overviewText}>{details.time}</Text>
+          <Text style={styles.overviewText}>
+            {details.time ? (details.time.length === 5 ? details.time : new Date('2000-01-01T' + details.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })) : 'TBD'}
+          </Text>
         </View>
       </View>
 

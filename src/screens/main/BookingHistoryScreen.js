@@ -42,11 +42,17 @@ export default function BookingHistoryScreen({ navigation }) {
   const categories = [
     { id: 'all', label: 'All', icon: 'list' },
     { id: 'tour', label: 'Tour Package', icon: 'map' },
+    { id: 'ride', label: 'Ride Hailing', icon: 'car' },
     { id: 'custom', label: 'Custom', icon: 'settings' },
     { id: 'special', label: 'Special Event', icon: 'star' }
   ];
 
   const categorizeBooking = (booking) => {
+    // Check if it's a ride hailing booking
+    if (booking.pickup_address && booking.dropoff_address && !booking.package_data) {
+      return 'ride';
+    }
+    
     const packageName = booking.package_data?.package_name?.toLowerCase() || '';
     const bookingType = booking.booking_type?.toLowerCase() || '';
     
@@ -68,41 +74,61 @@ export default function BookingHistoryScreen({ navigation }) {
     else setLoading(true);
 
     try {
-      // Fetch user's bookings from API
-      const response = await fetch(`${apiBaseUrl()}/tour-booking/`, {
-        headers: {
-          'Authorization': `Bearer ${await getAccessToken()}`,
-        },
-      });
+      // Fetch both tour bookings and ride hailing bookings
+      const [tourResponse, rideResponse] = await Promise.all([
+        fetch(`${apiBaseUrl()}/tour-booking/`, {
+          headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+        }),
+        fetch(`${apiBaseUrl()}/ride-hailing/`, {
+          headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+        })
+      ]);
       
-      if (response.ok) {
-        const data = await response.json();
-        const userBookings = (data.data || data).filter(
+      let allBookings = [];
+      
+      // Process tour bookings
+      if (tourResponse.ok) {
+        const tourData = await tourResponse.json();
+        const userTourBookings = (tourData.data || tourData).filter(
           booking => booking.customer_id === user?.id
         );
-        setBookings(userBookings);
-        
-        // Check review status for completed bookings
-        const completedBookings = userBookings.filter(b => b.status === 'completed');
-        const reviewStatusMap = {};
-        
-        for (const booking of completedBookings) {
-          try {
-            const result = await checkExistingReviews({
-              booking_id: booking.id,
-              reviewer_id: user?.id
-            });
-            
-            if (result.success) {
-              reviewStatusMap[booking.id] = result.data;
-            }
-          } catch (error) {
-            console.error('Error checking review status:', error);
-          }
-        }
-        
-        setReviewStatus(reviewStatusMap);
+        allBookings = [...userTourBookings];
       }
+      
+      // Process ride hailing bookings
+      if (rideResponse.ok) {
+        const rideData = await rideResponse.json();
+        const rideBookings = (rideData.data?.data || rideData.data || rideData).filter(
+          booking => booking.customer_id === user?.id
+        );
+        allBookings = [...allBookings, ...rideBookings];
+      }
+      
+      // Sort by created_at descending
+      allBookings.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      
+      setBookings(allBookings);
+      
+      // Check review status for completed bookings
+      const completedBookings = allBookings.filter(b => b.status === 'completed');
+      const reviewStatusMap = {};
+      
+      for (const booking of completedBookings) {
+        try {
+          const result = await checkExistingReviews({
+            booking_id: booking.id,
+            reviewer_id: user?.id
+          });
+          
+          if (result.success) {
+            reviewStatusMap[booking.id] = result.data;
+          }
+        } catch (error) {
+          console.error('Error checking review status:', error);
+        }
+      }
+      
+      setReviewStatus(reviewStatusMap);
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {
@@ -196,6 +222,7 @@ export default function BookingHistoryScreen({ navigation }) {
   const getCategoryColor = (category) => {
     switch (category) {
       case 'tour': return '#FF9800';
+      case 'ride': return '#2196F3';
       case 'custom': return '#9C27B0';
       case 'special': return '#E91E63';
       default: return MAROON;
@@ -205,6 +232,7 @@ export default function BookingHistoryScreen({ navigation }) {
   const getCategoryIcon = (category) => {
     switch (category) {
       case 'tour': return 'map';
+      case 'ride': return 'car';
       case 'custom': return 'settings';
       case 'special': return 'star';
       default: return 'list';
@@ -214,6 +242,7 @@ export default function BookingHistoryScreen({ navigation }) {
   const getCategoryLabel = (category) => {
     switch (category) {
       case 'tour': return 'Tour';
+      case 'ride': return 'Ride';
       case 'custom': return 'Custom';
       case 'special': return 'Special';
       default: return 'General';
@@ -273,7 +302,7 @@ export default function BookingHistoryScreen({ navigation }) {
           <View style={styles.bookingInfo}>
             <View style={styles.titleRow}>
               <Text style={styles.bookingTitle} numberOfLines={2}>
-                {booking.package_data?.package_name || 'Tour Package'}
+                {booking.package_data?.package_name || (booking.pickup_address ? 'Ride Hailing' : 'Tour Package')}
               </Text>
               <View style={[styles.categoryTag, { backgroundColor: getCategoryColor(categorizeBooking(booking)) + '20' }]}>
                 <Ionicons 
@@ -287,7 +316,8 @@ export default function BookingHistoryScreen({ navigation }) {
               </View>
             </View>
             <Text style={styles.bookingDate}>
-              {new Date(booking.created_at).toLocaleDateString()}
+              {booking.booking_date ? new Date(booking.booking_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(booking.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {booking.booking_time && ` • ${booking.booking_time.length === 5 ? booking.booking_time : new Date('2000-01-01T' + booking.booking_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`}
             </Text>
           </View>
           
@@ -303,7 +333,7 @@ export default function BookingHistoryScreen({ navigation }) {
           </View>
         </View>
 
-        {booking.package_data && (
+        {booking.package_data ? (
           <View style={styles.packageInfo}>
             <Text style={styles.packageDetail}>
               Duration: {booking.package_data.duration_hours || 'N/A'} hours
@@ -312,7 +342,19 @@ export default function BookingHistoryScreen({ navigation }) {
               Price: ₱{booking.package_data.price || 'N/A'}
             </Text>
           </View>
-        )}
+        ) : booking.pickup_address ? (
+          <View style={styles.packageInfo}>
+            <Text style={styles.packageDetail} numberOfLines={1}>
+              From: {booking.pickup_address}
+            </Text>
+            <Text style={styles.packageDetail} numberOfLines={1}>
+              To: {booking.dropoff_address}
+            </Text>
+            <Text style={styles.packageDetail}>
+              Fare: ₱{(booking.passenger_count || 1) * 10}
+            </Text>
+          </View>
+        ) : null}
 
         {booking.driver_data && (
           <View style={styles.driverInfo}>

@@ -94,7 +94,7 @@ export default function DriverEarningsScreen({ navigation }) {
   const [percentageChange, setPercentageChange] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('all'); // 'today', 'week', 'month', 'all'
+  const [selectedPeriod, setSelectedPeriod] = useState('month'); // 'today', 'week', 'month', 'all'
   const [showCalendar, setShowCalendar] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [customDateRange, setCustomDateRange] = useState(null);
