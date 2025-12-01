@@ -68,24 +68,40 @@ export default function RootNavigator() {
     console.log('[RootNavigator] State changed:', { isAuthenticated, role, activeRole, loading });
   }, [isAuthenticated, role, activeRole, loading]);
 
-  // Initialize activeRole when user logs in
+  // Initialize activeRole when user logs in and reset on logout
   React.useEffect(() => {
-    if (isAuthenticated && role && !activeRole) {
+    if (isAuthenticated && role) {
       const defaultRole = role === 'driver-owner' ? 'driver' : role;
-      setActiveRole(defaultRole);
+      if (!activeRole || activeRole !== defaultRole) {
+        console.log('[RootNavigator] Setting active role:', defaultRole);
+        setActiveRole(defaultRole);
+      }
       global.switchActiveRole = setActiveRole;
+    } else if (!isAuthenticated) {
+      // Reset activeRole when user logs out
+      if (activeRole !== null) {
+        console.log('[RootNavigator] Clearing active role');
+        setActiveRole(null);
+      }
+      global.switchActiveRole = null;
     }
-  }, [isAuthenticated, role, activeRole]);
+  }, [isAuthenticated, role]);
 
-  // Reset navigation when role changes
+  // Reset navigation when role changes or user logs in
   React.useEffect(() => {
     if (isAuthenticated && activeRole && navigationRef.current?.isReady()) {
-      navigationRef.current.reset({
-        index: 0,
-        routes: [{ name: Routes.MAIN }],
-      });
+      console.log('[RootNavigator] Resetting navigation for role:', activeRole);
+      // Use setTimeout to ensure state has fully propagated
+      setTimeout(() => {
+        if (navigationRef.current?.isReady()) {
+          navigationRef.current.reset({
+            index: 0,
+            routes: [{ name: Routes.MAIN }],
+          });
+        }
+      }, 100);
     }
-  }, [activeRole]);
+  }, [isAuthenticated, activeRole]);
 
   if (loading || (isAuthenticated && !activeRole)) {
     return (

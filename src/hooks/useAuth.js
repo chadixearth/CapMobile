@@ -176,6 +176,12 @@ export const useAuth = () => {
   const login = useCallback(async (userData) => {
     console.log('[useAuth] Setting authentication state for user:', userData.id);
     
+    // Set loading to true first to trigger proper navigation reset
+    updateGlobalAuthState({ loading: true });
+    
+    // Small delay to ensure state propagates
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     updateGlobalAuthState({
       user: userData,
       role: userData.role || 'tourist',
@@ -194,11 +200,6 @@ export const useAuth = () => {
     }
     
     console.log('[useAuth] State updated - authenticated:', true, 'role:', userData.role || 'tourist');
-    
-    // Force navigation update
-    setTimeout(() => {
-      console.log('[useAuth] Final auth state:', { isAuthenticated: true, role: userData.role || 'tourist' });
-    }, 100);
   }, []);
 
   // Refresh user data
