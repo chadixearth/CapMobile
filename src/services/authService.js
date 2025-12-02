@@ -312,7 +312,7 @@ export async function registerUser(email, password, role, additionalData = {}) {
   }
 
   // Password validation
-  if (role === 'tourist' && (!password || password.trim() === '')) {
+  if (role === 'tourist' && (!password || (typeof password === 'string' && password.trim() === ''))) {
     return {
       success: false,
       error: 'Password is required for tourist registration.',
@@ -320,7 +320,7 @@ export async function registerUser(email, password, role, additionalData = {}) {
   }
 
   // Phone number validation for driver/owner (required for SMS notifications)
-  if ((role === 'driver' || role === 'owner') && !additionalData.phone) {
+  if ((role === 'driver' || role === 'owner') && (!additionalData.phone || (typeof additionalData.phone === 'string' && additionalData.phone.trim() === ''))) {
     return {
       success: false,
       error: 'Phone number is required for driver and owner registration to receive SMS notifications.',
@@ -328,7 +328,7 @@ export async function registerUser(email, password, role, additionalData = {}) {
   }
 
   // Email uniqueness check
-  if (!email || email.trim() === '') {
+  if (!email || (typeof email === 'string' && email.trim() === '')) {
     return {
       success: false,
       error: 'Email address is required.',
@@ -390,10 +390,17 @@ export async function registerUser(email, password, role, additionalData = {}) {
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        email,
-        password: password && password.trim() !== '' ? password : null,
+        email: email || '',
+        password: (password && typeof password === 'string' && password.trim() !== '') ? password : null,
         role,
-        additional_data: additionalData,
+        additional_data: {
+          ...additionalData,
+          first_name: (additionalData.first_name && typeof additionalData.first_name === 'string') ? additionalData.first_name.trim() : '',
+          last_name: (additionalData.last_name && typeof additionalData.last_name === 'string') ? additionalData.last_name.trim() : '',
+          phone: (additionalData.phone && typeof additionalData.phone === 'string') ? additionalData.phone.trim() : '',
+          license_number: (additionalData.license_number && typeof additionalData.license_number === 'string') ? additionalData.license_number.trim() : undefined,
+          business_name: (additionalData.business_name && typeof additionalData.business_name === 'string') ? additionalData.business_name.trim() : undefined,
+        },
         verification_method: additionalData.verification_method || 'email',
       }),
       signal: controller.signal,

@@ -189,40 +189,51 @@ const RegistrationScreen = ({ navigation, route }) => {
       showError('Please agree to the Terms & Conditions.', { title: 'Terms Required', type: 'warning' });
       return;
     }
-    if (!email) {
+    
+    // Trim all inputs to prevent whitespace-only values
+    const trimmedEmail = (email || '').trim();
+    const trimmedPassword = (password || '').trim();
+    const trimmedConfirmPassword = (confirmPassword || '').trim();
+    const trimmedFirstName = (firstName || '').trim();
+    const trimmedLastName = (lastName || '').trim();
+    const trimmedPhone = (phone || '').trim();
+    const trimmedLicenseNumber = (licenseNumber || '').trim();
+    const trimmedBusinessName = (businessName || '').trim();
+    
+    if (!trimmedEmail) {
       showError('Please enter your email address.', { title: 'Email Required', type: 'warning' });
       return;
     }
 
     if (role === 'tourist') {
-      if (!password || !confirmPassword) {
+      if (!trimmedPassword || !trimmedConfirmPassword) {
         showError('Please create and confirm your password.', { title: 'Password Required', type: 'warning' });
         return;
       }
-      if (password !== confirmPassword) {
+      if (trimmedPassword !== trimmedConfirmPassword) {
         showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
         return;
       }
       // Validate phone number if SMS verification is chosen
-      if (verificationMethod === 'phone' && !phone) {
+      if (verificationMethod === 'phone' && !trimmedPhone) {
         showError('Phone number is required for SMS verification.', { title: 'Phone Required', type: 'warning' });
         return;
       }
-    } else if ((password || confirmPassword) && password !== confirmPassword) {
+    } else if ((trimmedPassword || trimmedConfirmPassword) && trimmedPassword !== trimmedConfirmPassword) {
       showError('Passwords do not match.', { title: 'Password Mismatch', type: 'warning' });
       return;
     }
 
     if (role === 'driver' || role === 'owner') {
-      if (!firstName || !lastName || !phone) {
+      if (!trimmedFirstName || !trimmedLastName || !trimmedPhone) {
         showError('Please fill in all required fields.', { title: 'Missing Information', type: 'warning' });
         return;
       }
-      if (role === 'driver' && !licenseNumber) {
+      if (role === 'driver' && !trimmedLicenseNumber) {
         showError('License number is required for drivers.', { title: 'License Required', type: 'warning' });
         return;
       }
-      if (role === 'owner' && !businessName) {
+      if (role === 'owner' && !trimmedBusinessName) {
         showError('Business name is required for owners.', { title: 'Business Information Required', type: 'warning' });
         return;
       }
@@ -239,35 +250,35 @@ const RegistrationScreen = ({ navigation, route }) => {
       let additionalData = {};
       if (role === 'driver') {
         additionalData = {
-          first_name: firstName,
-          last_name:  lastName,
-          phone,
-          license_number: licenseNumber,
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
+          phone: trimmedPhone,
+          license_number: trimmedLicenseNumber,
           owns_tartanilla: !!ownsTartanilla,
           owned_count: ownsTartanilla ? Math.max(0, parseInt(ownedCount, 10) || 0) : 0,
           preferred_notification: notificationPreference,
         };
       } else if (role === 'owner') {
         additionalData = {
-          first_name: firstName,
-          last_name:  lastName,
-          phone,
-          business_name: businessName,
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
+          phone: trimmedPhone,
+          business_name: trimmedBusinessName,
           drives_own_tartanilla: !!drivesOwnTartanilla,
           preferred_notification: notificationPreference,
         };
       } else {
         additionalData = { 
-          first_name: firstName, 
-          last_name: lastName,
-          phone: phone, // Include phone for SMS verification if needed
+          first_name: trimmedFirstName || '', 
+          last_name: trimmedLastName || '',
+          phone: trimmedPhone || '', // Include phone for SMS verification if needed
           verification_method: verificationMethod
         };
       }
 
       const result = await registerUser(
-        email,
-        role === 'tourist' ? password : (password && password.trim() !== '' ? password : null),
+        trimmedEmail,
+        role === 'tourist' ? trimmedPassword : (trimmedPassword || null),
         role,
         additionalData
       );
@@ -280,7 +291,7 @@ const RegistrationScreen = ({ navigation, route }) => {
           if (role === 'driver' || role === 'owner') {
             setPendingVisible(true);
           } else {
-            const approvalMessage = password && password.trim() !== ''
+            const approvalMessage = trimmedPassword
               ? `Your ${role} registration has been submitted for admin approval. You will receive an SMS notification once approved. You can login with the password you provided.`
               : `Your ${role} registration has been submitted for admin approval. A secure password will be generated and sent to your phone via SMS upon approval.`;
             
@@ -294,14 +305,14 @@ const RegistrationScreen = ({ navigation, route }) => {
         } else if (result.status === 'email_verification_required') {
           // Navigate to verification screen for email verification
           navigation.navigate('Verification', {
-            email: email,
+            email: trimmedEmail,
             verification_method: 'email',
             user: result.user
           });
         } else if (result.status === 'phone_verification_required') {
           // Navigate to verification screen for phone verification
           navigation.navigate('Verification', {
-            phone: phone,
+            phone: trimmedPhone,
             verification_method: 'phone',
             user: result.user
           });
