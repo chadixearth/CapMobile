@@ -420,8 +420,8 @@ export default function BookingHistoryScreen({ navigation }) {
           </View>
         )}
 
-        {/* Review Section for Completed Bookings */}
-        {booking.status === 'completed' && (
+        {/* Review Section for Completed Bookings - Only for tourists */}
+        {booking.status === 'completed' && user?.role === 'tourist' && (
           <View style={styles.reviewSection}>
             <View style={styles.reviewHeader}>
               <Ionicons name="star" size={16} color="#FFD700" />
