@@ -114,14 +114,16 @@ const TerminalsScreen = ({ navigation, route }) => {
           const newActiveRides = result.data || [];
           
           // Check if any rides changed to completed
-          activeRides.forEach(oldRide => {
-            const stillActive = newActiveRides.find(r => r.id === oldRide.id);
-            if (!stillActive && oldRide.status === 'in_progress') {
-              // Ride was in progress but now missing from active - likely completed
-              console.log('[TerminalsScreen] Ride completed detected:', oldRide.id);
-              handleRideRefresh({ ...oldRide, status: 'completed' });
-            }
-          });
+          if (activeRides.length > 0) {
+            activeRides.forEach(oldRide => {
+              const stillActive = newActiveRides.find(r => r.id === oldRide.id);
+              if (!stillActive && (oldRide.status === 'in_progress' || oldRide.status === 'driver_assigned')) {
+                // Ride was active but now missing - likely completed
+                console.log('[TerminalsScreen] Ride completed detected:', oldRide.id);
+                handleRideRefresh({ ...oldRide, status: 'completed' });
+              }
+            });
+          }
           
           setActiveRides(newActiveRides);
         }

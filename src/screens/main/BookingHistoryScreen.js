@@ -74,14 +74,20 @@ export default function BookingHistoryScreen({ navigation }) {
     else setLoading(true);
 
     try {
+      const isDriver = user?.role === 'driver' || user?.role === 'driver-owner';
+      
       // Fetch both tour bookings and ride hailing bookings
       const [tourResponse, rideResponse] = await Promise.all([
         fetch(`${apiBaseUrl()}/tour-booking/`, {
           headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
         }),
-        fetch(`${apiBaseUrl()}/ride-hailing/`, {
-          headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
-        })
+        isDriver 
+          ? fetch(`${apiBaseUrl()}/ride-hailing/driver-history/?driver_id=${user.id}`, {
+              headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+            })
+          : fetch(`${apiBaseUrl()}/ride-hailing/customer-history/?customer_id=${user.id}`, {
+              headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+            })
       ]);
       
       let allBookings = [];
@@ -90,7 +96,7 @@ export default function BookingHistoryScreen({ navigation }) {
       if (tourResponse.ok) {
         const tourData = await tourResponse.json();
         const userTourBookings = (tourData.data || tourData).filter(
-          booking => booking.customer_id === user?.id
+          booking => isDriver ? booking.driver_id === user?.id : booking.customer_id === user?.id
         );
         allBookings = [...userTourBookings];
       }
@@ -98,10 +104,8 @@ export default function BookingHistoryScreen({ navigation }) {
       // Process ride hailing bookings
       if (rideResponse.ok) {
         const rideData = await rideResponse.json();
-        const rideBookings = (rideData.data?.data || rideData.data || rideData).filter(
-          booking => booking.customer_id === user?.id
-        );
-        allBookings = [...allBookings, ...rideBookings];
+        const rideBookings = rideData.data || rideData;
+        allBookings = [...allBookings, ...(Array.isArray(rideBookings) ? rideBookings : [])];
       }
       
       // Sort by created_at descending, then by status (completed/cancelled first)

@@ -292,17 +292,20 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
-      // Filter bookings: only show pending/waiting_for_driver status AND packages created by this driver
+      // Filter bookings: show admin packages to all drivers, driver packages only to creator
       const filteredBookings = processedBookings.filter(booking => {
         const status = (booking.status || '').toLowerCase();
         const isValidStatus = status === 'pending' || status === 'waiting_for_driver';
+        const hasNoDriver = !booking.driver_id;
         
-        // Only show bookings for packages created by this driver
-        const isDriverPackage = booking.package_created_by === driverId || 
-                                booking.created_by_driver_id === driverId ||
-                                booking.driver_id === driverId;
+        if (!isValidStatus || !hasNoDriver) return false;
         
-        return isValidStatus && isDriverPackage;
+        // If package created by admin (no driver creator), show to all drivers
+        const packageCreatorId = booking.package_created_by || booking.created_by_driver_id;
+        if (!packageCreatorId) return true;
+        
+        // If package created by a driver, only show to that driver
+        return packageCreatorId === driverId;
       });
       
       // Fetch customer profiles for each booking with error handling
@@ -740,7 +743,6 @@ export default function DriverBookScreen({ navigation }) {
                 setAvailableCustomTours((prev) => prev.filter((t) => t.id !== selectedBooking.id));
                 fetchDriverCustomTours(user.id);
               }
-              // Add delay to allow backend to process the acceptance
               setTimeout(() => fetchUserAndBookings(), 2000);
             },
           },
@@ -1196,7 +1198,7 @@ const getCustomTitle = (r) => (
                 styles.paymentText,
                 booking.payment_status === 'paid' ? styles.paidStatus : styles.pendingStatus
               ]}>
-                {booking.payment_status === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                {booking.payment_status === 'paid' ? '✓ Paid - Ready to Start' : '⏳ Pending - Cannot Start Yet'}
               </Text>
             </View>
           )}
@@ -1260,7 +1262,7 @@ const getCustomTitle = (r) => (
           ) : (
             <View style={[styles.acceptButton, styles.disabledButton]}>
               <Ionicons name="card" size={18} color="#999" />
-              <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
+              <Text style={[styles.acceptButtonText, { color: '#999' }]}>⏳ Waiting for Tourist Payment</Text>
             </View>
           )}
           {renderMessageButton(booking)}
