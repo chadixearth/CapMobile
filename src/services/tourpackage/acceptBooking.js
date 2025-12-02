@@ -362,7 +362,10 @@ export async function driverCompleteBooking(bookingId, driverId) {
 export async function driverStartBooking(bookingId, driverId) {
   try {
     const endpoint = `${API_BASE_URL}/start/${bookingId}/`;
-    const result = await apiClient.post(endpoint, { driver_id: driverId });
+    const result = await apiClient.post(endpoint, { 
+      driver_id: driverId,
+      client_time: new Date().toISOString() // Send phone's current time
+    });
     
     console.log('Driver start booking response:', result.data);
     

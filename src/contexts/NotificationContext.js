@@ -84,6 +84,13 @@ export const NotificationProvider = ({ children }) => {
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+      
+      // Persist to AsyncStorage
+      const stored = await AsyncStorage.getItem(`readNotifications_${user?.id}`);
+      const readIds = stored ? JSON.parse(stored) : [];
+      if (!readIds.includes(notificationId)) {
+        await AsyncStorage.setItem(`readNotifications_${user?.id}`, JSON.stringify([...readIds, notificationId]));
+      }
     } catch (error) {
       console.error('[NotificationContext] Error marking as read:', error);
     }

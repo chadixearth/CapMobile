@@ -7,6 +7,7 @@ import { getActiveRides, startRideBooking, completeRideBooking, updateDriverLoca
 import { getCurrentUser } from '../../services/authService';
 import LocationService from '../../services/locationService';
 import { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap } from '../../services/roadHighlightsService';
+import { validateTripStart } from '../../services/tourpackage/tripStartConstraints';
 
 export default function DriverRideTrackingScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
@@ -140,6 +141,15 @@ export default function DriverRideTrackingScreen({ navigation, route }) {
 
   const handleStartRide = async () => {
     if (!activeRide || activeRide.status !== 'driver_assigned') return;
+    
+    // Validate trip start constraints for tour packages
+    if (activeRide.booking_type === 'tour_package') {
+      const validation = validateTripStart(activeRide);
+      if (!validation.canStart) {
+        Alert.alert('Cannot Start Trip', validation.message);
+        return;
+      }
+    }
     
     try {
       const result = await startRideBooking(activeRide.id, { driver_id: user.id });
@@ -319,16 +329,36 @@ export default function DriverRideTrackingScreen({ navigation, route }) {
 
       {/* Action Button */}
       <View style={styles.actionContainer}>
-        {activeRide.status === 'driver_assigned' && (
-          <TouchableOpacity style={styles.actionButton} onPress={handleStartRide}>
-            <Ionicons name="play" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Start Ride</Text>
-          </TouchableOpacity>
-        )}
+        {activeRide.status === 'driver_assigned' && (() => {
+          // Check constraints for tour packages
+          if (activeRide.booking_type === 'tour_package') {
+            const validation = validateTripStart(activeRide);
+            if (!validation.canStart) {
+              return (
+                <View style={styles.constraintContainer}>
+                  <View style={styles.constraintBadge}>
+                    <Ionicons name="time-outline" size={18} color="#F57C00" />
+                    <Text style={styles.constraintText}>{validation.message}</Text>
+                  </View>
+                  <TouchableOpacity style={[styles.actionButton, styles.disabledButton]} disabled>
+                    <Ionicons name="lock-closed" size={20} color="#999" />
+                    <Text style={styles.disabledButtonText}>Start Trip</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+          }
+          return (
+            <TouchableOpacity style={styles.actionButton} onPress={handleStartRide}>
+              <Ionicons name="play" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Start Trip</Text>
+            </TouchableOpacity>
+          );
+        })()}
         {activeRide.status === 'in_progress' && (
           <TouchableOpacity style={[styles.actionButton, styles.completeButton]} onPress={handleCompleteRide}>
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Complete Ride</Text>
+            <Text style={styles.actionButtonText}>Complete Trip</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -478,6 +508,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
+  constraintContainer: {
+    gap: 12,
+  },
+  constraintBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#FFE0B2',
+  },
+  constraintText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#E65100',
+    fontWeight: '600',
+  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -487,11 +537,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
+  disabledButton: {
+    backgroundColor: '#E0E0E0',
+  },
   completeButton: {
     backgroundColor: '#2E7D32',
   },
   actionButtonText: {
     color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  disabledButtonText: {
+    color: '#999',
     fontSize: 18,
     fontWeight: '700',
   },

@@ -693,13 +693,42 @@ export default function DriverBookScreen({ navigation }) {
   };
 
   const canStartToday = (booking) => {
-    if (!booking?.booking_date) return true;
+    if (!booking?.booking_date) {
+      console.log('[DriverBookScreen] ❌ No booking_date - button DISABLED');
+      return false;
+    }
     try {
-      const sched = String(booking.booking_date).split('T')[0];
-      const today = new Date().toISOString().split('T')[0];
-      return today >= sched;
-    } catch {
-      return true;
+      const bookingDateStr = String(booking.booking_date).split('T')[0];
+      const bookingTimeStr = booking.pickup_time || '09:00:00';
+      
+      // Parse time components
+      const [hours, minutes] = bookingTimeStr.split(':').map(Number);
+      
+      // Create booking datetime in local timezone
+      const [year, month, day] = bookingDateStr.split('-').map(Number);
+      const bookingDateTime = new Date(year, month - 1, day, hours, minutes, 0);
+      const now = new Date();
+      
+      // Allow starting 1 hour before scheduled time (matching backend)
+      const earlyStartAllowed = new Date(bookingDateTime.getTime() - (60 * 60 * 1000));
+      
+      const canStart = now >= earlyStartAllowed;
+      
+      console.log('═══════════════════════════════════════════════');
+      console.log('📱 PHONE TIME CHECK FOR START TRIP BUTTON');
+      console.log('═══════════════════════════════════════════════');
+      console.log('📅 Phone Current Time:', now.toString());
+      console.log('📅 Phone Current ISO:', now.toISOString());
+      console.log('🎯 Booking Scheduled:', bookingDateTime.toString());
+      console.log('⏰ Can Start From:', earlyStartAllowed.toString());
+      console.log('⏱️  Time Difference:', Math.floor((earlyStartAllowed - now) / 1000 / 60 / 60), 'hours');
+      console.log(canStart ? '✅ BUTTON ENABLED (clickable)' : '❌ BUTTON DISABLED (grayed out)');
+      console.log('═══════════════════════════════════════════════');
+      
+      return canStart;
+    } catch (e) {
+      console.error('[DriverBookScreen] ❌ Error in canStartToday:', e);
+      return false;
     }
   };
 
@@ -1266,7 +1295,7 @@ const getCustomTitle = (r) => (
             >
               <Ionicons name="play" size={18} color="#fff" />
               <Text style={styles.acceptButtonText}>
-                {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
+                {canStartToday(booking) ? 'Start Trip' : `Can start 1h before (${formatTime(booking.pickup_time)})`}
               </Text>
             </TouchableOpacity>
           ) : (
