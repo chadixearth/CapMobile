@@ -270,11 +270,7 @@ function NotificationItem({ title, message, created_at, read, type, category, on
   return (
     <TouchableOpacity 
       style={[styles.itemRow, !read && styles.unreadItem]}
-      onPress={() => {
-        if (!read) {
-          onPress(); // This will mark as read and navigate
-        }
-      }}
+      onPress={onPress}
     >
       <View style={[styles.iconCircle, { backgroundColor: getIconColor() + '20' }]}>
         <MaterialCommunityIcons name={getIcon()} size={22} color={getIconColor()} />

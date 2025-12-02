@@ -99,7 +99,11 @@ export async function createDriverReview({ driver_id, booking_id, reviewer_id, r
 
 export async function getDriverReviews({ driver_id, limit = 20 } = {}) {
   if (!driver_id) return { success: false, error: 'driver_id is required' };
-  const res = await request(`/reviews/driver/${driver_id}/?limit=${encodeURIComponent(limit)}`, { method: 'GET' });
+  const token = await getAccessToken().catch(() => null);
+  const res = await request(`/reviews/driver/${driver_id}/?limit=${encodeURIComponent(limit)}`, { 
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
   if (res.ok) {
     const data = res.data?.data?.reviews || res.data?.data || res.data;
     const stats = res.data?.data && {
@@ -115,14 +119,53 @@ export async function getUserReviews({ user_id, type = 'received', limit = 50, u
   if (!user_id) return { success: false, error: 'user_id is required' };
   
   try {
+    const token = await getAccessToken().catch(() => null);
+    
     if (type === 'received') {
       // Get reviews received by this user (as driver/owner)
-      return await getDriverReviews({ driver_id: user_id, limit });
-    } else {
-      // Get reviews given by this user - fetch BOTH package and driver reviews
-      const token = await getAccessToken().catch(() => null);
+      // Fetch both driver reviews and package reviews (for owners)
+      const [driverRes, packageRes] = await Promise.all([
+        request(`/reviews/driver/${user_id}/?limit=${limit}`, {
+          method: 'GET',
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        }),
+        request(`/reviews/owner/${user_id}/?limit=${limit}`, {
+          method: 'GET',
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        })
+      ]);
       
-      // Fetch package reviews only (driver reviews by reviewer not supported)
+      let allReviews = [];
+      let stats = null;
+      
+      // Process driver reviews
+      if (driverRes.ok) {
+        const driverData = driverRes.data?.data?.reviews || driverRes.data?.data || driverRes.data;
+        if (Array.isArray(driverData)) {
+          allReviews = [...allReviews, ...driverData];
+        }
+        if (driverRes.data?.data) {
+          stats = {
+            average_rating: driverRes.data.data.average_rating,
+            review_count: driverRes.data.data.review_count,
+          };
+        }
+      }
+      
+      // Process package/owner reviews
+      if (packageRes.ok) {
+        const packageData = packageRes.data?.data?.reviews || packageRes.data?.data || packageRes.data;
+        if (Array.isArray(packageData)) {
+          allReviews = [...allReviews, ...packageData];
+        }
+      }
+      
+      // Sort by date descending
+      allReviews.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      
+      return { success: true, data: allReviews, stats };
+    } else {
+      // Get reviews given by this user
       const packageRes = await request(`/reviews/?reviewer_id=${user_id}&limit=${limit}`, {
         method: 'GET',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
