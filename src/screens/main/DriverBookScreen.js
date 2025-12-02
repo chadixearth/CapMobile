@@ -740,7 +740,6 @@ export default function DriverBookScreen({ navigation }) {
                 setAvailableCustomTours((prev) => prev.filter((t) => t.id !== selectedBooking.id));
                 fetchDriverCustomTours(user.id);
               }
-              // Add delay to allow backend to process the acceptance
               setTimeout(() => fetchUserAndBookings(), 2000);
             },
           },
@@ -1196,7 +1195,7 @@ const getCustomTitle = (r) => (
                 styles.paymentText,
                 booking.payment_status === 'paid' ? styles.paidStatus : styles.pendingStatus
               ]}>
-                {booking.payment_status === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                {booking.payment_status === 'paid' ? '✓ Paid - Ready to Start' : '⏳ Pending - Cannot Start Yet'}
               </Text>
             </View>
           )}
@@ -1260,7 +1259,7 @@ const getCustomTitle = (r) => (
           ) : (
             <View style={[styles.acceptButton, styles.disabledButton]}>
               <Ionicons name="card" size={18} color="#999" />
-              <Text style={[styles.acceptButtonText, { color: '#999' }]}>Waiting for Payment</Text>
+              <Text style={[styles.acceptButtonText, { color: '#999' }]}>⏳ Waiting for Tourist Payment</Text>
             </View>
           )}
           {renderMessageButton(booking)}

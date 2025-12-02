@@ -127,8 +127,9 @@ export async function createBooking(bookingData) {
     special_requests: bookingData.special_requests || '',
     contact_number: String(bookingData.contact_number || ''),
     pickup_address: bookingData.pickup_address || '',
-    // New bookings start as pending until driver accepts
     status: 'pending',
+    payment_status: bookingData.payment_status || 'pending',
+    payment_id: bookingData.payment_id || null,
   };
   const attempt = async (bodyPayload, retryCount = 0) => {
     const controller = new AbortController();
