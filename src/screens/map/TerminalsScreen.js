@@ -8,6 +8,7 @@ import { getMyActiveRides, getMyRideHistory } from '../../services/rideHailingSe
 import { getCurrentUser } from '../../services/authService';
 import { fetchTerminals, fetchMapData } from '../../services/map/fetchMap';
 import { fetchRouteSummaries, processMapPointsWithColors, processRoadHighlightsWithColors } from '../../services/routeManagementService';
+import { getAllRoadHighlightsWithPoints, processRoadHighlightsForMap } from '../../services/roadHighlightsService';
 import { useAuth } from '../../hooks/useAuth';
 import { createRideHailingDriverReview, checkExistingReviews } from '../../services/reviews';
 import { subscribeToDataChanges, DATA_EVENTS } from '../../services/dataInvalidationService';
@@ -65,41 +66,89 @@ const TerminalsScreen = ({ navigation, route }) => {
 
   const loadMapData = async () => {
     try {
-      // Fetch full map data with all points, roads, and routes
-      const fullMapData = await fetchMapData({ forceRefresh: true });
+      const data = await fetchMapData({ forceRefresh: true });
+      const roadHighlightsResult = await getAllRoadHighlightsWithPoints();
       
-      // Use map points as terminals if available
-      if (fullMapData?.points && fullMapData.points.length > 0) {
-        // Filter pickup points for terminals
-        const pickupPoints = fullMapData.points.filter(p => p.point_type === 'pickup');
-        const processedTerminals = pickupPoints.map(point => ({
-          id: point.id,
-          name: point.name,
+      let allPointsToShow = [];
+      
+      if (data.points && data.points.length > 0) {
+        const processedMarkers = data.points.map(point => ({
           latitude: parseFloat(point.latitude),
           longitude: parseFloat(point.longitude),
+          title: point.name,
+          description: point.description || '',
           pointType: point.point_type,
-          iconColor: point.stroke_color || point.icon_color || '#28a745',
-          description: point.description
+          iconColor: point.stroke_color || point.icon_color || '#FF0000',
+          id: point.id,
+          image_urls: point.image_urls || []
         }));
-        setTerminals(processedTerminals);
-      } else {
-        // Fallback terminals
-        setTerminals([
-          { id: '1', name: 'SM City Cebu Terminal', latitude: 10.3157, longitude: 123.8854, pointType: 'pickup', iconColor: '#28a745' },
-          { id: '2', name: 'Ayala Center Cebu Terminal', latitude: 10.3187, longitude: 123.9064, pointType: 'pickup', iconColor: '#28a745' },
-          { id: '3', name: 'Plaza Independencia', latitude: 10.2934, longitude: 123.9015, pointType: 'pickup', iconColor: '#28a745' },
-        ]);
+        allPointsToShow = [...processedMarkers];
       }
       
-      setMapData(fullMapData);
+      const pickupColorMap = {};
+      const dropoffColorMap = {};
+      
+      if (roadHighlightsResult && roadHighlightsResult.roadHighlights) {
+        roadHighlightsResult.roadHighlights.forEach(road => {
+          if (road.pickup_point_id && road.stroke_color) {
+            pickupColorMap[road.pickup_point_id] = road.stroke_color;
+          }
+          if (road.dropoff_point_id && road.stroke_color) {
+            dropoffColorMap[road.dropoff_point_id] = road.stroke_color;
+          }
+        });
+      }
+      
+      if (roadHighlightsResult && roadHighlightsResult.pickupPoints) {
+        const pickupMarkers = roadHighlightsResult.pickupPoints.map(pickup => ({
+          latitude: parseFloat(pickup.latitude),
+          longitude: parseFloat(pickup.longitude),
+          title: pickup.name,
+          description: 'Pickup Point',
+          pointType: 'pickup',
+          iconColor: pickupColorMap[pickup.id] || pickup.stroke_color || pickup.icon_color || '#2E7D32',
+          id: pickup.id,
+          image_urls: pickup.image_urls || []
+        }));
+        allPointsToShow = [...allPointsToShow, ...pickupMarkers];
+      }
+      
+      if (roadHighlightsResult && roadHighlightsResult.dropoffPoints) {
+        const dropoffMarkers = roadHighlightsResult.dropoffPoints.map(dropoff => ({
+          latitude: parseFloat(dropoff.latitude),
+          longitude: parseFloat(dropoff.longitude),
+          title: dropoff.name,
+          description: 'Drop-off Point',
+          pointType: 'dropoff',
+          iconColor: dropoffColorMap[dropoff.id] || dropoff.stroke_color || dropoff.icon_color || '#C62828',
+          id: dropoff.id,
+          image_urls: dropoff.image_urls || []
+        }));
+        allPointsToShow = [...allPointsToShow, ...dropoffMarkers];
+      }
+      
+      setTerminals(allPointsToShow);
+      
+      let processedRoads = [];
+      if (roadHighlightsResult && roadHighlightsResult.success && roadHighlightsResult.roadHighlights.length > 0) {
+        processedRoads = processRoadHighlightsForMap(roadHighlightsResult.roadHighlights);
+      } else if (data.roads && data.roads.length > 0) {
+        processedRoads = data.roads.map(road => ({
+          id: road.id,
+          name: road.name,
+          road_coordinates: road.road_coordinates || [],
+          stroke_color: road.stroke_color || '#007AFF',
+          stroke_width: road.stroke_width || 4,
+          stroke_opacity: road.stroke_opacity || 0.7,
+          highlight_type: road.highlight_type || 'available'
+        }));
+      }
+      
+      setMapData({ ...data, roads: processedRoads });
     } catch (error) {
-      console.error('Error loading map data:', error);
-      // Complete fallback
-      setTerminals([
-        { id: '1', name: 'SM City Cebu Terminal', latitude: 10.3157, longitude: 123.8854, pointType: 'pickup', iconColor: '#28a745' },
-        { id: '2', name: 'Ayala Center Cebu Terminal', latitude: 10.3187, longitude: 123.9064, pointType: 'pickup', iconColor: '#28a745' },
-        { id: '3', name: 'Plaza Independencia', latitude: 10.2934, longitude: 123.9015, pointType: 'pickup', iconColor: '#28a745' },
-      ]);
+      console.error('[TerminalsScreen] Error loading map data:', error);
+      setTerminals([]);
+      setMapData({ points: [], roads: [], routes: [], zones: [] });
     }
   };
 
@@ -243,8 +292,8 @@ const TerminalsScreen = ({ navigation, route }) => {
           style={[styles.toggleButton, !showRides && !showHistory && styles.activeToggle]}
           onPress={() => { setShowRides(false); setShowHistory(false); }}
         >
-          <Ionicons name="location-outline" size={20} color={!showRides && !showHistory ? '#fff' : '#6B2E2B'} />
-          <Text style={[styles.toggleText, !showRides && !showHistory && styles.activeToggleText]}>Terminals</Text>
+          <Ionicons name="map-outline" size={20} color={!showRides && !showHistory ? '#fff' : '#6B2E2B'} />
+          <Text style={[styles.toggleText, !showRides && !showHistory && styles.activeToggleText]}>Map</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.toggleButton, showRides && styles.activeToggle]}
@@ -414,18 +463,7 @@ const TerminalsScreen = ({ navigation, route }) => {
               latitudeDelta: 0.06,
               longitudeDelta: 0.06,
             } : DEFAULT_REGION}
-            markers={terminals.map(t => {
-              console.log('Processing terminal for map:', t);
-              return {
-                latitude: parseFloat(t.latitude),
-                longitude: parseFloat(t.longitude),
-                title: t.title || t.name,
-                description: t.description || `Tap to select as ${type}`,
-                id: t.id,
-                pointType: t.pointType || t.point_type || 'terminal',
-                iconColor: selectedId === t.id ? '#6B2E2B' : (t.iconColor || t.stroke_color || '#28a745'),
-              };
-            })}
+            markers={terminals}
             roads={mapData?.roads || []}
             routes={mapData?.routes || []}
             showSatellite={false}

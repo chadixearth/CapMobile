@@ -22,6 +22,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Button from '../../components/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { listGoodsServicesPosts, getGoodsServicesProfileByAuthor, upsertGoodsServicesProfile, deleteGoodsServicesPost, uploadGoodsServicesMedia } from '../../services/goodsServices';
+import { reportGoodsServicesPost } from '../../services/goodsServicesReports';
 import { listReviews } from '../../services/reviews';
 import { getUserProfile } from '../../services/authService';
 import { standardizeUserProfile, getBestAvatarUrl } from '../../utils/profileUtils';
@@ -48,6 +49,13 @@ export default function GoodsServicesScreen() {
   const [editDescription, setEditDescription] = useState('');
   const [selectedImages, setSelectedImages] = useState([]);
   const [saving, setSaving] = useState(false);
+  
+  // Report modal state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportingPost, setReportingPost] = useState(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
   
   // Animation refs for loading
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -415,6 +423,50 @@ export default function GoodsServicesScreen() {
     setSelectedImages(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleReportPost = (post) => {
+    setReportingPost(post);
+    setReportReason('');
+    setReportDetails('');
+    setReportModalVisible(true);
+  };
+
+  const submitReport = async () => {
+    if (!reportReason) {
+      Alert.alert('Required', 'Please select a reason for reporting');
+      return;
+    }
+
+    if (!auth.user?.id) {
+      Alert.alert('Error', 'You must be logged in to report');
+      return;
+    }
+
+    setSubmittingReport(true);
+    try {
+      const result = await reportGoodsServicesPost({
+        post_id: reportingPost.id,
+        reporter_id: auth.user.id,
+        reporter_type: auth.user.role || 'tourist',
+        reason: reportReason,
+        details: reportDetails
+      });
+
+      if (result.success) {
+        Alert.alert('Success', result.message || 'Report submitted successfully. Admin will review it shortly.');
+        setReportModalVisible(false);
+        setReportingPost(null);
+        setReportReason('');
+        setReportDetails('');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to submit report');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to submit report');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
   const renderMediaGrid = (mediaArr) => {
     if (!Array.isArray(mediaArr) || mediaArr.length === 0) return null;
     
@@ -587,6 +639,9 @@ export default function GoodsServicesScreen() {
     const userRole = item.author_role || authorFromMap?.role || 'user';
     const userEmail = item.author_email || item.email || authorFromMap?.email || '';
     const userPhone = authorFromMap?.phone || '';
+    
+    // Check if current user can report this post (not their own post)
+    const canReport = auth.user?.id && auth.user.id !== item.author_id;
     // Try multiple sources for profile photo with better fallback handling
     let profilePhoto = null;
     
@@ -696,6 +751,17 @@ export default function GoodsServicesScreen() {
         {renderMediaGrid(mediaArray)}
         
 
+
+        {/* Report Button */}
+        {canReport && (
+          <TouchableOpacity 
+            style={styles.reportButton}
+            onPress={() => handleReportPost(item)}
+          >
+            <Ionicons name="flag-outline" size={14} color="#DC3545" />
+            <Text style={styles.reportButtonText}>Report Post</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Driver-specific Reviews */}
         {driverReviews.length > 0 && (
@@ -853,6 +919,114 @@ export default function GoodsServicesScreen() {
         bounces={true}
       />
       
+      {/* Report Modal */}
+      <Modal
+        visible={reportModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setReportModalVisible(false)}
+          />
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={styles.headerSpacer} />
+              <View style={styles.modalTitleContainer}>
+                <Text style={styles.modalTitle}>Report Post</Text>
+                <Text style={styles.modalSubtitle}>Help us maintain community standards</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.modalCloseButton}
+                onPress={() => setReportModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color={COLORS.sub} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <Ionicons name="flag-outline" size={18} color="#DC3545" />
+                  <Text style={styles.inputLabel}>Reason for Report</Text>
+                </View>
+                
+                {[
+                  { value: 'not_tartanilla_related', label: 'Not Tartanilla Related' },
+                  { value: 'inappropriate_content', label: 'Inappropriate Content' },
+                  { value: 'spam', label: 'Spam or Misleading' },
+                  { value: 'fraud', label: 'Fraud or Scam' },
+                  { value: 'harassment', label: 'Harassment' },
+                  { value: 'other', label: 'Other' }
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.reasonOption,
+                      reportReason === option.value && styles.reasonOptionSelected
+                    ]}
+                    onPress={() => setReportReason(option.value)}
+                  >
+                    <View style={[
+                      styles.radioButton,
+                      reportReason === option.value && styles.radioButtonSelected
+                    ]}>
+                      {reportReason === option.value && (
+                        <View style={styles.radioButtonInner} />
+                      )}
+                    </View>
+                    <Text style={[
+                      styles.reasonLabel,
+                      reportReason === option.value && styles.reasonLabelSelected
+                    ]}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <Ionicons name="document-text-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.inputLabel}>Additional Details (Optional)</Text>
+                </View>
+                <View style={styles.textInputWrapper}>
+                  <TextInput
+                    style={styles.textInput}
+                    value={reportDetails}
+                    onChangeText={setReportDetails}
+                    placeholder="Provide more information about why you're reporting this post..."
+                    placeholderTextColor={COLORS.sub}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                </View>
+              </View>
+              
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={[styles.submitReportButton, submittingReport && styles.disabledButton]}
+                  onPress={submitReport}
+                  disabled={submittingReport}
+                >
+                  {submittingReport ? (
+                    <View style={styles.buttonContent}>
+                      <Text style={styles.submitReportButtonText}>Submitting...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.buttonContent}>
+                      <Ionicons name="send" size={18} color={COLORS.white} />
+                      <Text style={styles.submitReportButtonText}>Submit Report</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Edit Modal */}
       <Modal
         visible={editModalVisible}
@@ -1587,6 +1761,82 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 8,
+  },
+  
+  // Report button
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFF5F5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginTop: 12,
+    gap: 6,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  
+  // Report modal styles
+  reasonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  reasonOptionSelected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#DC3545',
+  },
+  radioButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: COLORS.sub,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioButtonSelected: {
+    borderColor: '#DC3545',
+  },
+  radioButtonInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#DC3545',
+  },
+  reasonLabel: {
+    fontSize: 15,
+    color: COLORS.text,
+    fontWeight: '500',
+  },
+  reasonLabelSelected: {
+    color: '#DC3545',
+    fontWeight: '600',
+  },
+  submitReportButton: {
+    backgroundColor: '#DC3545',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  submitReportButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
   
   // User media styles

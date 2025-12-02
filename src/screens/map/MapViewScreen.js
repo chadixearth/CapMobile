@@ -718,7 +718,7 @@ const MapViewScreen = ({ navigation, route }) => {
         
         console.log('🎯 Associated dropoffs:', associatedDropoffs.length, 'IDs:', associatedDropoffIds);
         
-        // Show pickup marker with group color
+        // Show pickup marker
         const pickupMarker = {
           ...marker,
           iconColor: pickupGroup.color
@@ -735,7 +735,6 @@ const MapViewScreen = ({ navigation, route }) => {
           id: dest.id
         }));
         
-        // Show all markers (pickup + associated dropoffs)
         setMarkers([pickupMarker, ...dropoffMarkers]);
         
         // Process and show associated road highlights with proper coordinates
