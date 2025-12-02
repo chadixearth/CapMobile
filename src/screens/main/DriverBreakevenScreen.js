@@ -40,6 +40,7 @@ import {
   getBreakevenExpenseCache,
   getExpensesSumInRange,
   saveExpensesForPeriod,
+  getTotalDriverEarnings,
 } from '../../services/Earnings/BreakevenService';
 
 const PERIOD_BY_FREQ = {
@@ -154,7 +155,7 @@ function getMsUntilNextPhMidnight() {
 
 // Driver shares (used in local fallback)
 const BOOKING_SHARE = 0.80;
-const CUSTOM_SHARE  = 1.00;
+const RIDE_HAILING_SHARE = 0.80;
 
 /** Direct “income today” fallback by driver, counting in-progress statuses. */
 async function fetchIncomeTodayByDriver(driverId, {
@@ -165,7 +166,7 @@ async function fetchIncomeTodayByDriver(driverId, {
 
   let q = supabase
     .from('earnings')
-    .select('amount, status, booking_id, custom_tour_id, earning_date')
+    .select('amount, status, booking_id, ride_hailing_booking_id, earning_date')
     .eq('driver_id', driverId)
     .gte('earning_date', gteISO)
     .lt('earning_date', ltISO);
@@ -180,7 +181,7 @@ async function fetchIncomeTodayByDriver(driverId, {
   for (const r of rows || []) {
     const amt = Math.max(Number(r?.amount) || 0, 0);
     if (r.booking_id) revenue += amt * BOOKING_SHARE;
-    else if (r.custom_tour_id) revenue += amt * CUSTOM_SHARE;
+    else if (r.ride_hailing_booking_id) revenue += amt * RIDE_HAILING_SHARE;
     count += 1;
   }
 
@@ -246,7 +247,7 @@ export default function EarningsScreen({ navigation, route }) {
   const [periodStart, setPeriodStart] = useState(null);
   const [periodEnd, setPeriodEnd] = useState(null);
   const [shareStandard, setShareStandard] = useState(0);
-  const [shareCustom, setShareCustom] = useState(0);
+  const [shareRideHailing, setShareRideHailing] = useState(0);
 
   // Other
   const [refreshing, setRefreshing] = useState(false);
@@ -342,7 +343,7 @@ export default function EarningsScreen({ navigation, route }) {
     setPeriodStart(null);
     setPeriodEnd(null);
     setShareStandard(0);
-    setShareCustom(0);
+    setShareRideHailing(0);
     setIncomeToday(0);
   }
 
@@ -603,7 +604,7 @@ export default function EarningsScreen({ navigation, route }) {
 
         const br = d.breakdown || {};
         setShareStandard(Number(br.driver_share_from_standard || 0));
-        setShareCustom(Number(br.driver_share_from_custom || 0));
+        setShareRideHailing(Number(br.driver_share_from_ride_hailing || br.driver_share_from_custom || 0));
 
         return d;
       }
@@ -617,7 +618,7 @@ export default function EarningsScreen({ navigation, route }) {
       setRevenuePeriod(0);
       setDeficitAmount(0);
       setShareStandard(0);
-      setShareCustom(0);
+      setShareRideHailing(0);
       return null;
     },
     []
@@ -659,23 +660,33 @@ export default function EarningsScreen({ navigation, route }) {
         setDbExpensesBase(Number(baseExp || 0));
         setExpenseItems([]);
 
-        // 1) Earnings stats (align with DriverEarningsScreen)
+        // 1) Get total earnings including ride hailing
+        const earningsRes = await getTotalDriverEarnings(drvId, period);
+        const earningsData = earningsRes?.success ? earningsRes.data : null;
+        
+        // 2) Earnings stats (align with DriverEarningsScreen)
         const statsRes = await getDriverEarningsStats(drvId, period);
         const baseData = statsRes?.success ? statsRes.data : null;
         setStats(baseData || null);
 
-        // 2) Breakeven (with correct statuses per period)
-        const summary = await fetchBreakevenBlock(drvId, period, baseExp, currentFrequency);
+        // 3) Breakeven (only for Daily to avoid intermediate values)
+        const summary = currentFrequency === 'Daily' ? await fetchBreakevenBlock(drvId, period, baseExp, currentFrequency) : null;
 
-        // 3) For WEEKLY and MONTHLY, override revenue using EarningsService and recalculate metrics
-        if ((currentFrequency === 'Weekly' || currentFrequency === 'Monthly') && baseData) {
-          const updatedRevenue = Number(baseData.total_driver_earnings || 0);
-          const updatedBookings = Number(baseData.count || 0);
+        // 4) Use total earnings (including ride hailing) for all periods
+        if (earningsData) {
+          const totalRevenue = Number(earningsData.total_earnings || 0);
+          const totalBookings = Number(earningsData.count || 0);
           
-          setRevenuePeriod(updatedRevenue);
-          setAcceptedBookings(updatedBookings);
+          setRevenuePeriod(totalRevenue);
+          setAcceptedBookings(totalBookings);
+          setShareStandard(Number(earningsData.standard_earnings || 0));
+          setShareRideHailing(Number(earningsData.ride_hailing_earnings || 0));
           
-          if (baseData.period_from && baseData.period_to) {
+          // Use period dates from summary if available, otherwise from stats
+          if (summary?.date_start && summary?.date_end) {
+            setPeriodStart(summary.date_start);
+            setPeriodEnd(summary.date_end);
+          } else if (baseData?.period_from && baseData?.period_to) {
             const startIso = new Date(baseData.period_from + 'T00:00:00').toISOString();
             const endIso = new Date(baseData.period_to + 'T23:59:59').toISOString();
             setPeriodStart(startIso);
@@ -683,25 +694,44 @@ export default function EarningsScreen({ navigation, route }) {
           }
           
           // Calculate fare per ride = revenue / completed bookings
-          const farePerRideCalc = updatedBookings > 0 ? updatedRevenue / updatedBookings : 0;
+          const farePerRideCalc = totalBookings > 0 ? totalRevenue / totalBookings : 0;
           setFarePerRide(farePerRideCalc);
           
           // Calculate bookings needed to hit breakeven
-          if (updatedRevenue >= baseExp) {
+          if (totalRevenue >= baseExp) {
             setBookingsNeeded(0); // Already at breakeven
           } else if (farePerRideCalc > 0) {
-            const deficit = baseExp - updatedRevenue;
+            const deficit = baseExp - totalRevenue;
             const additionalBookings = Math.ceil(deficit / farePerRideCalc);
             setBookingsNeeded(additionalBookings);
           } else {
             setBookingsNeeded(0);
           }
           
-          const deficit = Math.max(baseExp - updatedRevenue, 0);
+          const deficit = Math.max(baseExp - totalRevenue, 0);
           setDeficitAmount(deficit);
         }
 
         // DAILY: keep today’s history updated
+        if ((currentFrequency === 'Weekly' || currentFrequency === 'Monthly') && earningsData && baseExp >= 0) {
+          const periodType = currentFrequency === 'Weekly' ? 'weekly' : 'monthly';
+          await saveExpensesForPeriod({
+            driverId: drvId,
+            periodType,
+            periodStart: baseData?.period_from ? new Date(baseData.period_from + 'T00:00:00').toISOString() : new Date().toISOString(),
+            periodEnd: baseData?.period_to ? new Date(baseData.period_to + 'T23:59:59').toISOString() : new Date().toISOString(),
+            expenses: baseExp,
+            breakevenData: {
+              revenue_period: earningsData.total_earnings,
+              total_bookings: earningsData.count,
+              breakdown: {
+                driver_share_from_standard: earningsData.standard_earnings,
+                driver_share_from_ride_hailing: earningsData.ride_hailing_earnings,
+              }
+            },
+          });
+        }
+
         if (currentFrequency === 'Daily' && summary && baseExp > 0) {
           await upsertBreakevenHistoryFromSummary({
             driverId: drvId,
@@ -776,42 +806,35 @@ export default function EarningsScreen({ navigation, route }) {
     if (!driverId) return;
     const handler = setTimeout(async () => {
       const t = Number(totalExpenses || 0);
-      const d = await fetchBreakevenBlock(driverId, periodKey, t, frequency);
+      const d = frequency === 'Daily' ? await fetchBreakevenBlock(driverId, periodKey, t, frequency) : null;
 
-      // Keep WEEKLY/MONTHLY revenue aligned with EarningsService after expenses change
-      if (frequency === 'Weekly' || frequency === 'Monthly') {
-        const res = await getDriverEarningsStats(driverId, PERIOD_BY_FREQ[frequency]);
-        if (res?.success && res.data) {
-          const updatedRevenue = Number(res.data.total_driver_earnings || 0);
-          const updatedBookings = Number(res.data.count || 0);
-          
-          setRevenuePeriod(updatedRevenue);
-          setAcceptedBookings(updatedBookings);
-          
-          if (res.data.period_from && res.data.period_to) {
-            const startIso = new Date(res.data.period_from + 'T00:00:00').toISOString();
-            const endIso = new Date(res.data.period_to + 'T23:59:59').toISOString();
-            setPeriodStart(startIso);
-            setPeriodEnd(endIso);
-          }
-          
-          // Recalculate fare per ride and bookings needed with updated data
-          const farePerRideCalc = updatedBookings > 0 ? updatedRevenue / updatedBookings : 0;
-          setFarePerRide(farePerRideCalc);
-          
-          if (updatedRevenue >= t) {
-            setBookingsNeeded(0);
-          } else if (farePerRideCalc > 0) {
-            const deficit = t - updatedRevenue;
-            const additionalBookings = Math.ceil(deficit / farePerRideCalc);
-            setBookingsNeeded(additionalBookings);
-          } else {
-            setBookingsNeeded(0);
-          }
-          
-          const deficit = Math.max(t - updatedRevenue, 0);
-          setDeficitAmount(deficit);
+      // Keep revenue aligned with total earnings (including ride hailing) after expenses change
+      const earningsRes = await getTotalDriverEarnings(driverId, periodKey);
+      if (earningsRes?.success && earningsRes.data) {
+        const totalRevenue = Number(earningsRes.data.total_earnings || 0);
+        const totalBookings = Number(earningsRes.data.count || 0);
+        
+        setRevenuePeriod(totalRevenue);
+        setAcceptedBookings(totalBookings);
+        setShareStandard(Number(earningsRes.data.standard_earnings || 0));
+        setShareRideHailing(Number(earningsRes.data.ride_hailing_earnings || 0));
+        
+        // Recalculate fare per ride and bookings needed with updated data
+        const farePerRideCalc = totalBookings > 0 ? totalRevenue / totalBookings : 0;
+        setFarePerRide(farePerRideCalc);
+        
+        if (totalRevenue >= t) {
+          setBookingsNeeded(0);
+        } else if (farePerRideCalc > 0) {
+          const deficit = t - totalRevenue;
+          const additionalBookings = Math.ceil(deficit / farePerRideCalc);
+          setBookingsNeeded(additionalBookings);
+        } else {
+          setBookingsNeeded(0);
         }
+        
+        const deficit = Math.max(t - totalRevenue, 0);
+        setDeficitAmount(deficit);
       }
 
       if (frequency === 'Daily' && d && t > 0) {
@@ -1468,9 +1491,9 @@ export default function EarningsScreen({ navigation, route }) {
               <View style={styles.breakdownItem}>
                 <View style={styles.breakdownItemLeft}>
                   <View style={[styles.breakdownDot, { backgroundColor: '#3B82F6' }]} />
-                  <Text style={styles.breakdownItemText}>Custom Tours</Text>
+                  <Text style={styles.breakdownItemText}>Ride Hailing</Text>
                 </View>
-                <Text style={styles.breakdownItemAmount}>₱{formatPeso(shareCustom)}</Text>
+                <Text style={styles.breakdownItemAmount}>₱{formatPeso(shareRideHailing)}</Text>
               </View>
             </View>
 

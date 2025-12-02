@@ -385,7 +385,23 @@ export default function DriverHomeScreen({ navigation }) {
   const fetchEarningsData = async (driverId) => {
     try {
       const data = await getDriverEarningsStats(driverId, 'month');
-      if (data?.success) setEarningsData(data.data);
+      console.log('[DRIVER_HOME] Monthly earnings data received:', data);
+      if (data?.success) {
+        setEarningsData(data.data);
+        console.log('[DRIVER_HOME] Monthly earnings data set:', data.data);
+      } else {
+        console.log('[DRIVER_HOME] Monthly earnings data failed:', data);
+        setEarningsData({
+          total_driver_earnings: 0,
+          count: 0,
+          earnings_today: 0,
+          completed_bookings_today: 0,
+          avg_earning_per_booking: 0,
+          driver_percentage: 80,
+          admin_percentage: 20,
+          total_ride_hailing_earnings: 0,
+        });
+      }
     } catch (error) {
       console.error('Error fetching earnings data:', error);
       setEarningsData({
@@ -396,6 +412,7 @@ export default function DriverHomeScreen({ navigation }) {
         avg_earning_per_booking: 0,
         driver_percentage: 80,
         admin_percentage: 20,
+        total_ride_hailing_earnings: 0,
       });
     }
   };
@@ -709,13 +726,13 @@ export default function DriverHomeScreen({ navigation }) {
               </View>
               <View style={styles.vDivider} />
               <View style={styles.splitCol}>
-                <Text style={styles.splitLabel}>Driver Share</Text>
-                <Text style={styles.splitValue}>{formatCurrency(earningsData.total_driver_earnings || 0)}</Text>
+                <Text style={styles.splitLabel}>Tour Packages</Text>
+                <Text style={styles.splitValue}>{formatCurrency((earningsData?.total_driver_earnings || 0) - (earningsData?.ride_hailing_earnings || 0))}</Text>
               </View>
               <View style={styles.vDivider} />
               <View style={styles.splitCol}>
-                <Text style={styles.splitLabel}>Custom Bookings</Text>
-                <Text style={styles.splitValue}>{formatCurrency(customTourEarnings || earningsData?.custom_booking_earnings || 0)}</Text>
+                <Text style={styles.splitLabel}>Ride Hailing</Text>
+                <Text style={styles.splitValue}>{formatCurrency(earningsData?.total_ride_hailing_earnings || 0)}</Text>
               </View>
             </View>
           )}
@@ -802,23 +819,25 @@ export default function DriverHomeScreen({ navigation }) {
                 <View style={styles.marginBar}>
                   <View style={[styles.marginFill, { width: `${(() => {
                     const totalTrips = earningsData?.count || 0;
-                    const customTrips = customTourEarnings > 0 ? Math.ceil(customTourEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
-                    const packageTrips = totalTrips - customTrips;
+                    const rideHailingEarnings = earningsData?.total_ride_hailing_earnings || 0;
+                    const rideHailingTrips = rideHailingEarnings > 0 ? Math.ceil(rideHailingEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
+                    const packageTrips = totalTrips - rideHailingTrips;
                     return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
                   })()}%` }]} />
                   <Text style={styles.marginText}>{(() => {
                     const totalTrips = earningsData?.count || 0;
-                    const customTrips = customTourEarnings > 0 ? Math.ceil(customTourEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
-                    const packageTrips = totalTrips - customTrips;
+                    const rideHailingEarnings = earningsData?.total_ride_hailing_earnings || 0;
+                    const rideHailingTrips = rideHailingEarnings > 0 ? Math.ceil(rideHailingEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
+                    const packageTrips = totalTrips - rideHailingTrips;
                     return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
                   })()}%</Text>
                 </View>
               </View>
               <View style={styles.marginRow}>
-                <Text style={styles.marginLabel}>Your Own Tours</Text>
+                <Text style={styles.marginLabel}>Ride Hailing</Text>
                 <View style={styles.marginBar}>
-                  <View style={[styles.marginFillCustom, { width: customTourEarnings > 0 ? '100%' : '0%' }]} />
-                  <Text style={styles.marginText}>{customTourEarnings > 0 ? '100%' : '0%'}</Text>
+                  <View style={[styles.marginFillCustom, { width: (earningsData?.total_ride_hailing_earnings || 0) > 0 ? '100%' : '0%' }]} />
+                  <Text style={styles.marginText}>{(earningsData?.total_ride_hailing_earnings || 0) > 0 ? '100%' : '0%'}</Text>
                 </View>
               </View>
             </View>
@@ -860,7 +879,7 @@ export default function DriverHomeScreen({ navigation }) {
                     const tripsPerDay = (earningsData?.count || 0) / daysInMonth;
                     const monthlyEarnings = totalEarnings;
                     const isGrowing = changeData.is_increase;
-                    const hasCustomTours = customTourEarnings > 0;
+                    const hasRideHailing = (earningsData?.total_ride_hailing_earnings || 0) > 0;
                     
                     let score = 0;
                     
@@ -881,7 +900,7 @@ export default function DriverHomeScreen({ navigation }) {
                     else if (isGrowing) score += 10;
                     
                     // Do you have different income sources? (0-10 points)
-                    if (hasCustomTours) score += 10;
+                    if (hasRideHailing) score += 10;
                     
                     return Math.min(100, score).toString();
                   })()
@@ -890,7 +909,7 @@ export default function DriverHomeScreen({ navigation }) {
                 <Text style={styles.efficiencyLabel}>Score</Text>
               </View>
               <View style={styles.efficiencyDetails}>
-                <Text style={styles.efficiencyText}>Shows how well you earn money. Based on: Daily trips, Monthly income, Growth, Own tours</Text>
+                <Text style={styles.efficiencyText}>Shows how well you earn money. Based on: Daily trips, Monthly income, Growth, Ride hailing</Text>
                 <Text style={styles.efficiencyTip}>
                   {(() => {
                     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
@@ -898,7 +917,7 @@ export default function DriverHomeScreen({ navigation }) {
                       ((earningsData?.count || 0) / daysInMonth >= 3 ? 30 : (earningsData?.count || 0) / daysInMonth >= 2 ? 20 : (earningsData?.count || 0) / daysInMonth >= 1 ? 10 : 0) +
                       (totalEarnings >= 30000 ? 40 : totalEarnings >= 20000 ? 30 : totalEarnings >= 10000 ? 20 : totalEarnings >= 5000 ? 10 : 0) +
                       (changeData.is_increase ? (changeData.percentage_change >= 10 ? 20 : changeData.percentage_change >= 5 ? 15 : 10) : 0) +
-                      (customTourEarnings > 0 ? 10 : 0)
+                      ((earningsData?.total_ride_hailing_earnings || 0) > 0 ? 10 : 0)
                     );
                     
                     if (score >= 80) return '🎉 Excellent! You have great earnings. Keep it up!';

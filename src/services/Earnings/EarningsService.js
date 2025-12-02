@@ -1,3 +1,4 @@
+// services/Earnings/EarningsService.js
 import { apiClient } from '../improvedApiClient';
 import { getAccessToken } from '../authService';
 import { apiBaseUrl } from '../networkConfig';
@@ -47,8 +48,25 @@ function startOfNextMonth(base = new Date()) {
 /* ------------------------- Supabase row helpers --------------------------- */
 function parseAmountLike(row) {
   const amount = Number(row?.amount ?? 0) || 0;
-  const drv = amount * 0.8;
-  const adm = amount * 0.2;
+  const packageName = String(row?.package_name || '').toLowerCase();
+  const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+  const driverShare = isRideHailing ? 1.0 : 0.8;
+  const drv = amount * driverShare;
+  const adm = amount * (1 - driverShare);
+  
+  if (isRideHailing) {
+    console.log('[RIDE_HAILING_DEBUG] Package:', packageName, 'Amount:', amount, 'Driver gets:', drv, '(100%)');
+  }
+  
+  log('parseAmountLike:', {
+    packageName,
+    isRideHailing,
+    driverShare,
+    amount,
+    drv,
+    adm
+  });
+  
   return { amount, drv, adm };
 }
 function statusIsReversed(row) {
@@ -75,7 +93,7 @@ function parseDateSafely(v) {
 async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso') {
   let q = supabase
     .from('earnings')
-    .select('id, amount, status, earning_date, driver_id');
+    .select('id, amount, status, earning_date, driver_id, package_name');
 
   q = q.eq('driver_id', String(driverId));
 
@@ -111,11 +129,26 @@ function aggregateEarnings(rows) {
   let totalDriver = 0;
   let totalAdmin = 0;
 
+  log('aggregateEarnings input rows:', rows.length);
+
   const out = rows.map((r) => {
-    const { amount, drv, adm } = parseAmountLike(r);
+    const amount = Number(r?.amount ?? 0) || 0;
+    const packageName = String(r?.package_name || '').toLowerCase();
+    const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+    
+    // Always recalculate based on package type, ignore existing driver_earnings
+    const driverShare = isRideHailing ? 1.0 : 0.8;
+    const drv = amount * driverShare;
+    const adm = amount * (1 - driverShare);
+    
+    if (isRideHailing) {
+      console.log('[BACKEND_RIDE_HAILING] Package:', packageName, 'Amount:', amount, 'Driver gets:', drv, '(100%)');
+    }
+    
     totalRevenue += amount;
     totalDriver += drv;
     totalAdmin += adm;
+    
     return {
       id: r.id,
       package_name: r.package_name || 'Tour Package',
@@ -127,14 +160,26 @@ function aggregateEarnings(rows) {
     };
   });
 
+  const driverPercentage = totalRevenue > 0 ? Math.round((totalDriver / totalRevenue) * 100) : 80;
+  const adminPercentage = 100 - driverPercentage;
+
+  log('aggregateEarnings result:', {
+    totalRevenue,
+    totalDriver,
+    totalAdmin,
+    driverPercentage,
+    adminPercentage,
+    count: out.length
+  });
+
   return {
     earnings: out,
     statistics: {
       total_revenue: totalRevenue,
       total_driver_earnings: totalDriver,
       total_admin_earnings: totalAdmin,
-      admin_percentage: 20,
-      driver_percentage: 80,
+      admin_percentage: adminPercentage,
+      driver_percentage: driverPercentage,
       count: out.length,
     },
   };
@@ -324,7 +369,10 @@ export async function getDriverEarningsStats(driverId, period = 'month', customD
 
     earnings_today = todayRows.reduce((sum, e) => {
       const base = Number(e?.amount ?? 0);
-      const drv = base * 0.8;
+      const packageName = String(e?.package_name || '').toLowerCase();
+      const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+      const driverShare = isRideHailing ? 1.0 : 0.8;
+      const drv = base * driverShare;
       return sum + (Number.isFinite(drv) ? drv : 0);
     }, 0);
     
