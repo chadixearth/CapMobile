@@ -292,17 +292,20 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
-      // Filter bookings: only show pending/waiting_for_driver status AND packages created by this driver
+      // Filter bookings: show admin packages to all drivers, driver packages only to creator
       const filteredBookings = processedBookings.filter(booking => {
         const status = (booking.status || '').toLowerCase();
         const isValidStatus = status === 'pending' || status === 'waiting_for_driver';
+        const hasNoDriver = !booking.driver_id;
         
-        // Only show bookings for packages created by this driver
-        const isDriverPackage = booking.package_created_by === driverId || 
-                                booking.created_by_driver_id === driverId ||
-                                booking.driver_id === driverId;
+        if (!isValidStatus || !hasNoDriver) return false;
         
-        return isValidStatus && isDriverPackage;
+        // If package created by admin (no driver creator), show to all drivers
+        const packageCreatorId = booking.package_created_by || booking.created_by_driver_id;
+        if (!packageCreatorId) return true;
+        
+        // If package created by a driver, only show to that driver
+        return packageCreatorId === driverId;
       });
       
       // Fetch customer profiles for each booking with error handling
