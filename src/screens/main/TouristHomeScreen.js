@@ -197,10 +197,23 @@ export default function TouristHomeScreen({ navigation }) {
       try {
         setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
+        
+        // Debug: Log package data to see what fields are available
+        console.log('Tour packages received:', packages.length);
+        if (packages.length > 0) {
+          console.log('Sample package data:', JSON.stringify(packages[0], null, 2));
+          // Look for Plaza Independencia package specifically
+          const plazaPackage = packages.find(pkg => pkg.package_name?.includes('Plaza Independencia'));
+          if (plazaPackage) {
+            console.log('Plaza Independencia package:', JSON.stringify(plazaPackage, null, 2));
+          }
+        }
+        
         setTourPackages(packages);
         setFilteredPackages(packages);
         setNetworkStatus('Connected');
       } catch (error) {
+        console.error('Error fetching packages:', error);
         setTourPackages([]);
         setFilteredPackages([]);
         setNetworkStatus('Offline');
@@ -861,23 +874,48 @@ export default function TouristHomeScreen({ navigation }) {
                   ) : null}
                 </View>
 
-                {/* Rating row */}
+                {/* Rating and Reviews row */}
                 <View style={styles.metaRow}>
-                  {(typeof pkg.average_rating === 'number' && pkg.average_rating > 0) ? (
-                    <View style={styles.metaInline}>
-                      <Ionicons name="star" size={12} color="#FFD700" />
-                      <Text style={styles.metaInlineText} numberOfLines={1}>
-                        {pkg.average_rating.toFixed(1)} ({pkg.reviews_count || 0})
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.metaInline}>
-                      <Ionicons name="star-outline" size={12} color="#CCC" />
-                      <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
-                        No reviews
-                      </Text>
-                    </View>
-                  )}
+                  {(() => {
+                    const rating = Number(pkg.average_rating) || 0;
+                    const reviewCount = pkg.reviews_count || pkg.review_count || pkg.total_reviews || 0;
+                    
+                    return (
+                      <>
+                        {rating > 0 ? (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="star" size={12} color="#FFD700" />
+                            <Text style={styles.metaInlineText} numberOfLines={1}>
+                              {String(rating.toFixed(1))}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="star-outline" size={12} color="#CCC" />
+                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                              No rating
+                            </Text>
+                          </View>
+                        )}
+                        
+                        {reviewCount > 0 ? (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="chatbubble-outline" size={12} color="#6B2E2B" />
+                            <Text style={styles.metaInlineText} numberOfLines={1}>
+                              {String(reviewCount)} review{reviewCount !== 1 ? 's' : ''}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="chatbubble-outline" size={12} color="#CCC" />
+                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                              No reviews
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
                 </View>
 
                 {/* Bottom row: Availability + Book */}
