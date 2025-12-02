@@ -1,6 +1,6 @@
 // screens/main/NotificationScreen.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, AppState } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
@@ -158,7 +158,10 @@ export default function NotificationScreen({ navigation }) {
         <View style={styles.actionBar}>
           <TouchableOpacity style={styles.markAllBtn} onPress={async () => {
             console.log('[NotificationScreen] Mark all as read pressed');
-            await markAllAsRead();
+            const result = await markAllAsRead();
+            if (!result?.success && result?.error) {
+              console.log('[NotificationScreen] Mark all failed, but UI updated locally');
+            }
           }}>
             <Ionicons name="checkmark-done" size={16} color={MAROON} />
             <Text style={styles.markAllText}>Mark all as read</Text>

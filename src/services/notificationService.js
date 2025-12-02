@@ -108,13 +108,18 @@ class NotificationService {
         user_id: userId,
         notification_ids: notificationIds
       }, {
-        timeout: 5000,
-        retries: 0
+        timeout: 10000,
+        retries: 2
       });
-      return result?.data || { success: true };
+      
+      if (result?.success) {
+        return result.data || { success: true };
+      }
+      
+      return { success: false, error: result?.error || 'Failed to mark all as read' };
     } catch (error) {
-      console.log('[NotificationService] Mark all read failed:', error.message);
-      return { success: false, error: error.message };
+      console.log('[NotificationService] Mark all read failed:', error?.message || 'Unknown error');
+      return { success: false, error: error?.message || 'Unknown error' };
     }
   }
 
