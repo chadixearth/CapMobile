@@ -27,8 +27,8 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
   const [showDateModal, setShowDateModal] = useState(false);
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [availabilityMode, setAvailabilityMode] = useState('range');
-  const [availableFromTime, setAvailableFromTime] = useState('08:00');
-  const [availableToTime, setAvailableToTime] = useState('18:00');
+  const [availableFromTime, setAvailableFromTime] = useState('00:00');
+  const [availableToTime, setAvailableToTime] = useState('12:00');
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
@@ -416,8 +416,8 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                       onPress={() => {
                         setAvailabilityMode('range');
                         setSelectedTimeSlots([]);
-                        setAvailableFromTime('08:00');
-                        setAvailableToTime('18:00');
+                        setAvailableFromTime('00:00');
+                        setAvailableToTime('12:00');
                         setShowTimeModal(true);
                       }}
                     >
@@ -607,31 +607,31 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
-                          setAvailableFromTime('08:00');
-                          setAvailableToTime('17:00');
+                          setAvailableFromTime('00:00');
+                          setAvailableToTime('12:00');
                         }}
                       >
-                        <Text style={styles.presetText}>8AM - 5PM</Text>
+                        <Text style={styles.presetText}>12AM - 12PM</Text>
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
-                          setAvailableFromTime('09:00');
-                          setAvailableToTime('18:00');
+                          setAvailableFromTime('12:00');
+                          setAvailableToTime('00:00');
                         }}
                       >
-                        <Text style={styles.presetText}>9AM - 6PM</Text>
+                        <Text style={styles.presetText}>12PM - 12AM</Text>
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
                           setAvailableFromTime('06:00');
-                          setAvailableToTime('20:00');
+                          setAvailableToTime('18:00');
                         }}
                       >
-                        <Text style={styles.presetText}>6AM - 8PM</Text>
+                        <Text style={styles.presetText}>6AM - 6PM</Text>
                       </TouchableOpacity>
                     </View>
                   </View>

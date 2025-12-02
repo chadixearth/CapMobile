@@ -256,15 +256,12 @@ export default function DriverBookScreen({ navigation }) {
       }
 
       // Fetch data with error handling for each service
-      const fetchPromises = [
-        fetchAvailableBookings(userId).catch(err => console.warn('Available bookings failed:', err.message)),
-        fetchAvailableCustomTours(userId).catch(err => console.warn('Custom tours failed:', err.message)),
-        fetchAvailableRideBookings().catch(err => console.warn('Ride bookings failed:', err.message)),
-        fetchDriverBookings(userId).catch(err => console.warn('Driver bookings failed:', err.message)),
-        fetchDriverCustomTours(userId).catch(err => console.warn('Driver custom tours failed:', err.message))
-      ];
-      
-      await Promise.allSettled(fetchPromises);
+      // IMPORTANT: Fetch driver bookings first, then custom tours to merge properly
+      await fetchAvailableBookings(userId).catch(err => console.warn('Available bookings failed:', err.message));
+      await fetchAvailableCustomTours(userId).catch(err => console.warn('Custom tours failed:', err.message));
+      await fetchAvailableRideBookings().catch(err => console.warn('Ride bookings failed:', err.message));
+      await fetchDriverBookings(userId).catch(err => console.warn('Driver bookings failed:', err.message));
+      await fetchDriverCustomTours(userId).catch(err => console.warn('Driver custom tours failed:', err.message));
     } catch (error) {
       console.error('Error fetching bookings:', error);
       // Don't show alert for 500 errors, just set empty arrays
@@ -295,9 +292,15 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
+      // Filter out cancelled bookings - only show pending/waiting_for_driver status
+      const filteredBookings = processedBookings.filter(booking => {
+        const status = (booking.status || '').toLowerCase();
+        return status === 'pending' || status === 'waiting_for_driver';
+      });
+      
       // Fetch customer profiles for each booking with error handling
       const bookingsWithProfiles = await Promise.allSettled(
-        processedBookings.map(async (booking) => {
+        filteredBookings.map(async (booking) => {
           if (booking.customer_id) {
             try {
               const customerProfile = await getTouristProfile(booking.customer_id);
@@ -367,7 +370,13 @@ export default function DriverBookScreen({ navigation }) {
       const ridesArray = rideData.data || [];
       console.log('[DriverBookScreen] Available rides from service:', ridesArray.length);
       
-      const processedRides = ridesArray.map(ride => ({
+      // Filter out cancelled bookings - only show pending/waiting_for_driver status
+      const filteredRides = ridesArray.filter(ride => {
+        const status = (ride.status || '').toLowerCase();
+        return status === 'pending' || status === 'waiting_for_driver';
+      });
+      
+      const processedRides = filteredRides.map(ride => ({
         id: ride.id,
         package_name: 'Ride Hailing',
         booking_date: ride.created_at,
@@ -410,10 +419,14 @@ export default function DriverBookScreen({ navigation }) {
           booking_reference: tour.booking_reference || tour.reference || tour.ref || `CT-${String(tour.id).slice(0, 8)}`,
           customer_id: tour.customer_id || tour.requested_by || tour.tourist_id || null,
         }));
+        console.log('[DriverBookScreen] Custom tours mapped:', mapped.length);
 
         setDriverBookings((prev) => {
+          console.log('[DriverBookScreen] Merging custom tours. Previous bookings:', prev.length);
           const nonCustom = prev.filter((b) => b.request_type !== 'custom_tour');
-          return [...nonCustom, ...mapped];
+          const merged = [...nonCustom, ...mapped];
+          console.log('[DriverBookScreen] After merge:', merged.length, 'bookings');
+          return merged;
         });
       }
     } catch (e) {
@@ -423,18 +436,25 @@ export default function DriverBookScreen({ navigation }) {
 
   const fetchDriverBookings = async (driverId) => {
     try {
+      console.log('[DriverBookScreen] Fetching bookings for driver:', driverId);
       const bookingsData = await getDriverBookings(driverId);
+      console.log('[DriverBookScreen] Raw bookings response:', JSON.stringify(bookingsData, null, 2));
       let processedBookings = [];
       if (bookingsData?.success && Array.isArray(bookingsData?.data?.bookings)) {
         processedBookings = bookingsData.data.bookings;
+        console.log('[DriverBookScreen] Found bookings in data.bookings:', processedBookings.length);
       } else if (bookingsData?.success && Array.isArray(bookingsData?.data)) {
         processedBookings = bookingsData.data;
+        console.log('[DriverBookScreen] Found bookings in data:', processedBookings.length);
       } else if (Array.isArray(bookingsData)) {
         processedBookings = bookingsData;
+        console.log('[DriverBookScreen] Found bookings in root:', processedBookings.length);
       } else if (Array.isArray(bookingsData?.results)) {
         processedBookings = bookingsData.results;
+        console.log('[DriverBookScreen] Found bookings in results:', processedBookings.length);
       } else {
         processedBookings = [];
+        console.log('[DriverBookScreen] No bookings found in any expected location');
       }
       
       // Also fetch driver's accepted ride hailing bookings
@@ -504,6 +524,7 @@ export default function DriverBookScreen({ navigation }) {
         .filter(result => result.status === 'fulfilled')
         .map(result => result.value);
       
+      console.log('[DriverBookScreen] Setting driver bookings:', successfulBookings.length);
       setDriverBookings(successfulBookings);
     } catch (error) {
       console.error('Error fetching driver bookings:', error);
@@ -535,30 +556,6 @@ export default function DriverBookScreen({ navigation }) {
     const hasPermission = await LocationService.requestPermissions('driver');
     if (!hasPermission) {
       return; // Alert already shown by requestPermissions
-    }
-
-    // Check for schedule conflicts
-    try {
-      const { driverScheduleService } = require('../../services/driverScheduleService');
-      const conflictCheck = await driverScheduleService.checkAvailability(
-        user.id,
-        booking.booking_date,
-        booking.pickup_time || '09:00'
-      );
-
-      if (!conflictCheck.available) {
-        Alert.alert(
-          'Schedule Conflict',
-          conflictCheck.conflict_reason || 'You have a conflict at this time',
-          [
-            { text: 'OK' },
-            { text: 'View Schedule', onPress: () => navigation.navigate(Routes.DRIVER_SCHEDULE) }
-          ]
-        );
-        return;
-      }
-    } catch (error) {
-      console.log('Schedule check failed, proceeding with booking:', error);
     }
 
     setSelectedBooking(booking);
@@ -1595,11 +1592,14 @@ const getCustomTitle = (r) => (
     </View>
   );
 
-  const ongoingBookings = driverBookings.filter((booking) => {
-    const status = (booking.status || '').toLowerCase();
-    // Include all statuses that represent ongoing trips
-    return status === 'confirmed' || status === 'driver_assigned' || status === 'in_progress';
-  });
+  const ongoingBookings = React.useMemo(() => {
+    const filtered = driverBookings.filter((booking) => {
+      const status = (booking.status || '').toLowerCase();
+      return status === 'confirmed' || status === 'driver_assigned' || status === 'in_progress';
+    });
+    console.log('[DriverBookScreen] Ongoing bookings computed:', filtered.length, 'from', driverBookings.length, 'total');
+    return filtered;
+  }, [driverBookings]);
   const historyBookings = driverBookings.filter((booking) => {
     const status = (booking.status || '').toLowerCase();
     return status === 'completed' || status === 'cancelled';

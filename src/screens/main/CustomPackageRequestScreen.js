@@ -35,6 +35,7 @@ export default function CustomPackageRequestScreen({ navigation }) {
   // Custom tour fields
   const [destination, setDestination] = useState('');
   const [preferredDurationHours, setPreferredDurationHours] = useState('');
+  const [preferredDurationMinutes, setPreferredDurationMinutes] = useState('');
   const [preferredDate, setPreferredDate] = useState(null);
   
   // Special event fields
@@ -89,6 +90,19 @@ export default function CustomPackageRequestScreen({ navigation }) {
       Alert.alert('Validation Error', 'Please enter a destination');
       return false;
     }
+    
+    const hours = parseInt(preferredDurationHours) || 0;
+    const minutes = parseInt(preferredDurationMinutes) || 0;
+    
+    if (hours > 24) {
+      Alert.alert('Validation Error', 'Duration cannot exceed 24 hours');
+      return false;
+    }
+    if (minutes > 59) {
+      Alert.alert('Validation Error', 'Minutes cannot exceed 59');
+      return false;
+    }
+    
     if (!numberOfPax || parseInt(numberOfPax) < 1) {
       Alert.alert('Validation Error', 'Please enter a valid number of passengers');
       return false;
@@ -176,7 +190,8 @@ export default function CustomPackageRequestScreen({ navigation }) {
           customer_id: user.id,
           pickup_location: pickupLocation.trim(),
           destination: destination.trim(),
-          preferred_duration_hours: preferredDurationHours ? parseInt(preferredDurationHours) : null,
+          preferred_duration_hours: preferredDurationHours ? parseInt(preferredDurationHours) : 0,
+          preferred_duration_minutes: preferredDurationMinutes ? parseInt(preferredDurationMinutes) : 0,
           number_of_pax: parseInt(numberOfPax),
           preferred_date: preferredDate ? (typeof preferredDate === 'string' ? preferredDate : preferredDate.toISOString().split('T')[0]) : null,
           special_requests: specialRequests.trim(),
@@ -239,15 +254,32 @@ export default function CustomPackageRequestScreen({ navigation }) {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Duration (hours)</Text>
-        <TextInput
-          style={styles.input}
-          value={preferredDurationHours}
-          onChangeText={setPreferredDurationHours}
-          placeholder="How many hours? (optional)"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-        />
+        <Text style={styles.label}>Duration</Text>
+        <View style={styles.rowContainer}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <TextInput
+              style={styles.input}
+              value={preferredDurationHours}
+              onChangeText={setPreferredDurationHours}
+              placeholder="Hours (max 24)"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              maxLength={2}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <TextInput
+              style={styles.input}
+              value={preferredDurationMinutes}
+              onChangeText={setPreferredDurationMinutes}
+              placeholder="Minutes (max 59)"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              maxLength={2}
+            />
+          </View>
+        </View>
+        <Text style={styles.helperText}>Leave blank if unsure</Text>
       </View>
 
       <View style={styles.inputGroup}>
@@ -676,5 +708,11 @@ const styles = StyleSheet.create({
   },
   submitContainer: {
     marginTop: 20,
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });

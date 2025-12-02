@@ -55,7 +55,9 @@ export default function GoodsServicesScreen() {
   const dot2Anim = useRef(new Animated.Value(1)).current;
   const dot3Anim = useRef(new Animated.Value(1)).current;
   
-  const isDriverOrOwner = auth.user?.role === 'driver' || auth.user?.role === 'owner';
+  const isDriverOrOwner = auth.user?.role === 'driver' || auth.user?.role === 'owner' || auth.user?.role === 'package_owner';
+  
+  console.log('GoodsServicesScreen - User role:', auth.user?.role, 'Can add goods/services:', isDriverOrOwner);
 
   const formatDateTime = (d) => {
     if (!d) return '';
@@ -267,9 +269,22 @@ export default function GoodsServicesScreen() {
   }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
   const handleSaveProfile = async () => {
-    if (!auth.user?.id) return;
+    if (!auth.user?.id) {
+      Alert.alert('Error', 'User not logged in');
+      return;
+    }
+    
+    if (!editDescription.trim() && selectedImages.length === 0) {
+      Alert.alert('Required', 'Please add a description or at least one photo');
+      return;
+    }
+    
     setSaving(true);
     try {
+      console.log('Saving profile for user:', auth.user.id);
+      console.log('Description:', editDescription);
+      console.log('Selected images:', selectedImages.length);
+      
       // Get existing media URLs
       let existingMedia = [];
       if (userProfile?.media && Array.isArray(userProfile.media)) {
@@ -282,16 +297,20 @@ export default function GoodsServicesScreen() {
       
       // Upload new images if any selected
       if (selectedImages.length > 0) {
+        console.log('Uploading', selectedImages.length, 'new images...');
         try {
           const uploadRes = await uploadGoodsServicesMedia(auth.user.id, selectedImages);
+          console.log('Upload result:', uploadRes);
+          
           if (!uploadRes.success) {
-            Alert.alert('Warning', 'Some images failed to upload, but profile will be saved.');
-            return;
+            Alert.alert('Warning', 'Some images failed to upload. Profile will be saved without new photos.');
+          } else {
+            newMediaUrls = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
+            console.log('Successfully uploaded', newMediaUrls.length, 'images');
           }
-          newMediaUrls = uploadRes.urls ? uploadRes.urls.map((url) => ({ url, type: 'image' })) : [];
-        } catch {
-          Alert.alert('Warning', 'Failed to upload photos. Please try again.');
-          return;
+        } catch (uploadError) {
+          console.error('Upload error:', uploadError);
+          Alert.alert('Warning', 'Failed to upload photos. Profile will be saved without new photos.');
         }
       }
       
@@ -381,7 +400,10 @@ export default function GoodsServicesScreen() {
       const images = await photoService.pickMultipleImages(capacity);
       
       if (images && images.length > 0) {
+        console.log('Selected images:', images);
         setSelectedImages(prev => [...prev, ...images]);
+      } else if (images === null) {
+        console.log('Image selection cancelled or permission denied');
       }
     } catch (error) {
       console.error('Image picker error:', error);

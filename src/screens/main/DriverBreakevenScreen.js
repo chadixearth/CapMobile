@@ -28,7 +28,7 @@ import { supabase } from '../../services/supabase';
 
 import { getDriverEarningsStats } from '../../services/Earnings/EarningsService';
 import BreakevenNotificationManager from '../../services/breakeven';
-import { exportBreakevenImage } from '../../services/pdfExportService';
+import { exportBreakevenReport } from '../../services/pdfExportService';
 
 import {
   getBreakeven,

@@ -1,15 +1,17 @@
 // Standardized time constants across the app
+// Day starts at 12 AM (00:00) and ends at 12 AM next day (24:00)
 export const TIME_SLOTS = [
+  '00:00', '01:00', '02:00', '03:00', '04:00', '05:00',
   '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
   '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
-  '18:00', '19:00', '20:00'
+  '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
 ];
 
 export const formatTime = (timeString) => {
   const [hours, minutes] = timeString.split(':');
   const hour = parseInt(hours);
   const ampm = hour >= 12 ? 'PM' : 'AM';
-  const displayHour = hour % 12 || 12;
+  const displayHour = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
   return `${displayHour}:${minutes} ${ampm}`;
 };
 
@@ -45,6 +47,6 @@ export const getValidTimeSlotsForDate = (dateString) => {
   const currentHour = today.getHours();
   return TIME_SLOTS.filter(time => {
     const hour = parseInt(time.split(':')[0]);
-    return hour > currentHour;
+    return hour >= currentHour;
   });
 };

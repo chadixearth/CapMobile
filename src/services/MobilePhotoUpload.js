@@ -323,11 +323,13 @@ export default class MobilePhotoUpload {
         for (const asset of pickerResult.assets) {
           const validation = this._validateImage(asset);
           if (validation.isValid) {
+            const fileExtension = asset.uri.split('.').pop() || 'jpg';
             validatedImages.push({
               uri: asset.uri,
               width: asset.width,
               height: asset.height,
-              fileSize: asset.fileSize
+              fileSize: asset.fileSize,
+              name: `photo_${Date.now()}_${validatedImages.length}.${fileExtension}`
             });
           } else {
             Alert.alert('Invalid Image', validation.error);

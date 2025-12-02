@@ -85,7 +85,10 @@ class LocationService {
     }
 
     const hasPermission = await this.requestPermissions(userRole);
-    if (!hasPermission) return false;
+    if (!hasPermission) {
+      this.isTracking = false;
+      return false;
+    }
 
     try {
       // Check if location services are enabled
@@ -238,6 +241,18 @@ class LocationService {
   // Check if location tracking is active
   static isLocationTrackingActive() {
     return this.isTracking && this.locationWatcher !== null;
+  }
+
+  // Check actual device location permission status
+  static async checkDeviceLocationStatus() {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      return status === 'granted' && isEnabled;
+    } catch (error) {
+      console.error('Error checking device location status:', error);
+      return false;
+    }
   }
   
   // Get location sharing status for driver

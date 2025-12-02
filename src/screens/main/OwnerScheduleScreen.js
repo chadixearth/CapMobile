@@ -38,10 +38,10 @@ export default function OwnerScheduleScreen({ navigation }) {
       const result = await getAllCustomRequests({ request_type: 'special_event' });
       
       if (result.success) {
-        // Filter events accepted by this owner
+        // Filter events accepted by this owner (include cancelled for history)
         const ownerEvents = result.data.filter(event => 
           event.owner_id === user.id && 
-          ['owner_accepted', 'in_progress', 'completed'].includes(event.status)
+          ['owner_accepted', 'in_progress', 'completed', 'cancelled'].includes(event.status)
         );
         setCalendar(ownerEvents);
       } else {
@@ -163,6 +163,7 @@ export default function OwnerScheduleScreen({ navigation }) {
       case 'owner_accepted': return '#2E7D32';
       case 'in_progress': return '#1565C0';
       case 'completed': return '#4CAF50';
+      case 'cancelled': return '#D32F2F';
       default: return '#666';
     }
   };

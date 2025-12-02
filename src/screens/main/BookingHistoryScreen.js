@@ -104,8 +104,13 @@ export default function BookingHistoryScreen({ navigation }) {
         allBookings = [...allBookings, ...rideBookings];
       }
       
-      // Sort by created_at descending
-      allBookings.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      // Sort by created_at descending, then by status (completed/cancelled first)
+      allBookings.sort((a, b) => {
+        const dateCompare = new Date(b.created_at) - new Date(a.created_at);
+        if (dateCompare !== 0) return dateCompare;
+        const statusOrder = { 'completed': 0, 'cancelled': 1, 'confirmed': 2, 'in_progress': 3, 'driver_assigned': 4, 'pending': 5, 'no_driver_available': 6 };
+        return (statusOrder[a.status] || 7) - (statusOrder[b.status] || 7);
+      });
       
       setBookings(allBookings);
       
@@ -203,8 +208,11 @@ export default function BookingHistoryScreen({ navigation }) {
     switch (status) {
       case 'completed': return '#2E7D32';
       case 'confirmed': return '#1976D2';
+      case 'driver_assigned': return '#1976D2';
+      case 'in_progress': return '#F57C00';
       case 'pending': return '#F57C00';
       case 'cancelled': return '#D32F2F';
+      case 'no_driver_available': return '#D32F2F';
       default: return '#666';
     }
   };
@@ -212,10 +220,26 @@ export default function BookingHistoryScreen({ navigation }) {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed': return 'checkmark-circle';
-      case 'confirmed': return 'time';
+      case 'confirmed': return 'checkmark-done';
+      case 'driver_assigned': return 'person-circle';
+      case 'in_progress': return 'navigate';
       case 'pending': return 'hourglass';
       case 'cancelled': return 'close-circle';
+      case 'no_driver_available': return 'alert-circle';
       default: return 'help-circle';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'completed': return 'Completed';
+      case 'confirmed': return 'Confirmed';
+      case 'driver_assigned': return 'Driver Assigned';
+      case 'in_progress': return 'In Progress';
+      case 'pending': return 'Pending';
+      case 'cancelled': return 'Cancelled';
+      case 'no_driver_available': return 'No Driver Available';
+      default: return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
 
@@ -328,7 +352,7 @@ export default function BookingHistoryScreen({ navigation }) {
               color={getStatusColor(booking.status)} 
             />
             <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+              {getStatusLabel(booking.status)}
             </Text>
           </View>
         </View>
@@ -416,6 +440,22 @@ export default function BookingHistoryScreen({ navigation }) {
                 <Text style={styles.reviewCompletedText}>Reviews completed</Text>
               </View>
             )}
+          </View>
+        )}
+
+        {/* Cancelled Notice */}
+        {booking.status === 'cancelled' && (
+          <View style={styles.cancelledSection}>
+            <Ionicons name="close-circle" size={16} color="#D32F2F" />
+            <Text style={styles.cancelledText}>This booking was cancelled</Text>
+          </View>
+        )}
+
+        {/* No Driver Available Notice */}
+        {booking.status === 'no_driver_available' && (
+          <View style={styles.cancelledSection}>
+            <Ionicons name="alert-circle" size={16} color="#D32F2F" />
+            <Text style={styles.cancelledText}>No driver accepted - you can rebook</Text>
           </View>
         )}
       </View>
@@ -640,7 +680,6 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    // marginTop: 100
   },
   loadingLogo: {
     width: 230,
@@ -817,5 +856,20 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontSize: 14,
     fontWeight: '500',
+  },
+  cancelledSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  cancelledText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#D32F2F',
   },
 });

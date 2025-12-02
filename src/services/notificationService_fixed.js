@@ -97,27 +97,6 @@ class NotificationService {
     }
   }
 
-  static async markAllAsRead(userId, notifications) {
-    try {
-      if (!notifications || notifications.length === 0) {
-        return { success: true, message: 'No notifications to mark' };
-      }
-      
-      const notificationIds = notifications.map(n => n.id);
-      const result = await networkClient.put('/notifications/mark-all-read/', {
-        user_id: userId,
-        notification_ids: notificationIds
-      }, {
-        timeout: 5000,
-        retries: 0
-      });
-      return result?.data || { success: true };
-    } catch (error) {
-      console.log('[NotificationService] Mark all read failed:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
   static async startPolling(userId, callback) {
     if (this.pollingInterval) {
       this.stopPolling();
@@ -139,6 +118,7 @@ class NotificationService {
       }
     });
     
+    // Poll every 30 seconds
     this.pollingInterval = setInterval(async () => {
       try {
         if (this.isCircuitOpen) {
@@ -227,6 +207,7 @@ class NotificationService {
       }
     }, 30000);
 
+    // Initial load
     this.getNotifications(userId).then(result => {
       if (result.success && callback) {
         callback(result.data || []);
@@ -320,7 +301,7 @@ class NotificationService {
       const bookingDate = bookingData.booking_date ? new Date(bookingData.booking_date).toLocaleDateString() : 'TBD';
       
       const result = await networkClient.post('/notifications/', {
-        user_ids: [],
+        user_ids: [], // Backend will handle driver lookup
         title: 'New Booking Request! 🚗',
         message: `${touristName} needs a driver for ${packageName} (${paxCount} pax). Pickup: ${pickupTime} on ${bookingDate}. Tap to accept!`,
         type: 'booking',
@@ -357,166 +338,6 @@ class NotificationService {
       return result;
     } catch (error) {
       console.error('[NotificationService] Tourist notification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  static async notifyTouristOfCancelledBooking(touristId, reason, bookingData) {
-    try {
-      console.log('[NotificationService] Notifying tourist of cancellation');
-      
-      if (!touristId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(touristId)) {
-        console.warn('[NotificationService] Invalid tourist ID:', touristId);
-        return { success: false, error: 'Invalid tourist ID' };
-      }
-      
-      const result = await networkClient.post('/notifications/', {
-        user_ids: [touristId],
-        title: 'Booking Cancelled ❌',
-        message: `Your booking has been cancelled. ${reason || 'Please contact support for more details.'}`,
-        type: 'booking',
-        role: 'tourist'
-      });
-      
-      console.log('[NotificationService] Cancellation notification result:', result);
-      return result;
-    } catch (error) {
-      console.error('[NotificationService] Cancellation notification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  static async notifyOwnersOfNewSpecialEvent(eventData) {
-    try {
-      console.log('[NotificationService] Notifying owners of special event:', eventData.id);
-      
-      const customerName = eventData.customer_name || 'A customer';
-      const eventType = eventData.event_type || 'special event';
-      const paxCount = eventData.number_of_pax || 1;
-      const eventDate = eventData.event_date ? new Date(eventData.event_date).toLocaleDateString() : 'TBD';
-      const eventTime = eventData.event_time || 'TBD';
-      
-      const result = await networkClient.post('/notifications/', {
-        user_ids: [],
-        title: 'New Special Event Request! 🎉',
-        message: `${customerName} needs a carriage for ${eventType} (${paxCount} pax). Date: ${eventDate} at ${eventTime}. Tap to accept!`,
-        type: 'booking',
-        role: 'owner'
-      });
-      
-      console.log('[NotificationService] Owner notification result:', result);
-      return result;
-      
-    } catch (error) {
-      console.error('[NotificationService] Owner notification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  static async notifyOwnerOfCarriageIssue(ownerId, carriageData, issueType, description) {
-    try {
-      console.log('[NotificationService] Notifying owner of carriage issue:', carriageData.id);
-      
-      const carriageName = carriageData.carriage_code || carriageData.code || `TC${carriageData.id}`;
-      const driverName = carriageData.driver_name || carriageData.assigned_driver || 'Driver';
-      
-      let title, message;
-      switch (issueType) {
-        case 'maintenance':
-          title = 'Carriage Maintenance Required 🔧';
-          message = `${carriageName} needs maintenance. Driver ${driverName} reported: ${description}. Please schedule service.`;
-          break;
-        case 'accident':
-          title = 'Carriage Incident Report ⚠️';
-          message = `${carriageName} was involved in an incident. Driver ${driverName} is safe. Details: ${description}. Please contact driver.`;
-          break;
-        case 'breakdown':
-          title = 'Carriage Breakdown 🚫';
-          message = `${carriageName} has broken down. Driver ${driverName} needs assistance. Location: ${description}. Please provide support.`;
-          break;
-        default:
-          title = 'Carriage Issue Report 📋';
-          message = `${carriageName} has an issue reported by ${driverName}. Details: ${description}. Please review.`;
-      }
-      
-      const result = await networkClient.post('/notifications/', {
-        user_ids: [ownerId],
-        title: title,
-        message: message,
-        type: 'booking',
-        role: 'owner'
-      });
-      
-      console.log('[NotificationService] Owner carriage issue notification result:', result);
-      return result;
-    } catch (error) {
-      console.error('[NotificationService] Carriage issue notification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  static async notifyOwnerOfPaymentReceived(ownerId, bookingData, paymentAmount) {
-    try {
-      console.log('[NotificationService] Notifying owner of payment received:', bookingData.id);
-      
-      const customerName = bookingData.customer_name || 'Customer';
-      const packageName = bookingData.package_name || 'tour';
-      const carriageName = bookingData.carriage_code || 'your carriage';
-      
-      const result = await networkClient.post('/notifications/', {
-        user_ids: [ownerId],
-        title: 'Payment Received! 💰',
-        message: `Payment of ₱${paymentAmount.toLocaleString()} received from ${customerName} for ${packageName} using ${carriageName}. Earnings will be processed.`,
-        type: 'payment',
-        role: 'owner'
-      });
-      
-      console.log('[NotificationService] Owner payment notification result:', result);
-      return result;
-    } catch (error) {
-      console.error('[NotificationService] Payment notification failed:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  static async notifyOwnerOfDriverPerformance(ownerId, driverData, performanceIssue) {
-    try {
-      console.log('[NotificationService] Notifying owner of driver performance issue:', driverData.id);
-      
-      const driverName = driverData.name || driverData.driver_name || 'Driver';
-      const carriageName = driverData.carriage_code || 'assigned carriage';
-      
-      let title, message;
-      switch (performanceIssue.type) {
-        case 'cancellation_rate':
-          title = 'Driver Performance Alert 📊';
-          message = `${driverName} (${carriageName}) has a high cancellation rate: ${performanceIssue.rate}%. Consider reviewing their performance.`;
-          break;
-        case 'customer_complaint':
-          title = 'Customer Complaint 📝';
-          message = `Customer complaint received about ${driverName} (${carriageName}). Reason: ${performanceIssue.reason}. Please address with driver.`;
-          break;
-        case 'late_arrivals':
-          title = 'Punctuality Issue ⏰';
-          message = `${driverName} (${carriageName}) has been frequently late. Recent incidents: ${performanceIssue.count}. Please discuss punctuality.`;
-          break;
-        default:
-          title = 'Driver Performance Notice 📋';
-          message = `Performance issue noted for ${driverName} (${carriageName}). Details: ${performanceIssue.description}. Please review.`;
-      }
-      
-      const result = await networkClient.post('/notifications/', {
-        user_ids: [ownerId],
-        title: title,
-        message: message,
-        type: 'booking',
-        role: 'owner'
-      });
-      
-      console.log('[NotificationService] Owner driver performance notification result:', result);
-      return result;
-    } catch (error) {
-      console.error('[NotificationService] Driver performance notification failed:', error);
       return { success: false, error: error.message };
     }
   }

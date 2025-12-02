@@ -1,6 +1,6 @@
 // components/BreakevenChart.js
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Dimensions, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../styles/global';
 
@@ -71,6 +71,18 @@ function niceCeil(n, isDailyData = false) {
 }
 
 export default function BreakevenChart({ data = [], currentData = null, timeZone = TIME_ZONE, frequency = 'Daily', onExportPDF }) {
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exporting || !onExportPDF) return;
+    setExporting(true);
+    try {
+      await onExportPDF();
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Merge + sort + de-dup (currentData overrides same period)
   const series = useMemo(() => {
     const map = new Map();
@@ -118,8 +130,16 @@ export default function BreakevenChart({ data = [], currentData = null, timeZone
     <View style={styles.container}>
       <View style={styles.titleContainer}>
         <Text style={styles.title}>Breakeven Report — Earnings vs Expenses</Text>
-        <TouchableOpacity style={styles.pdfButton} onPress={onExportPDF}>
-          <Ionicons name="document-text" size={20} color={colors.primary} />
+        <TouchableOpacity 
+          style={[styles.pdfButton, exporting && styles.pdfButtonDisabled]} 
+          onPress={handleExport}
+          disabled={exporting}
+        >
+          {exporting ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name="document-text" size={20} color={colors.primary} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -306,6 +326,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 6,
+  },
+  pdfButtonDisabled: {
+    opacity: 0.6,
   },
   chartRow: {
     flexDirection: 'row',

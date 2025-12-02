@@ -738,6 +738,21 @@ export async function loginUser(email, password, allowedRoles = null) {
       };
     }
     
+    // Auto-cancel deletion if user was scheduled for deletion and is now logging in
+    let deletionCancelled = apiResult.data.deletion_cancelled || false;
+    if (apiResult.data.user?.account_status === 'scheduled_for_deletion' && !deletionCancelled) {
+      console.log('[authService] User has scheduled_for_deletion status - attempting auto-cancel');
+      const cancelResult = await apiRequest('/auth/cancel-deletion/', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: apiResult.data.user.id }),
+      });
+      if (cancelResult.success && cancelResult.data?.success) {
+        deletionCancelled = true;
+        apiResult.data.user.account_status = 'active';
+        console.log('[authService] Auto-cancelled deletion on login');
+      }
+    }
+    
     // Store session data with proper token handling
     const sessionData = {
       access_token: apiResult.data.session?.access_token || apiResult.data.jwt?.token,
@@ -748,7 +763,7 @@ export async function loginUser(email, password, allowedRoles = null) {
     console.log('[authService] Session stored with token:', sessionData.access_token ? 'YES' : 'NO');
 
     // Log deletion cancellation if it occurred
-    if (apiResult.data.deletion_cancelled) {
+    if (deletionCancelled) {
       console.log('[authService] Account deletion was automatically cancelled on login');
     }
 
@@ -763,7 +778,7 @@ export async function loginUser(email, password, allowedRoles = null) {
       user: apiResult.data.user,
       session: apiResult.data.session,
       message: apiResult.data.message,
-      deletion_cancelled: apiResult.data.deletion_cancelled,
+      deletion_cancelled: deletionCancelled,
       account_reactivated: apiResult.data.account_reactivated,
       deletion_info: apiResult.data.deletion_info,
       force_password_change: forcePasswordChange,

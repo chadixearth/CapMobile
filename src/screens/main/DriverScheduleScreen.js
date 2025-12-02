@@ -39,8 +39,8 @@ export default function DriverScheduleScreen({ navigation }) {
   const [showModal, setShowModal] = useState(false);
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [availabilityMode, setAvailabilityMode] = useState('range'); // 'range' or 'custom'
-  const [availableFromTime, setAvailableFromTime] = useState('08:00');
-  const [availableToTime, setAvailableToTime] = useState('18:00');
+  const [availableFromTime, setAvailableFromTime] = useState('00:00');
+  const [availableToTime, setAvailableToTime] = useState('12:00');
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
@@ -182,7 +182,10 @@ export default function DriverScheduleScreen({ navigation }) {
   const getBookingsForDate = (day) => {
     if (!day) return [];
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return calendar.filter(booking => booking.booking_date === dateStr);
+    return calendar.filter(booking => booking.booking_date === dateStr).sort((a, b) => {
+      const statusOrder = { 'confirmed': 0, 'cancelled': 1 };
+      return (statusOrder[a.status] || 2) - (statusOrder[b.status] || 2);
+    });
   };
 
   const getAvailabilityForDate = (day) => {
@@ -515,8 +518,8 @@ export default function DriverScheduleScreen({ navigation }) {
                         // Reset modal states
                         setAvailabilityMode('range');
                         setSelectedTimeSlots([]);
-                        setAvailableFromTime('08:00');
-                        setAvailableToTime('18:00');
+                        setAvailableFromTime('00:00');
+                        setAvailableToTime('12:00');
                         setShowTimeModal(true);
                       }}
                     >
@@ -613,6 +616,12 @@ export default function DriverScheduleScreen({ navigation }) {
                       <Ionicons name="arrow-forward" size={16} color="#fff" />
                     </TouchableOpacity>
                   )}
+                  {booking.status === 'cancelled' && (
+                    <View style={styles.cancelledNotice}>
+                      <Ionicons name="information-circle-outline" size={16} color="#d32f2f" />
+                      <Text style={styles.cancelledNoticeText}>This booking was cancelled</Text>
+                    </View>
+                  )}
                 </View>
               )) : (
                 <View style={styles.noBookingsContainer}>
@@ -699,31 +708,31 @@ export default function DriverScheduleScreen({ navigation }) {
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
-                          setAvailableFromTime('08:00');
-                          setAvailableToTime('17:00');
+                          setAvailableFromTime('00:00');
+                          setAvailableToTime('12:00');
                         }}
                       >
-                        <Text style={styles.presetText}>8AM - 5PM</Text>
+                        <Text style={styles.presetText}>12AM - 12PM</Text>
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
-                          setAvailableFromTime('09:00');
-                          setAvailableToTime('18:00');
+                          setAvailableFromTime('12:00');
+                          setAvailableToTime('00:00');
                         }}
                       >
-                        <Text style={styles.presetText}>9AM - 6PM</Text>
+                        <Text style={styles.presetText}>12PM - 12AM</Text>
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
                         style={styles.presetBtn}
                         onPress={() => {
                           setAvailableFromTime('06:00');
-                          setAvailableToTime('20:00');
+                          setAvailableToTime('18:00');
                         }}
                       >
-                        <Text style={styles.presetText}>6AM - 8PM</Text>
+                        <Text style={styles.presetText}>6AM - 6PM</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1729,5 +1738,21 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 20
+  },
+  cancelledNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6
+  },
+  cancelledNoticeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#d32f2f'
   }
 });

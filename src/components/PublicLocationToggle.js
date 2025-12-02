@@ -1,16 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Switch, StyleSheet } from 'react-native';
+import * as Location from 'expo-location';
 import LocationService from '../services/locationService';
 import { getSession } from '../services/authService';
 
 const PublicLocationToggle = () => {
   const [isEnabled, setIsEnabled] = useState(false);
   const [userId, setUserId] = useState(null);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
     loadUser();
-    checkStatus();
   }, []);
+
+  useEffect(() => {
+    if (userId) {
+      checkStatus();
+      startRealTimeListener();
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [userId]);
+
+  const startRealTimeListener = () => {
+    intervalRef.current = setInterval(async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        const isEnabled = await Location.hasServicesEnabledAsync();
+        const isActive = status === 'granted' && isEnabled;
+        setIsEnabled(isActive);
+        if (!isActive && LocationService.isLocationTrackingActive()) {
+          LocationService.stopTracking();
+        }
+      } catch (error) {
+        console.error('Error checking location:', error);
+      }
+    }, 500);
+  };
 
   const loadUser = async () => {
     const session = await getSession();
@@ -19,18 +46,15 @@ const PublicLocationToggle = () => {
     }
   };
 
-  const checkStatus = () => {
-    setIsEnabled(LocationService.isLocationTrackingActive());
+  const checkStatus = async () => {
+    const isActive = await LocationService.checkDeviceLocationStatus();
+    setIsEnabled(isActive);
   };
 
   const toggleLocation = async (value) => {
     if (value) {
       const success = await LocationService.startDriverLocationTracking(userId, 'driver');
       setIsEnabled(success);
-      if (!success) {
-        // If failed, recheck status to ensure UI is in sync
-        setTimeout(() => checkStatus(), 500);
-      }
     } else {
       LocationService.stopTracking();
       setIsEnabled(false);

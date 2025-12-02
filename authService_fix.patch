@@ -1,0 +1,51 @@
+--- LOCATION: Line 1050-1070 in authService.js
+--- CHANGE: Move session storage BEFORE auto-cancel deletion logic
+
+OLD CODE:
+    // Auto-cancel deletion if user was scheduled for deletion and is now logging in
+    let deletionCancelled = apiResult.data.deletion_cancelled || false;
+    if (apiResult.data.user?.account_status === 'scheduled_for_deletion' && !deletionCancelled) {
+      console.log('[authService] User has scheduled_for_deletion status - attempting auto-cancel');
+      const cancelResult = await apiRequest('/auth/cancel-deletion/', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: apiResult.data.user.id }),
+      });
+      if (cancelResult.success && cancelResult.data?.success) {
+        deletionCancelled = true;
+        apiResult.data.user.account_status = 'active';
+        console.log('[authService] Auto-cancelled deletion on login');
+      }
+    }
+    
+    // Store session data with proper token handling
+    const sessionData = {
+      access_token: apiResult.data.session?.access_token || apiResult.data.jwt?.token,
+      refresh_token: apiResult.data.session?.refresh_token || apiResult.data.jwt?.refresh_token,
+      user: apiResult.data.user,
+    };
+    await storeSession(sessionData);
+
+NEW CODE:
+    // Store session data with proper token handling
+    const sessionData = {
+      access_token: apiResult.data.session?.access_token || apiResult.data.jwt?.token,
+      refresh_token: apiResult.data.session?.refresh_token || apiResult.data.jwt?.refresh_token,
+      user: apiResult.data.user,
+    };
+    await storeSession(sessionData);
+    
+    // Auto-cancel deletion if user was scheduled for deletion and is now logging in
+    let deletionCancelled = apiResult.data.deletion_cancelled || false;
+    if (apiResult.data.user?.account_status === 'scheduled_for_deletion' && !deletionCancelled) {
+      console.log('[authService] User has scheduled_for_deletion status - attempting auto-cancel');
+      const cancelResult = await apiRequest('/auth/cancel-deletion/', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: apiResult.data.user.id }),
+      });
+      if (cancelResult.success && cancelResult.data?.success) {
+        deletionCancelled = true;
+        sessionData.user.account_status = 'active';
+        await storeSession(sessionData);
+        console.log('[authService] Auto-cancelled deletion on login');
+      }
+    }
