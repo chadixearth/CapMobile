@@ -500,9 +500,8 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         {assignedCarriages.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>My Carriages ({assignedCarriages.length})</Text>
-            <View style={assignedCarriages.length === 1 ? styles.singleCarriageContainer : styles.carriageGrid}>
             {assignedCarriages.map((carriage) => (
-              <View key={carriage.id} style={[styles.carriageCard, assignedCarriages.length === 1 ? styles.fullWidthCard : styles.gridCard]}>
+              <View key={carriage.id} style={styles.carriageCard}>
                 <View style={styles.carriageHeader}>
                   <View style={styles.carriageInfo}>
                     <Text style={styles.plateNumber}>{carriage.plate_number}</Text>
@@ -510,10 +509,19 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                       Owner: {getOwnerName(carriage)}
                     </Text>
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(carriage.status) + '20' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(carriage.status) }]}>
-                      {getStatusText(carriage.status)}
-                    </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(carriage.status) + '20', alignItems: 'center' }]}>
+                      <Text style={[styles.statusText, { color: getStatusColor(carriage.status) }]}>
+                        {getStatusText(carriage.status)}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: carriage.eligibility === 'eligible' ? '#ECFDF5' : '#FEF2F2', alignItems: 'center' }]}>
+                      <Text style={[styles.statusText, { 
+                        color: carriage.eligibility === 'eligible' ? '#10B981' : '#EF4444' 
+                      }]}>
+                        {carriage.eligibility === 'eligible' ? 'Eligible' : 'Not Eligible'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -597,7 +605,6 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
                 </View>
               </View>
             ))}
-            </View>
           </>
         )}
 
