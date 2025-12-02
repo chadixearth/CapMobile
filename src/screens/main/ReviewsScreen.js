@@ -23,7 +23,7 @@ const CARD = '#FFFFFF';
 function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
-  const [activeTab, setActiveTab] = useState(user?.role === 'tourist' ? 'given' : 'received');
+  const [activeTab, setActiveTab] = useState('given');
   const isTourist = user?.role === 'tourist';
   const isDriverOrOwner = user?.role === 'driver' || user?.role === 'driver-owner' || user?.role === 'owner';
   const [reviews, setReviews] = useState([]);
@@ -218,19 +218,7 @@ function ReviewsScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Tabs - Only show for tourists */}
-      {isTourist && (
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'given' && styles.activeTab]}
-            onPress={() => setActiveTab('given')}
-          >
-            <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
-              Given
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {/* Content */}
       <ScrollView
@@ -263,7 +251,7 @@ function ReviewsScreen({ navigation }) {
             <Text style={styles.emptyTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyText}>
               {isTourist
-                ? 'You haven\'t given any reviews yet. Complete a booking to leave a review!'
+                ? 'You haven\'t submitted any reviews yet. Complete a tour or ride to leave your first review!'
                 : 'You haven\'t received any reviews yet. Complete rides to get reviews from tourists.'}
             </Text>
           </View>

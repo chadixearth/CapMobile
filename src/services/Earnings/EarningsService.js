@@ -93,11 +93,7 @@ function parseDateSafely(v) {
 async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso') {
   let q = supabase
     .from('earnings')
-<<<<<<< HEAD
     .select('id, booking_id, amount, status, earning_date, driver_id, package_name');
-=======
-    .select('id, amount, status, earning_date, driver_id, package_name');
->>>>>>> 1167e333da1db7f20f75b6e0775c2efc81557bfa
 
   q = q.eq('driver_id', String(driverId));
 
