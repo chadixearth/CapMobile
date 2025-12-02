@@ -199,26 +199,16 @@ export async function createBooking(bookingData) {
       
       // Handle availability errors - but allow booking to proceed
       const isAvailabilityError = /not available on|driver not available|schedule not set|Tour package is not available|Driver is not available/i.test(err?.message || '');
-      if (isAvailabilityError) {
-        console.log('Driver availability issue detected, but allowing booking to proceed as pending');
-        // Instead of blocking the booking, we'll let it go through as pending
-        // The backend should create the booking and notify drivers
-        // If no driver accepts after some time, then we can suggest alternatives
-        
+      if (isAvailabilityError && i < 2) {
+        console.log('Driver availability issue detected, retrying with pending status');
         // Try to force the booking through with pending status
         if (currentPayload.status !== 'pending') {
           currentPayload = { ...currentPayload, status: 'pending' };
           console.log('Retrying booking with pending status despite availability issue');
           continue;
         }
-        
-        // If we already tried with pending status, still try to create the booking
-        // The backend should allow pending bookings even without driver availability
-        console.log('Forcing booking creation despite availability issues');
-        
-        // Don't throw an error - let the booking attempt continue
-        // The backend should handle this gracefully
-        continue;
+        // If we already tried with pending status twice, stop retrying
+        console.log('Already tried with pending status, stopping retries');
       }
       
       if (isStatusCheck && currentPayload.status === 'pending') {

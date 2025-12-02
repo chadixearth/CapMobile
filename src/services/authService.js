@@ -583,6 +583,17 @@ export async function loginUser(email, password, allowedRoles = null) {
     };
   }
   
+  // Get stored device fingerprint if available
+  let storedDeviceFingerprint = null;
+  try {
+    storedDeviceFingerprint = await AsyncStorage.getItem('device_fingerprint');
+    if (storedDeviceFingerprint) {
+      console.log('[authService] Found stored device fingerprint:', storedDeviceFingerprint);
+    }
+  } catch (error) {
+    console.log('[authService] No stored device fingerprint found');
+  }
+  
   // Clear any existing session before login attempt
   await clearStoredSession();
   console.log('[authService] Cleared existing session before login');
@@ -604,6 +615,7 @@ export async function loginUser(email, password, allowedRoles = null) {
         email,
         password,
         allowed_roles: allowedRoles,
+        device_fingerprint: storedDeviceFingerprint,
       }),
       signal: controller.signal,
     });

@@ -100,6 +100,12 @@ const DeviceVerificationScreen = ({ navigation, route }) => {
           await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
         }
         
+        // Store device fingerprint for future logins
+        if (device_fingerprint) {
+          await AsyncStorage.setItem('device_fingerprint', device_fingerprint);
+          console.log('[DeviceVerification] Device fingerprint stored:', device_fingerprint);
+        }
+        
         Alert.alert(
           'Device Verified',
           'This device has been verified successfully. You can now log in.',
