@@ -292,20 +292,19 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
-      // Filter bookings: show admin packages to all drivers, driver packages only to creator
+      // Backend already filters by package creator, but add client-side validation
+      // Show bookings that:
+      // 1. Have valid status (pending/waiting_for_driver)
+      // 2. Don't have a driver assigned yet
+      // 3. Backend already filtered by package creator (admin vs driver)
       const filteredBookings = processedBookings.filter(booking => {
         const status = (booking.status || '').toLowerCase();
         const isValidStatus = status === 'pending' || status === 'waiting_for_driver';
         const hasNoDriver = !booking.driver_id;
         
-        if (!isValidStatus || !hasNoDriver) return false;
-        
-        // If package created by admin (no driver creator), show to all drivers
-        const packageCreatorId = booking.package_created_by || booking.created_by_driver_id;
-        if (!packageCreatorId) return true;
-        
-        // If package created by a driver, only show to that driver
-        return packageCreatorId === driverId;
+        // Backend already handles package creator filtering via tourpackages join
+        // Just validate status and driver assignment here
+        return isValidStatus && hasNoDriver;
       });
       
       // Fetch customer profiles for each booking with error handling
@@ -329,6 +328,7 @@ export default function DriverBookScreen({ navigation }) {
         .filter(result => result.status === 'fulfilled')
         .map(result => result.value);
       
+      console.log(`[DriverBookScreen] Setting ${successfulBookings.length} available bookings for driver ${driverId}`);
       setAvailableBookings(successfulBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
