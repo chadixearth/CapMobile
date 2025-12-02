@@ -61,7 +61,14 @@ export default function MyTourPackagesScreen({ navigation }) {
 
   useEffect(() => {
     fetchPackages();
-  }, []);
+    
+    // Auto-refresh when screen comes into focus
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchPackages();
+    });
+    
+    return unsubscribe;
+  }, [navigation]);
 
   // Animation effect for loading
   useEffect(() => {
@@ -157,9 +164,19 @@ export default function MyTourPackagesScreen({ navigation }) {
         let imageUri = null;
         let photoCount = 0;
         
+        // Try multiple photo field formats from backend
         if (pkg.photos && Array.isArray(pkg.photos) && pkg.photos.length > 0) {
           const photo = pkg.photos[0];
-          imageUri = photo.url || photo.uri || (typeof photo === 'string' ? photo : null);
+          // Handle different photo object structures
+          if (typeof photo === 'string') {
+            imageUri = photo;
+          } else if (photo.photo_url) {
+            imageUri = photo.photo_url;
+          } else if (photo.url) {
+            imageUri = photo.url;
+          } else if (photo.uri) {
+            imageUri = photo.uri;
+          }
           photoCount = pkg.photos.length;
         } else if (pkg.photo_urls && Array.isArray(pkg.photo_urls) && pkg.photo_urls.length > 0) {
           imageUri = pkg.photo_urls[0];
@@ -167,6 +184,10 @@ export default function MyTourPackagesScreen({ navigation }) {
         } else if (pkg.image_url) {
           imageUri = pkg.image_url;
           photoCount = 1;
+        } else if (pkg.package_photos && Array.isArray(pkg.package_photos) && pkg.package_photos.length > 0) {
+          const photo = pkg.package_photos[0];
+          imageUri = typeof photo === 'string' ? photo : (photo.photo_url || photo.url);
+          photoCount = pkg.package_photos.length;
         }
         
         return imageUri ? (

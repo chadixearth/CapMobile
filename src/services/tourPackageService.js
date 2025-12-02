@@ -69,6 +69,7 @@ export async function getAllPackages() {
 
 export async function createTourPackage(packageData) {
   try {
+    console.log('[createTourPackage] Starting package creation...');
     const user = await getCurrentUser();
     const userRole = user?.role || 'driver';
     
@@ -92,12 +93,17 @@ export async function createTourPackage(packageData) {
       expiration_date = null;
     }
     
+    console.log('[createTourPackage] Creating FormData with', packageData.photos?.length || 0, 'photos');
     // Create FormData for file upload
     const formData = new FormData();
+    
+    // Convert duration to integer hours (round up)
+    const durationHours = Math.ceil(parseFloat(packageData.duration_hours) || 1);
     
     // Add package data
     const dataWithDriver = {
       ...packageData,
+      duration_hours: durationHours,
       creator_role: userRole,
       creator_id: user?.id,
       driver_id: user?.id,
@@ -108,38 +114,51 @@ export async function createTourPackage(packageData) {
     // Remove photos from main data
     delete dataWithDriver.photos;
     
-    // Add non-file fields
+    // Add non-file fields with proper formatting
     Object.keys(dataWithDriver).forEach(key => {
-      if (dataWithDriver[key] !== null && dataWithDriver[key] !== undefined) {
-        formData.append(key, dataWithDriver[key]);
+      const value = dataWithDriver[key];
+      if (value !== null && value !== undefined) {
+        // Convert arrays to JSON strings
+        if (Array.isArray(value)) {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, String(value));
+        }
       }
     });
     
-    // Add photos
+    // Add photos with proper mobile format
     if (packageData.photos && Array.isArray(packageData.photos)) {
+      console.log('[createTourPackage] Adding photos to FormData...');
       packageData.photos.forEach((photo, index) => {
-        formData.append('photos', {
+        const photoFile = {
           uri: photo.uri,
           type: photo.type || 'image/jpeg',
           name: photo.name || `photo_${index}_${Date.now()}.jpg`
-        });
+        };
+        console.log(`[createTourPackage] Photo ${index + 1}:`, photoFile.name, photoFile.type);
+        formData.append('photos', photoFile);
       });
     }
     
+    console.log('[createTourPackage] Sending request to API...');
     const result = await apiClient.makeRequest('/tourpackage/', {
       method: 'POST',
       body: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      timeout: 30000,
+      timeout: 60000,
+      retries: 1
     });
     
+    console.log('[createTourPackage] API response:', result.success ? 'Success' : 'Failed', result.error || '');
+    
     if (result.success && (result.data?.success || result.status === 201)) {
+      console.log('[createTourPackage] Package created successfully');
       return { success: true, data: result.data?.data || result.data };
     }
+    console.log('[createTourPackage] Failed:', result.error);
     return { success: false, error: result.error || 'Failed to create tour package' };
   } catch (error) {
+    console.error('[createTourPackage] Exception:', error);
     return { success: false, error: error.message || 'Failed to create tour package' };
   }
 }
@@ -199,8 +218,28 @@ export async function getDriverPackages() {
     });
     if (result.success) {
       const packages = result.data?.data || result.data || [];
-      // Map packages to ensure all expected fields are present
-      const mappedPackages = packages.map(pkg => ({
+      
+      // Fetch individual package details to get photos
+      const packagesWithPhotos = await Promise.all(
+        packages.map(async (pkg) => {
+          try {
+            const detailResult = await apiClient.get(`/tourpackage/${pkg.id}/`);
+            if (detailResult.success) {
+              const detail = detailResult.data?.data || detailResult.data || {};
+              let photos = detail.photos || detail.package_photos || [];
+              if (typeof photos === 'string') {
+                try { photos = JSON.parse(photos); } catch (e) { photos = []; }
+              }
+              return { ...pkg, photos };
+            }
+          } catch (e) {
+            console.log('[getDriverPackages] Failed to fetch photos for package:', pkg.id);
+          }
+          return pkg;
+        })
+      );
+      
+      const mappedPackages = packagesWithPhotos.map(pkg => ({
         ...pkg,
         start_time: pkg.start_time || '09:00',
         destination_lat: pkg.destination_lat || pkg.dropoff_lat,

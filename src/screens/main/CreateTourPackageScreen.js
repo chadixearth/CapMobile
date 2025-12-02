@@ -219,7 +219,7 @@ export default function CreateTourPackageScreen({ navigation, route }) {
     if (!result.canceled) {
       const newPhotos = result.assets.map(asset => ({
         uri: asset.uri,
-        type: asset.type,
+        type: asset.mimeType || 'image/jpeg',
         name: asset.fileName || `photo_${Date.now()}.jpg`
       }));
       const updatedPhotos = [...photos, ...newPhotos];

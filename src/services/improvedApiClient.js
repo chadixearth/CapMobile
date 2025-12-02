@@ -33,7 +33,7 @@ class ImprovedApiClient {
       method = 'GET',
       headers = {},
       body = null,
-      timeout = 8000, // Reduced timeout
+      timeout = body instanceof FormData ? 60000 : 8000, // Longer timeout for file uploads
       retries = this.maxRetries,
       skipAuth = false
     } = options;
@@ -64,21 +64,31 @@ class ImprovedApiClient {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+        const isFormData = body instanceof FormData;
+        
+        if (isFormData) {
+          log('📤 Uploading FormData...');
+        }
+        
         const requestHeaders = {
-          'Content-Type': 'application/json',
-          'Connection': 'close',
           'Cache-Control': 'no-cache',
           ...SecurityService.getSecureHeaders(),
           ...headers,
         };
 
+        // Don't set Content-Type for FormData - let fetch set it with boundary
+        if (!isFormData) {
+          requestHeaders['Content-Type'] = 'application/json';
+          requestHeaders['Connection'] = 'close';
+        }
+
         if (token && !skipAuth) {
           requestHeaders.Authorization = `Bearer ${token}`;
         }
 
-        // Validate request body if present
+        // Validate request body if present (skip for FormData)
         let validatedBody = body;
-        if (body && typeof body === 'object') {
+        if (body && !isFormData && typeof body === 'object') {
           try {
             validatedBody = this.validateRequestBody(body, endpoint);
           } catch (validationError) {
@@ -93,7 +103,7 @@ class ImprovedApiClient {
         const response = await fetch(`${this.baseURL}${endpoint}`, {
           method,
           headers: requestHeaders,
-          body: validatedBody ? JSON.stringify(validatedBody) : null,
+          body: isFormData ? body : (validatedBody ? JSON.stringify(validatedBody) : null),
           signal: controller.signal,
           cache: 'no-store',
         });
