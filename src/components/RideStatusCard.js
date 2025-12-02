@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { checkRideStatus, getDriverLocation, cancelRideBooking } from '../services/rideHailingService';
 import LiveTrackingMap from './LiveTrackingMap';
 import { useNavigation } from '@react-navigation/native';
@@ -23,15 +24,32 @@ const RideStatusCard = ({ ride, onRefresh }) => {
   }, [ride]);
 
   useEffect(() => {
-    if (ride.status === 'waiting_for_driver') {
-      if (!waitStartTime) {
-        setWaitStartTime(new Date(ride.created_at).getTime());
+    const initializeTimer = async () => {
+      if (ride.status === 'waiting_for_driver') {
+        const storageKey = `ride_wait_start_${ride.id}`;
+        try {
+          const stored = await AsyncStorage.getItem(storageKey);
+          if (stored) {
+            setWaitStartTime(parseInt(stored, 10));
+          } else {
+            const startTime = Date.now();
+            setWaitStartTime(startTime);
+            await AsyncStorage.setItem(storageKey, startTime.toString());
+          }
+        } catch (error) {
+          console.error('Error initializing timer:', error);
+          const startTime = Date.now();
+          setWaitStartTime(startTime);
+        }
+      } else {
+        setWaitingTime(0);
+        setWaitStartTime(null);
+        const storageKey = `ride_wait_start_${ride.id}`;
+        await AsyncStorage.removeItem(storageKey);
       }
-    } else {
-      setWaitingTime(0);
-      setWaitStartTime(null);
-    }
-  }, [ride.status, ride.created_at]);
+    };
+    initializeTimer();
+  }, [ride.status, ride.id]);
 
   useEffect(() => {
     if (ride.status === 'waiting_for_driver' && waitStartTime) {

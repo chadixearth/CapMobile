@@ -594,9 +594,7 @@ export async function loginUser(email, password, allowedRoles = null) {
     console.log('[authService] No stored device fingerprint found');
   }
   
-  // Clear any existing session before login attempt
-  await clearStoredSession();
-  console.log('[authService] Cleared existing session before login');
+
   
   // Make direct fetch request to avoid token issues with enhanced error handling
   let result, data;
@@ -725,6 +723,10 @@ export async function loginUser(email, password, allowedRoles = null) {
   console.log('[authService] API result:', apiResult);
 
   if (apiResult.success && apiResult.data.success) {
+    // Clear old session only after successful login
+    await clearStoredSession();
+    console.log('[authService] Cleared old session after successful login');
+    
     // Check if device verification is required
     if (apiResult.data.requires_device_verification) {
       return {

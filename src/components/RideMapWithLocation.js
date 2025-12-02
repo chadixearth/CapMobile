@@ -98,22 +98,43 @@ export default function RideMapWithLocation({ ride }) {
       
       let routes = [];
       try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.longitude},${pickupCoords.latitude};${dropoffCoords.longitude},${dropoffCoords.latitude}?overview=full&geometries=geojson`;
-        const osrmResponse = await fetch(osrmUrl);
+        // Route 1: Driver to Pickup (blue)
+        if (driverLocation) {
+          const driverToPickupUrl = `https://router.project-osrm.org/route/v1/driving/${driverLocation.longitude},${driverLocation.latitude};${pickupCoords.longitude},${pickupCoords.latitude}?overview=full&geometries=geojson`;
+          const driverToPickupResponse = await fetch(driverToPickupUrl);
+          
+          if (driverToPickupResponse.ok) {
+            const driverToPickupData = await driverToPickupResponse.json();
+            if (driverToPickupData.routes && driverToPickupData.routes.length > 0) {
+              routes.push({
+                coordinates: driverToPickupData.routes[0].geometry.coordinates.map(coord => ({
+                  latitude: coord[1],
+                  longitude: coord[0]
+                })),
+                color: '#1976D2',
+                weight: 5,
+                opacity: 0.8
+              });
+            }
+          }
+        }
         
-        if (osrmResponse.ok) {
-          const osrmData = await osrmResponse.json();
-          if (osrmData.routes && osrmData.routes.length > 0) {
-            const route = osrmData.routes[0];
-            routes = [{
-              coordinates: route.geometry.coordinates.map(coord => ({
+        // Route 2: Pickup to Dropoff (orange)
+        const pickupToDropoffUrl = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.longitude},${pickupCoords.latitude};${dropoffCoords.longitude},${dropoffCoords.latitude}?overview=full&geometries=geojson`;
+        const pickupToDropoffResponse = await fetch(pickupToDropoffUrl);
+        
+        if (pickupToDropoffResponse.ok) {
+          const pickupToDropoffData = await pickupToDropoffResponse.json();
+          if (pickupToDropoffData.routes && pickupToDropoffData.routes.length > 0) {
+            routes.push({
+              coordinates: pickupToDropoffData.routes[0].geometry.coordinates.map(coord => ({
                 latitude: coord[1],
                 longitude: coord[0]
               })),
               color: '#FF9800',
               weight: 5,
               opacity: 0.8
-            }];
+            });
           }
         }
       } catch (error) {

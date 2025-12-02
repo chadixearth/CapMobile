@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Dimensions, Image, FlatList } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import * as ImagePicker from 'expo-image-picker';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
@@ -362,11 +362,16 @@ export default function TartanillaCarriagesScreen({ navigation }) {
   useEffect(() => {
     // Handle authentication redirect
     if (!auth.loading && !auth.isAuthenticated) {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
-      return;
+      // Use setTimeout to ensure navigation is ready
+      const timer = setTimeout(() => {
+        if (navigation?.isReady?.()) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Welcome' }],
+          });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
     }
     
     // Load data when authenticated
@@ -629,10 +634,12 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           {
             text: 'OK',
             onPress: () => {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Welcome' }],
-              });
+              if (navigation?.isReady?.()) {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Welcome' }],
+                });
+              }
             }
           }
         ]);
@@ -1029,7 +1036,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
                   {/* Vehicle Info Card */}
                   <View style={styles.detailsInfoCard}>
                     <View style={styles.detailsCardHeader}>
-                      <Ionicons name="car-outline" size={20} color={MAROON} />
+                      <MaterialCommunityIcons name="horse-variant" size={20} color={MAROON} />
                       <Text style={styles.detailsCardTitle}>Vehicle Information</Text>
                     </View>
                     <View style={styles.detailsCardContent}>
@@ -1207,7 +1214,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
     const isDriver = user?.role === 'driver';
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="car-outline" size={48} color="#ccc" />
+        <MaterialCommunityIcons name="horse-variant" size={48} color="#ccc" />
         <Text style={styles.emptyStateText}>
           {isDriver ? 'No tartanilla assigned' : 'No carriages found'}
         </Text>
@@ -1252,7 +1259,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
             <View style={styles.editFormSection}>
               <Text style={styles.editLabel}>Plate Number</Text>
               <View style={styles.editReadOnlyContainer}>
-                <Ionicons name="car-outline" size={16} color="#9CA3AF" />
+                <MaterialCommunityIcons name="horse-variant" size={16} color="#9CA3AF" />
                 <Text style={styles.editReadOnlyText}>{editingCarriage?.plate_number || 'N/A'}</Text>
               </View>
             </View>
@@ -1385,7 +1392,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
       {/* Floating title card */}
       <View style={styles.titleCard}>
         <View style={styles.titleCenter}>
-          <Ionicons name="car-outline" size={24} color="#6B2E2B" />
+          <MaterialCommunityIcons name="horse-variant" size={24} color="#6B2E2B" />
           <Text style={styles.titleText}>My Carriages</Text>
         </View>
         {(user?.role === 'owner' || user?.role === 'driver-owner') && (

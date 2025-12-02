@@ -466,11 +466,11 @@ export default function DriverBookScreen({ navigation }) {
             package_name: 'Ride Hailing',
             booking_date: ride.created_at,
             pickup_time: 'ASAP',
-            number_of_pax: 1,
+            number_of_pax: ride.passenger_count || 1,
             pickup_address: ride.pickup_address,
             dropoff_address: ride.dropoff_address,
             contact_number: 'N/A',
-            total_amount: null,
+            total_amount: ride.total_fare || (ride.passenger_count || 1) * 10,
             status: ride.status,
             request_type: 'ride_hailing',
             booking_reference: `RH-${String(ride.id).slice(0, 8)}`,
@@ -1357,8 +1357,8 @@ const getCustomTitle = (r) => (
               <Text style={styles.earningsAmount}>₱{ride.total_amount || ((ride.number_of_pax || 1) * 10)}</Text>
             </View>
             <View style={styles.earningsItem}>
-              <Text style={styles.earningsLabel}>Your Share (80%)</Text>
-              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{((ride.total_amount || ((ride.number_of_pax || 1) * 10)) * 0.8).toFixed(0)}</Text>
+              <Text style={styles.earningsLabel}>Your Share (100%)</Text>
+              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{(ride.total_amount || ((ride.number_of_pax || 1) * 10))}</Text>
             </View>
           </View>
           <View style={styles.paymentStatus}>
@@ -1387,7 +1387,7 @@ const getCustomTitle = (r) => (
             </TouchableOpacity>
             <TouchableOpacity style={[styles.acceptButton, styles.rideHailingAcceptButton]} onPress={() => handleAcceptBooking(ride)}>
               <Ionicons name="car" size={18} color="#fff" />
-              <Text style={styles.acceptButtonText}>Accept Ride (₱{((ride.total_amount || ((ride.number_of_pax || 1) * 10)) * 0.8).toFixed(0)})</Text>
+              <Text style={styles.acceptButtonText}>Accept Ride (₱{(ride.total_amount || ((ride.number_of_pax || 1) * 10))})</Text>
             </TouchableOpacity>
           </View>
         </>

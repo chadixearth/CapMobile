@@ -14,7 +14,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { carriageService } from '../../services/tourpackage/fetchCarriage';
 import { getCurrentUser } from '../../services/authService';
@@ -427,12 +427,12 @@ export default function OwnerHomeScreen({ navigation }) {
         <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
           <TouchableOpacity
             style={styles.quickCard}
-            onPress={() => navigation?.navigate?.('DriversList')}
+            onPress={() => navigation?.navigate?.('TartanillaCarriages')}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="car-sport" size={22} color={MAROON} />
+              <MaterialCommunityIcons name="horse-variant" size={22} color={MAROON} />
               <Text style={{ marginLeft: 10, fontWeight: '700', color: TEXT_DARK }}>
-                Drivers
+                Manage Carriages
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#999" />
@@ -455,7 +455,7 @@ export default function OwnerHomeScreen({ navigation }) {
             </View>
           ) : preview.length === 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
-              <Ionicons name="car-outline" size={32} color="#ccc" />
+              <MaterialCommunityIcons name="horse-variant" size={32} color="#ccc" />
               <Text style={{ marginTop: 8, color: '#666' }}>No carriages found</Text>
             </View>
           ) : (

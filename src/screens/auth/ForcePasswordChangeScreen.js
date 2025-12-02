@@ -71,20 +71,27 @@ export default function ForcePasswordChangeScreen({ navigation, route }) {
       if (result.success) {
         Alert.alert(
           'Success',
-          'Your password has been changed successfully. You can now access the app.',
+          'Your password has been changed successfully. Please login with your new password.',
           [
             {
-              text: 'Continue',
+              text: 'OK',
               onPress: () => {
-                // Navigate to home screen or main app
                 navigation.reset({
                   index: 0,
-                  routes: [{ name: Routes.MAIN_TABS }],
+                  routes: [{ name: Routes.LOGIN }],
                 });
               },
             },
-          ]
+          ],
+          { cancelable: false }
         );
+        // Auto-navigate after 3 seconds if user doesn't press OK
+        setTimeout(() => {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: Routes.LOGIN }],
+          });
+        }, 3000);
       } else {
         setError(result.error || 'Failed to change password. Please try again.');
       }

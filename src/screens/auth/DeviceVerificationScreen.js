@@ -36,11 +36,7 @@ const DeviceVerificationScreen = ({ navigation, route }) => {
       return;
     }
     
-    // Send code immediately
-    apiClient.post('/auth/check-device/', { user_id, email, device_fingerprint })
-      .then(res => console.log('[DeviceVerification] Code sent:', res.data))
-      .catch(err => console.error('[DeviceVerification] Send failed:', err));
-    
+    // Code is already sent by backend during login - no need to send again
     setTimeout(() => inputRefs.current[0]?.focus(), 300);
   }, []);
 
