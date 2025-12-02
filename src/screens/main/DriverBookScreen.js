@@ -377,10 +377,11 @@ export default function DriverBookScreen({ navigation }) {
       const ridesArray = rideData.data || [];
       console.log('[DriverBookScreen] Available rides from service:', ridesArray.length);
       
-      // Filter out cancelled bookings - only show pending/waiting_for_driver status
+      // Filter out cancelled bookings and already accepted rides - only show pending/waiting_for_driver status without driver assigned
       const filteredRides = ridesArray.filter(ride => {
         const status = (ride.status || '').toLowerCase();
-        return status === 'pending' || status === 'waiting_for_driver';
+        const hasDriver = ride.driver_id != null;
+        return (status === 'pending' || status === 'waiting_for_driver') && !hasDriver;
       });
       
       const processedRides = filteredRides.map(ride => ({
@@ -1382,7 +1383,7 @@ const getCustomTitle = (r) => (
         )}
       </View>
 
-      {(ride.status === 'waiting_for_driver' || ride.status === 'pending') && activeTab === 'available' && (
+      {(ride.status === 'waiting_for_driver' || ride.status === 'pending') && activeTab === 'available' && !ride.driver_id && (
         <>
           <View style={styles.rideActions}>
             <TouchableOpacity style={[styles.acceptButton, styles.viewMapButton]} onPress={() => handleViewRideMap(ride)}>
@@ -1915,16 +1916,18 @@ const getCustomTitle = (r) => (
               {selectedRide && <RideMapWithLocation ride={selectedRide} />}
             </View>
             
-            <TouchableOpacity 
-              style={[styles.acceptButton, styles.rideHailingAcceptButton, { margin: 16 }]} 
-              onPress={() => {
-                setShowRideMapModal(false);
-                handleAcceptBooking(selectedRide);
-              }}
-            >
-              <Ionicons name="car" size={18} color="#fff" />
-              <Text style={styles.acceptButtonText}>Accept This Ride</Text>
-            </TouchableOpacity>
+            {(!selectedRide?.driver_id && (selectedRide?.status === 'waiting_for_driver' || selectedRide?.status === 'pending')) && (
+              <TouchableOpacity 
+                style={[styles.acceptButton, styles.rideHailingAcceptButton, { margin: 16 }]} 
+                onPress={() => {
+                  setShowRideMapModal(false);
+                  handleAcceptBooking(selectedRide);
+                }}
+              >
+                <Ionicons name="car" size={18} color="#fff" />
+                <Text style={styles.acceptButtonText}>Accept This Ride</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>

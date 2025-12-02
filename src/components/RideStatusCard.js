@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { checkRideStatus, getDriverLocation, cancelRideBooking } from '../services/rideHailingService';
+import { getDriverReviews } from '../services/reviews';
 import LiveTrackingMap from './LiveTrackingMap';
 import { useNavigation } from '@react-navigation/native';
 
@@ -14,6 +15,10 @@ const RideStatusCard = ({ ride, onRefresh }) => {
   const [waitingTime, setWaitingTime] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [waitStartTime, setWaitStartTime] = useState(null);
+  const [showDriverDetails, setShowDriverDetails] = useState(false);
+  const [driverReviews, setDriverReviews] = useState([]);
+  const [reviewStats, setReviewStats] = useState(null);
+  const [loadingReviews, setLoadingReviews] = useState(false);
 
   useEffect(() => {
     if (ride.status === 'driver_assigned' && ride.driver_id) {
@@ -22,6 +27,27 @@ const RideStatusCard = ({ ride, onRefresh }) => {
       return () => clearInterval(interval);
     }
   }, [ride]);
+
+  // Poll for ride status changes to detect completion
+  useEffect(() => {
+    if (ride.status === 'in_progress' || ride.status === 'driver_assigned') {
+      const statusInterval = setInterval(async () => {
+        try {
+          const result = await checkRideStatus(ride.id);
+          if (result.success && result.data) {
+            const newStatus = result.data.status;
+            if (newStatus !== ride.status && onRefresh) {
+              console.log('[RideStatusCard] Status changed:', ride.status, '->', newStatus);
+              onRefresh(result.data);
+            }
+          }
+        } catch (error) {
+          console.error('Error polling ride status:', error);
+        }
+      }, 5000); // Check every 5 seconds
+      return () => clearInterval(statusInterval);
+    }
+  }, [ride.status, ride.id]);
 
   useEffect(() => {
     const initializeTimer = async () => {
@@ -174,6 +200,27 @@ const RideStatusCard = ({ ride, onRefresh }) => {
     });
   };
 
+  const fetchDriverReviews = async () => {
+    if (!ride.driver_id) return;
+    setLoadingReviews(true);
+    try {
+      const result = await getDriverReviews({ driver_id: ride.driver_id, limit: 10 });
+      if (result.success) {
+        setDriverReviews(result.data || []);
+        setReviewStats(result.stats);
+      }
+    } catch (error) {
+      console.error('Error fetching driver reviews:', error);
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
+  const handleViewDriverDetails = () => {
+    fetchDriverReviews();
+    setShowDriverDetails(true);
+  };
+
   const handleCancelRide = () => {
     Alert.alert(
       'Cancel Ride',
@@ -276,19 +323,25 @@ const RideStatusCard = ({ ride, onRefresh }) => {
         {ride.status === 'driver_assigned' && (
           <>
             <TouchableOpacity 
+              style={[styles.actionButton, styles.infoButton]} 
+              onPress={handleViewDriverDetails}
+            >
+              <Ionicons name="information-circle" size={16} color="#6B2E2B" />
+              <Text style={styles.infoButtonText}>Driver Info</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
               style={[styles.actionButton, styles.trackButton]} 
               onPress={() => setShowMap(true)}
             >
               <Ionicons name="map" size={16} color="#007AFF" />
-              <Text style={styles.trackButtonText}>Track Driver</Text>
+              <Text style={styles.trackButtonText}>Track</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity 
               style={[styles.actionButton, styles.messageButton]} 
               onPress={handleMessageDriver}
             >
               <Ionicons name="chatbubble-outline" size={16} color="#34C759" />
-              <Text style={styles.messageButtonText}>Message</Text>
+              <Text style={styles.messageButtonText}>Chat</Text>
             </TouchableOpacity>
           </>
         )}
@@ -340,6 +393,86 @@ const RideStatusCard = ({ ride, onRefresh }) => {
               <Text style={styles.footerText} numberOfLines={1}>{ride.dropoff_address}</Text>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showDriverDetails}
+        animationType="slide"
+        onRequestClose={() => setShowDriverDetails(false)}
+      >
+        <View style={styles.detailsModal}>
+          <View style={styles.detailsHeader}>
+            <Text style={styles.detailsTitle}>Driver Details</Text>
+            <TouchableOpacity onPress={() => setShowDriverDetails(false)}>
+              <Ionicons name="close" size={28} color="#333" />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.detailsContent}>
+            <View style={styles.driverCard}>
+              <View style={styles.driverHeader}>
+                <Ionicons name="person-circle" size={60} color="#6B2E2B" />
+                <View style={styles.driverInfo}>
+                  <Text style={styles.driverNameLarge}>{ride.driver_name || 'Driver'}</Text>
+                  {reviewStats && (
+                    <View style={styles.ratingRow}>
+                      <Ionicons name="star" size={18} color="#FFA000" />
+                      <Text style={styles.ratingText}>
+                        {reviewStats.average_rating?.toFixed(1) || 'N/A'}
+                      </Text>
+                      <Text style={styles.reviewCount}>({reviewStats.review_count || 0} reviews)</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+              
+              {ride.carriage_name && (
+                <View style={styles.carriageCard}>
+                  <Ionicons name="car-sport" size={24} color="#6B2E2B" />
+                  <View style={styles.carriageDetails}>
+                    <Text style={styles.carriageLabel}>Tartanilla</Text>
+                    <Text style={styles.carriageName}>{ride.carriage_name}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.reviewsSection}>
+              <Text style={styles.sectionTitle}>Recent Reviews</Text>
+              {loadingReviews ? (
+                <ActivityIndicator size="small" color="#6B2E2B" style={styles.loader} />
+              ) : driverReviews.length > 0 ? (
+                driverReviews.map((review, index) => (
+                  <View key={index} style={styles.reviewCard}>
+                    <View style={styles.reviewHeader}>
+                      <View style={styles.starsRow}>
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <Ionicons 
+                            key={star}
+                            name={star <= review.rating ? 'star' : 'star-outline'}
+                            size={14}
+                            color="#FFA000"
+                          />
+                        ))}
+                      </View>
+                      <Text style={styles.reviewDate}>
+                        {new Date(review.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    {review.comment && (
+                      <Text style={styles.reviewComment}>{review.comment}</Text>
+                    )}
+                    <Text style={styles.reviewerName}>
+                      {review.is_anonymous ? 'Anonymous' : (review.reviewer_name || 'Tourist')}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noReviews}>No reviews yet</Text>
+              )}
+            </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -551,6 +684,147 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '500',
     flex: 1,
+  },
+  infoButton: {
+    backgroundColor: '#F5E9E2',
+    borderColor: '#E0CFC2',
+  },
+  infoButtonText: {
+    marginLeft: 6,
+    fontSize: 13,
+    color: '#6B2E2B',
+    fontWeight: '700',
+  },
+  detailsModal: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  detailsTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#333',
+  },
+  detailsContent: {
+    flex: 1,
+  },
+  driverCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  driverHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 16,
+  },
+  driverNameLarge: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#333',
+    marginBottom: 4,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+  },
+  reviewCount: {
+    fontSize: 14,
+    color: '#666',
+  },
+  carriageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5E9E2',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  carriageDetails: {
+    flex: 1,
+  },
+  carriageLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  carriageName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#6B2E2B',
+  },
+  reviewsSection: {
+    margin: 16,
+    marginTop: 0,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 12,
+  },
+  loader: {
+    marginVertical: 20,
+  },
+  reviewCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  reviewComment: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  reviewerName: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+  },
+  noReviews: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginVertical: 20,
   },
 });
 

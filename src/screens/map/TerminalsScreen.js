@@ -40,36 +40,27 @@ const TerminalsScreen = ({ navigation, route }) => {
 
   useFocusEffect(
     React.useCallback(() => {
-      if (role === 'tourist' && showRides) {
+      if (role === 'tourist') {
+        console.log('[TerminalsScreen] Screen focused, refreshing rides');
         fetchActiveRides();
+        fetchRideHistory();
       }
-    }, [role, showRides])
-  );
-
-  useFocusEffect(
-    React.useCallback(() => {
-      if (role === 'tourist' && showRides) {
-        console.log('[TerminalsScreen] Screen focused, refreshing active rides');
-        fetchActiveRides();
-      }
-    }, [role, showRides])
+    }, [role])
   );
 
   useEffect(() => {
     if (role === 'tourist') {
       fetchActiveRides();
       fetchRideHistory();
+      
+      // Poll for ride status changes every 5 seconds
+      const pollInterval = setInterval(() => {
+        fetchActiveRides();
+      }, 5000);
+      
+      return () => clearInterval(pollInterval);
     }
     loadMapData();
-    
-    // Subscribe to ride changes
-    const unsubscribe = subscribeToDataChanges(DATA_EVENTS.RIDE_CHANGED, () => {
-      if (role === 'tourist') {
-        console.log('[TerminalsScreen] Ride data changed, refreshing');
-        fetchActiveRides();
-      }
-    });
-    return unsubscribe;
   }, [role]);
 
   const loadMapData = async () => {
@@ -114,19 +105,29 @@ const TerminalsScreen = ({ navigation, route }) => {
 
   const fetchActiveRides = async () => {
     try {
-      setLoading(true);
-      const user = await getCurrentUser();
-      setCurrentUser(user);
+      const user = currentUser || await getCurrentUser();
+      if (!currentUser) setCurrentUser(user);
+      
       if (user?.id) {
         const result = await getMyActiveRides(user.id);
         if (result.success) {
-          setActiveRides(result.data || []);
+          const newActiveRides = result.data || [];
+          
+          // Check if any rides changed to completed
+          activeRides.forEach(oldRide => {
+            const stillActive = newActiveRides.find(r => r.id === oldRide.id);
+            if (!stillActive && oldRide.status === 'in_progress') {
+              // Ride was in progress but now missing from active - likely completed
+              console.log('[TerminalsScreen] Ride completed detected:', oldRide.id);
+              handleRideRefresh({ ...oldRide, status: 'completed' });
+            }
+          });
+          
+          setActiveRides(newActiveRides);
         }
       }
     } catch (error) {
       console.error('Error fetching active rides:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -159,16 +160,25 @@ const TerminalsScreen = ({ navigation, route }) => {
   };
 
   const handleRideRefresh = (updatedRide) => {
+    console.log('[TerminalsScreen] Ride refresh:', updatedRide.status);
     if (updatedRide.status === 'cancelled' || updatedRide.status === 'completed') {
       setActiveRides(prev => prev.filter(ride => ride.id !== updatedRide.id));
-      fetchRideHistory();
+      
       if (updatedRide.status === 'completed' && updatedRide.driver_id) {
-        setTimeout(() => {
-          setRatingModal({ visible: true, ride: updatedRide });
-          setRating(5);
-          setComment('');
-        }, 1000);
+        // Show review modal immediately
+        Alert.alert(
+          'Ride Completed! 🎉',
+          'Your ride has been completed successfully. Please rate your driver.',
+          [{ text: 'OK', onPress: () => {
+            setRatingModal({ visible: true, ride: updatedRide });
+            setRating(5);
+            setComment('');
+          }}]
+        );
       }
+      
+      // Refresh history after a short delay
+      setTimeout(() => fetchRideHistory(), 1000);
     } else {
       setActiveRides(prev => 
         prev.map(ride => ride.id === updatedRide.id ? updatedRide : ride)
