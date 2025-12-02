@@ -193,9 +193,9 @@ export default function TouristHomeScreen({ navigation }) {
   });
 
   useEffect(() => {
-    const fetchPackages = async () => {
+    const fetchPackages = async (showLoading = true) => {
       try {
-        setLoadingPackages(true);
+        if (showLoading) setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
         
         // Debug: Log package data to see what fields are available
@@ -300,6 +300,13 @@ export default function TouristHomeScreen({ navigation }) {
     
     fetchPackages();
     loadMapData();
+    
+    // Poll for updates every 15 seconds
+    const interval = setInterval(() => {
+      fetchPackages(false);
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Filter + Sort

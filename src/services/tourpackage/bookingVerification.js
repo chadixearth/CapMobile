@@ -109,9 +109,8 @@ export async function uploadVerificationPhoto(bookingId, driverId, photoData) {
 export async function getVerificationStatus(bookingId, customerId = null) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // Reduced timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     
-    // Build URL with optional customer_id query param
     let url = `${API_BASE_URL}verification/${bookingId}/`;
     if (customerId) {
       url += `?customer_id=${customerId}`;
@@ -120,6 +119,7 @@ export async function getVerificationStatus(bookingId, customerId = null) {
     const token = await getAccessToken().catch(() => null);
     const response = await fetch(url, {
       headers: {
+        'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       signal: controller.signal,
@@ -128,34 +128,30 @@ export async function getVerificationStatus(bookingId, customerId = null) {
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log('Verification service returned error:', response.status);
-      throw new Error(`Verification service unavailable: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
-    
-  } catch (error) {
-    const isNetworkError = error?.name === 'AbortError' || 
-                          /network request failed/i.test(error?.message || '') ||
-                          /fetch.*failed/i.test(error?.message || '');
-    
-    if (isNetworkError) {
-      console.log('Verification service unavailable - network error');
-      // Return a consistent response for network failures
+      console.log('Verification fetch error:', response.status);
       return {
         success: false,
         data: {
           verification_available: false,
           verification_photo_url: null
-        },
-        network_error: true
+        }
       };
     }
     
+    const data = await response.json();
+    console.log('Verification status retrieved:', data);
+    return data;
+    
+  } catch (error) {
     console.log('Verification service error:', error.message);
-    throw error;
+    return {
+      success: false,
+      data: {
+        verification_available: false,
+        verification_photo_url: null
+      },
+      network_error: true
+    };
   }
 }
 

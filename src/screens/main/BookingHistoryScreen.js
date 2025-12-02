@@ -77,9 +77,9 @@ export default function BookingHistoryScreen({ navigation }) {
     ? bookings 
     : bookings.filter(b => categorizeBooking(b) === selectedCategory);
 
-  const fetchBookings = async (showRefresh = false) => {
+  const fetchBookings = async (showRefresh = false, showLoading = true) => {
     if (showRefresh) setRefreshing(true);
-    else setLoading(true);
+    else if (showLoading) setLoading(true);
 
     try {
       const isDriver = user?.role === 'driver' || user?.role === 'driver-owner';
@@ -169,13 +169,17 @@ export default function BookingHistoryScreen({ navigation }) {
         for (const booking of completedBookings) {
           try {
             const result = await getVerificationStatus(booking.id, user.id);
-            if (result?.data?.verification_photo_url) {
+            console.log(`Verification check for booking ${booking.id}:`, result);
+            if (result?.success && result?.data?.verification_photo_url) {
+              photoMap[booking.id] = result.data.verification_photo_url;
+            } else if (result?.data?.verification_available && result?.data?.verification_photo_url) {
               photoMap[booking.id] = result.data.verification_photo_url;
             }
           } catch (error) {
-            console.log('No verification photo for booking:', booking.id);
+            console.log('Error fetching verification photo for booking:', booking.id, error);
           }
         }
+        console.log('Verification photos loaded:', photoMap);
         setVerificationPhotos(photoMap);
       }
     } catch (error) {
@@ -188,6 +192,13 @@ export default function BookingHistoryScreen({ navigation }) {
 
   useEffect(() => {
     fetchBookings();
+    
+    // Poll for updates every 10 seconds
+    const interval = setInterval(() => {
+      fetchBookings(false);
+    }, 10000);
+    
+    return () => clearInterval(interval);
   }, [user]);
 
   // Animation effect for loading
@@ -454,18 +465,24 @@ export default function BookingHistoryScreen({ navigation }) {
         )}
 
         {/* Verification Photo for Completed Bookings - Only for tourists */}
-        {booking.status === 'completed' && user?.role === 'tourist' && hasVerificationPhoto && (
+        {booking.status === 'completed' && user?.role === 'tourist' && (
           <TouchableOpacity 
             style={styles.photoSection}
             onPress={() => {
-              setSelectedPhoto(hasVerificationPhoto);
-              setPhotoModalVisible(true);
+              if (hasVerificationPhoto) {
+                setSelectedPhoto(hasVerificationPhoto);
+                setPhotoModalVisible(true);
+              } else {
+                Alert.alert('No Photo', 'No verification photo was uploaded for this trip.');
+              }
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="image" size={16} color={MAROON} />
-            <Text style={styles.photoText}>View Completion Photo</Text>
-            <Ionicons name="chevron-forward" size={14} color={MAROON} />
+            <Ionicons name="image" size={16} color={hasVerificationPhoto ? MAROON : '#999'} />
+            <Text style={[styles.photoText, !hasVerificationPhoto && styles.photoTextDisabled]}>
+              {hasVerificationPhoto ? 'View Completion Photo' : 'No Verification Photo'}
+            </Text>
+            {hasVerificationPhoto && <Ionicons name="chevron-forward" size={14} color={MAROON} />}
           </TouchableOpacity>
         )}
 
@@ -501,25 +518,38 @@ export default function BookingHistoryScreen({ navigation }) {
               </View>
             </View>
 
-            {canReview && (
+            <View style={styles.actionRow}>
+              {canReview && (
+                <TouchableOpacity
+                  style={[styles.reviewButton, styles.flexButton]}
+                  onPress={() => handleReviewPress(booking)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="star-outline" size={16} color="#fff" />
+                  <Text style={styles.reviewButtonText}>
+                    {!hasPackageReview && !hasDriverReview ? 'Review' : 'Complete'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {hasPackageReview && hasDriverReview && (
+                <View style={[styles.reviewCompleted, styles.flexButton]}>
+                  <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+                  <Text style={styles.reviewCompletedText}>Reviewed</Text>
+                </View>
+              )}
+
               <TouchableOpacity
-                style={styles.reviewButton}
-                onPress={() => handleReviewPress(booking)}
+                style={[styles.reportButton, styles.flexButton]}
+                onPress={() => navigation.navigate('ReportDriver', {
+                  booking: booking
+                })}
                 activeOpacity={0.8}
               >
-                <Ionicons name="star-outline" size={16} color="#fff" />
-                <Text style={styles.reviewButtonText}>
-                  {!hasPackageReview && !hasDriverReview ? 'Leave Review' : 'Complete Review'}
-                </Text>
+                <Ionicons name="flag-outline" size={16} color="#DC3545" />
+                <Text style={styles.reportButtonText}>Report</Text>
               </TouchableOpacity>
-            )}
-
-            {hasPackageReview && hasDriverReview && (
-              <View style={styles.reviewCompleted}>
-                <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
-                <Text style={styles.reviewCompletedText}>Reviews completed</Text>
-              </View>
-            )}
+            </View>
           </View>
         )}
 
@@ -914,6 +944,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
+  photoTextDisabled: {
+    color: '#999',
+  },
   reviewSection: {
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
@@ -948,6 +981,13 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontWeight: '500',
   },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  flexButton: {
+    flex: 1,
+  },
   reviewButton: {
     backgroundColor: MAROON,
     borderRadius: 8,
@@ -957,6 +997,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  reportButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 14,
+    fontWeight: '600',
   },
   reviewButtonText: {
     color: '#fff',

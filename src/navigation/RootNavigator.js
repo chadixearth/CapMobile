@@ -39,6 +39,7 @@ import NotificationManager from '../components/NotificationManager';
 import TouristRefundScreen from '../screens/main/TouristRefundScreen';
 import BookingHistoryScreen from '../screens/main/BookingHistoryScreen';
 import ReviewSubmissionScreen from '../screens/main/ReviewSubmissionScreen';
+import ReportDriverScreen from '../screens/main/ReportDriverScreen';
 
 import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
 import ForcePasswordChangeScreen from '../screens/auth/ForcePasswordChangeScreen';
@@ -166,6 +167,7 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.TOURIST_REFUND} component={TouristRefundScreen} />
           <Stack.Screen name="BookingHistory" component={BookingHistoryScreen} />
           <Stack.Screen name="ReviewSubmission" component={ReviewSubmissionScreen} />
+          <Stack.Screen name="ReportDriver" component={ReportDriverScreen} />
           <Stack.Screen name={Routes.BREAKEVEN} component={DriverBreakevenScreen} />
           <Stack.Screen name="DriverRideTracking" component={DriverRideTrackingScreen} />
         </>

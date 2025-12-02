@@ -202,26 +202,37 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Submit Button - Only for tourists */}
+        {/* Action Buttons - Only for tourists */}
         {user?.role === 'tourist' && (
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              loading && styles.submitButtonDisabled
-            ]}
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="send" size={16} color="#fff" />
-                <Text style={styles.submitButtonText}>Submit Review</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                loading && styles.submitButtonDisabled
+              ]}
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="send" size={16} color="#fff" />
+                  <Text style={styles.submitButtonText}>Submit Review</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.reportButton}
+              onPress={() => navigation.navigate('ReportDriver', { booking })}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="flag-outline" size={16} color="#DC3545" />
+              <Text style={styles.reportButtonText}>Report Driver</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <View style={{ height: 40 }} />
@@ -309,6 +320,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
     minHeight: 80,
   },
+  actionButtons: {
+    gap: 12,
+    marginTop: 8,
+  },
   submitButton: {
     backgroundColor: MAROON,
     borderRadius: 12,
@@ -318,7 +333,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 8,
+  },
+  reportButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 16,
+    fontWeight: '600',
   },
   submitButtonDisabled: {
     opacity: 0.7,

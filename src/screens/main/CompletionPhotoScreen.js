@@ -11,14 +11,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { completeBookingWithPhoto } from '../../services/tourpackage/bookingVerification';
-import { submitTripReport } from '../../services/reportService';
+import { submitTripReport, submitDriverReport } from '../../services/reportService';
+import { useAuth } from '../../hooks/useAuth';
 import ReportModal from '../../components/ReportModal';
 
 const MAROON = '#6B2E2B';
 
 export default function CompletionPhotoScreen({ navigation, route }) {
   const { booking, driverId, eventId, eventType, eventDetails, onComplete } = route.params;
+  const { user } = useAuth();
   const isSpecialEvent = eventType === 'special_event';
+  const isDriver = user?.role === 'driver' || user?.role === 'driver-owner';
   const [photo, setPhoto] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [tripCompleted, setTripCompleted] = useState(false);
@@ -95,11 +98,17 @@ export default function CompletionPhotoScreen({ navigation, route }) {
   const handleReport = async (reportData) => {
     setSubmittingReport(true);
     try {
-      await submitTripReport(booking.id, driverId, reportData);
+      if (isDriver) {
+        // Driver reporting tourist
+        await submitTripReport(booking.id, driverId, reportData);
+      } else {
+        // Tourist reporting driver
+        await submitDriverReport(booking.id, booking.driver_id, user.id, reportData);
+      }
       setShowReportModal(false);
       Alert.alert(
         'Report Submitted',
-        'Your report has been submitted successfully. Thank you for your feedback.',
+        'Your report has been submitted and will be reviewed by admin. Unjustified reports may result in suspension.',
         [{ text: 'OK', onPress: () => navigation.navigate('Main') }]
       );
     } catch (error) {
@@ -211,6 +220,7 @@ export default function CompletionPhotoScreen({ navigation, route }) {
         onClose={() => setShowReportModal(false)}
         onSubmit={handleReport}
         loading={submittingReport}
+        reporterType={isDriver ? 'driver' : 'tourist'}
       />
     </View>
   );

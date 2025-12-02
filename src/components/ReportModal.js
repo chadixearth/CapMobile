@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const MAROON = '#6B2E2B';
 
-const REPORT_REASONS = [
+const DRIVER_REPORT_REASONS = [
   'Tourist was rude or disrespectful',
   'Tourist was late or no-show',
   'Tourist damaged vehicle',
@@ -22,7 +22,17 @@ const REPORT_REASONS = [
   'Other'
 ];
 
-export default function ReportModal({ visible, onClose, onSubmit, loading }) {
+const TOURIST_REPORT_REASONS = [
+  'Driver was rude or unprofessional',
+  'Driver was late or did not show up',
+  'Unsafe driving behavior',
+  'Vehicle was in poor condition',
+  'Driver took wrong route or overcharged',
+  'Driver did not follow agreed itinerary',
+  'Other'
+];
+
+export default function ReportModal({ visible, onClose, onSubmit, loading, reporterType = 'driver' }) {
   const [selectedReason, setSelectedReason] = useState('');
   const [customReason, setCustomReason] = useState('');
   const [description, setDescription] = useState('');
@@ -64,7 +74,7 @@ export default function ReportModal({ visible, onClose, onSubmit, loading }) {
           </View>
 
           <Text style={styles.label}>Reason for report:</Text>
-          {REPORT_REASONS.map((reason) => (
+          {(reporterType === 'tourist' ? TOURIST_REPORT_REASONS : DRIVER_REPORT_REASONS).map((reason) => (
             <TouchableOpacity
               key={reason}
               style={[
