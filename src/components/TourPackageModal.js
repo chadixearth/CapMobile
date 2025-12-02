@@ -224,17 +224,15 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
 
                 {/* Availability moved here */}
                 <AdaptiveChip>
-                  <>
-                    <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#16A34A' : '#DC2626' }]} />
-                    <Text
-                      style={[
-                        styles.chipText,
-                        { color: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
-                      ]}
-                    >
-                      {packageData?.expiration_date && new Date(packageData.expiration_date) < new Date() ? 'Expired' : packageData?.is_active && packageData?.status === 'active' ? 'Available' : 'Unavailable'}
-                    </Text>
-                  </>
+                  <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#16A34A' : '#DC2626' }]} />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
+                    ]}
+                  >
+                    {packageData?.expiration_date && new Date(packageData.expiration_date) < new Date() ? 'Expired' : packageData?.is_active && packageData?.status === 'active' ? 'Available' : 'Unavailable'}
+                  </Text>
                 </AdaptiveChip>
               </View>
             </View>

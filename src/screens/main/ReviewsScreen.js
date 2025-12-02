@@ -19,6 +19,7 @@ import { apiBaseUrl } from '../../services/networkConfig';
 import { getAccessToken } from '../../services/authService';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 import { Alert } from 'react-native';
+import { getReviewDisplayName } from '../../utils/anonymousUtils';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -266,13 +267,14 @@ function ReviewsScreen({ navigation }) {
 
   const renderPendingReview = (booking, index) => {
     const isRideHailing = booking.pickup_address && !booking.package_data;
+    const packageName = booking.package_name || booking.package_data?.package_name || booking.tour_package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package');
     
     return (
       <View key={index} style={styles.reviewCard}>
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
             <Text style={styles.reviewerName}>
-              {booking.package_data?.package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package')}
+              {packageName}
             </Text>
             <Text style={styles.bookingDate}>
               {booking.booking_date ? new Date(booking.booking_date + 'T00:00:00').toLocaleDateString() : new Date(booking.created_at).toLocaleDateString()}
@@ -308,8 +310,8 @@ function ReviewsScreen({ navigation }) {
   };
 
   const renderReview = (review, index) => {
-    const isPackageReview = !!review.package_id;
-    const isDriverReview = !!review.driver_id;
+    const isPackageReview = review.review_type === 'package' || !!review.package_id;
+    const isDriverReview = review.review_type === 'driver' || !!review.driver_id;
     const isReceivedTab = activeTab === 'received';
     
     return (
@@ -317,14 +319,19 @@ function ReviewsScreen({ navigation }) {
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
             <Text style={styles.reviewerName}>
-              {isReceivedTab
-                ? (review.is_anonymous ? 'Anonymous' : (review.reviewer_name || 'Customer'))
-                : (isDriverReview
-                  ? (review.driver_name || 'Driver')
-                  : (review.package_name || 'Tour Package')
-                )
-              }
+              {String(isReceivedTab
+                ? getReviewDisplayName(review)
+                : (isDriverReview 
+                    ? (review.driver_name || review.driver?.name || 'Driver Review')
+                    : (review.package_name || review.tour_package_name || review.package_data?.package_name || review.package?.name || review.booking?.package_name || review.booking?.package_data?.package_name || review.booking?.tour_package_name || 'Package Review')
+                  )
+              )}
             </Text>
+            {!isReceivedTab && isDriverReview && (review.package_name || review.booking?.package_name) && (
+              <Text style={styles.packageInfo}>
+                Package: {review.package_name || review.booking?.package_name}
+              </Text>
+            )}
             {renderStars(review.rating)}
           </View>
           <Text style={styles.reviewDate}>
@@ -348,11 +355,11 @@ function ReviewsScreen({ navigation }) {
             </Text>
           </View>
           
-          {isReceivedTab && review.booking_date && (
+          {(isReceivedTab && review.booking_date) || (!isReceivedTab && review.booking_date) ? (
             <Text style={styles.bookingDateText}>
-              Booking: {new Date(review.booking_date).toLocaleDateString()}
+              {new Date(review.booking_date).toLocaleDateString()}
             </Text>
-          )}
+          ) : null}
         </View>
       </View>
     );

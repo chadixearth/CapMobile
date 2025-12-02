@@ -303,7 +303,7 @@ const TerminalsScreen = ({ navigation, route }) => {
           <Text style={[styles.toggleText, showRides && styles.activeToggleText]}>Active</Text>
           {activeRides.length > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{activeRides.length}</Text>
+              <Text style={styles.badgeText}>{String(activeRides.length)}</Text>
             </View>
           )}
         </TouchableOpacity>

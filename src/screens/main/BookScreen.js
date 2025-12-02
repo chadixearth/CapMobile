@@ -66,6 +66,7 @@ export default function BookScreen({ navigation }) {
   const [ratingModal, setRatingModal] = useState({ visible: false, type: 'package', booking: null });
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
+  const [ratingAnonymous, setRatingAnonymous] = useState(false);
 
   // cancellation state (reworked)
   const [cancelModal, setCancelModal] = useState({
@@ -599,6 +600,7 @@ export default function BookScreen({ navigation }) {
   const openRating = (booking, type) => {
     setRatingValue(0);
     setRatingComment('');
+    setRatingAnonymous(false);
     setRatingModal({ visible: true, type, booking });
   };
 
@@ -623,6 +625,7 @@ export default function BookScreen({ navigation }) {
           reviewer_id: user.id,
           rating: ratingValue,
           comment: ratingComment,
+          is_anonymous: ratingAnonymous,
         });
       } else {
         const driverId = getDriverId(bk);
@@ -636,6 +639,7 @@ export default function BookScreen({ navigation }) {
           reviewer_id: user.id,
           rating: ratingValue,
           comment: ratingComment,
+          is_anonymous: ratingAnonymous,
         });
       }
 
@@ -1404,6 +1408,16 @@ export default function BookScreen({ navigation }) {
                   onChangeText={setRatingComment}
                   multiline
                 />
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setRatingAnonymous(!ratingAnonymous)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, ratingAnonymous && styles.checkboxChecked]}>
+                    {ratingAnonymous && <Ionicons name="checkmark" size={14} color="white" />}
+                  </View>
+                  <Text style={styles.checkboxLabel}>Rate anonymously</Text>
+                </TouchableOpacity>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                   <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444', flex: 1 }]} onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
                     <Text style={styles.pillBtnText}>Cancel</Text>
@@ -1856,5 +1870,54 @@ const styles = StyleSheet.create({
     borderBottomColor: '#9190901d',
     borderBottomWidth: 1,
     borderStyle: 'SOLID',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+  },
+  checkboxChecked: {
+    backgroundColor: MAROON,
+    borderColor: MAROON,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#333',
+  },
+
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+  },
+  checkboxChecked: {
+    backgroundColor: MAROON,
+    borderColor: MAROON,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#333',
   },
 });

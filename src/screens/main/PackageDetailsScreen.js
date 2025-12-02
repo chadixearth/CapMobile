@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getPackageBookings, acceptPackageBooking, getPackageReviews } from '../../services/tourPackageService';
+import { getReviewDisplayName } from '../../utils/anonymousUtils';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -109,7 +110,7 @@ export default function PackageDetailsScreen({ navigation, route }) {
     <View key={index} style={styles.reviewCard}>
       <View style={styles.reviewHeader}>
         <Text style={styles.reviewerName}>
-          {review.is_anonymous ? 'Anonymous' : review.reviewer_name || 'Customer'}
+          {getReviewDisplayName(review)}
         </Text>
         <View style={styles.ratingContainer}>
           {[1, 2, 3, 4, 5].map((star) => (
