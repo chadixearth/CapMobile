@@ -75,7 +75,7 @@ function parseDateSafely(v) {
 async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso') {
   let q = supabase
     .from('earnings')
-    .select('id, amount, status, earning_date, driver_id');
+    .select('id, booking_id, amount, status, earning_date, driver_id, package_name');
 
   q = q.eq('driver_id', String(driverId));
 
@@ -118,6 +118,7 @@ function aggregateEarnings(rows) {
     totalAdmin += adm;
     return {
       id: r.id,
+      booking_id: r.booking_id || r.id,
       package_name: r.package_name || 'Tour Package',
       earning_date: r.earning_date,
       status: r.status,

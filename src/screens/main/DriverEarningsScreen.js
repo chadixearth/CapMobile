@@ -520,7 +520,7 @@ export default function DriverEarningsScreen({ navigation }) {
 
       {detailedEarnings.length > 0 ? (
         detailedEarnings.map((earning, index) => (
-          <View key={earning.booking_id || index} style={styles.earningItem}>
+          <View key={earning.booking_id || earning.id || index} style={styles.earningItem}>
             <View style={styles.earningIcon}>
               <MaterialCommunityIcons name="cash" size={24} color="#2ecc71" />
             </View>
@@ -539,7 +539,7 @@ export default function DriverEarningsScreen({ navigation }) {
                 })}
               </Text>
               <Text style={styles.earningBookingRef}>
-                Booking ID: {String(earning.booking_id).slice(0, 8)}...
+                Booking ID: {String(earning.booking_id || earning.id || 'N/A').slice(0, 8)}...
               </Text>
             </View>
 

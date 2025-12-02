@@ -936,7 +936,17 @@ export default function DriverBookScreen({ navigation }) {
 
   const formatTime = (timeString) => {
     if (!timeString) return 'N/A';
-    return timeString;
+    try {
+      // Handle HH:MM:SS or HH:MM format
+      const timeStr = timeString.includes('T') ? timeString.split('T')[1] : timeString;
+      const [hours, minutes] = timeStr.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+      return `${displayHour}:${minutes} ${ampm}`;
+    } catch {
+      return timeString;
+    }
   };
 
   const formatCurrencyLocal = (amount) => {

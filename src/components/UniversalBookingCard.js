@@ -180,7 +180,27 @@ const UniversalBookingCard = ({
         <View style={styles.overviewItem}>
           <Ionicons name="time-outline" size={16} color="#6B2E2B" />
           <Text style={styles.overviewText}>
-            {details.time ? (details.time.length === 5 ? details.time : new Date('2000-01-01T' + details.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })) : 'TBD'}
+            {details.time ? (() => {
+              try {
+                // Handle HH:MM format
+                if (details.time.length === 5) {
+                  const [hours, minutes] = details.time.split(':');
+                  const hour = parseInt(hours);
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const displayHour = hour % 12 || 12;
+                  return `${displayHour}:${minutes} ${ampm}`;
+                }
+                // Handle HH:MM:SS format
+                const timeStr = details.time.includes('T') ? details.time.split('T')[1] : details.time;
+                const [hours, minutes] = timeStr.split(':');
+                const hour = parseInt(hours);
+                const ampm = hour >= 12 ? 'PM' : 'AM';
+                const displayHour = hour % 12 || 12;
+                return `${displayHour}:${minutes} ${ampm}`;
+              } catch {
+                return details.time;
+              }
+            })() : 'TBD'}
           </Text>
         </View>
       </View>

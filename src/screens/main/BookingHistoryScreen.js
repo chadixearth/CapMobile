@@ -81,13 +81,9 @@ export default function BookingHistoryScreen({ navigation }) {
         fetch(`${apiBaseUrl()}/tour-booking/`, {
           headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
         }),
-        isDriver 
-          ? fetch(`${apiBaseUrl()}/ride-hailing/driver-history/?driver_id=${user.id}`, {
-              headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
-            })
-          : fetch(`${apiBaseUrl()}/ride-hailing/customer-history/?customer_id=${user.id}`, {
-              headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
-            })
+        fetch(`${apiBaseUrl()}/ride-hailing/`, {
+          headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+        })
       ]);
       
       let allBookings = [];
@@ -104,8 +100,28 @@ export default function BookingHistoryScreen({ navigation }) {
       // Process ride hailing bookings
       if (rideResponse.ok) {
         const rideData = await rideResponse.json();
-        const rideBookings = rideData.data || rideData;
-        allBookings = [...allBookings, ...(Array.isArray(rideBookings) ? rideBookings : [])];
+        let rideBookings = [];
+        
+        // Extract rides from response
+        if (rideData.data?.data && Array.isArray(rideData.data.data)) {
+          rideBookings = rideData.data.data;
+        } else if (rideData.data && Array.isArray(rideData.data)) {
+          rideBookings = rideData.data;
+        } else if (Array.isArray(rideData)) {
+          rideBookings = rideData;
+        }
+        
+        // Filter for user's rides (driver or customer)
+        const userRides = rideBookings.filter(ride => {
+          if (!ride) return false;
+          if (isDriver) {
+            return ride.driver_id === user.id;
+          } else {
+            return ride.customer_id === user.id;
+          }
+        });
+        
+        allBookings = [...allBookings, ...userRides];
       }
       
       // Sort by created_at descending, then by status (completed/cancelled first)
@@ -345,7 +361,18 @@ export default function BookingHistoryScreen({ navigation }) {
             </View>
             <Text style={styles.bookingDate}>
               {booking.booking_date ? new Date(booking.booking_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(booking.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              {booking.booking_time && ` • ${booking.booking_time.length === 5 ? booking.booking_time : new Date('2000-01-01T' + booking.booking_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`}
+              {booking.booking_time && ` • ${(() => {
+                try {
+                  const timeStr = booking.booking_time.includes('T') ? booking.booking_time.split('T')[1] : booking.booking_time;
+                  const [hours, minutes] = timeStr.split(':');
+                  const hour = parseInt(hours);
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const displayHour = hour % 12 || 12;
+                  return `${displayHour}:${minutes} ${ampm}`;
+                } catch {
+                  return booking.booking_time;
+                }
+              })()}`}
             </Text>
           </View>
           
