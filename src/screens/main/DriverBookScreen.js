@@ -530,7 +530,14 @@ export default function DriverBookScreen({ navigation }) {
       return;
     }
 
-    // Check for schedule conflicts first
+    // Check if location services are enabled
+    const LocationService = (await import('../../services/locationService')).default;
+    const hasPermission = await LocationService.requestPermissions('driver');
+    if (!hasPermission) {
+      return; // Alert already shown by requestPermissions
+    }
+
+    // Check for schedule conflicts
     try {
       const { driverScheduleService } = require('../../services/driverScheduleService');
       const conflictCheck = await driverScheduleService.checkAvailability(
@@ -1630,11 +1637,6 @@ const getCustomTitle = (r) => (
               ? 'Ongoing Bookings'
               : 'Booking History'}
           </Text>
-          <Text style={styles.subtitle}>
-            {user?.name || user?.user_metadata?.name || user?.email || 'Driver'}
-            {'\u2019'}s {activeTab === 'available' ? 'available' : activeTab === 'ongoing' ? 'ongoing' : 'completed'} bookings
-          </Text>
-          {/* Manual header refresh buttons removed as requested */}
         </View>
 
         {renderTabBar()}

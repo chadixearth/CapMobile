@@ -143,7 +143,7 @@ const RegistrationScreen = ({ navigation, route }) => {
   const [drivesOwnTartanilla, setDrivesOwnTartanilla] = useState(false);
 
   // Notification preference (driver/owner only)
-  const [notificationPreference, setNotificationPreference] = useState('both');
+  const [notificationPreference, setNotificationPreference] = useState('email');
   
   // Verification method for tourists
   const [verificationMethod, setVerificationMethod] = useState('email');
@@ -794,22 +794,6 @@ const RegistrationScreen = ({ navigation, route }) => {
                     <View style={styles.notificationOptionText}>
                       <Text style={[styles.notificationOptionTitle, notificationPreference === 'sms' && { color: ACCENT }]}>SMS Only</Text>
                       <Text style={styles.notificationOptionDesc}>Receive credentials via text message</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.notificationOption, notificationPreference === 'both' && styles.notificationOptionSelected]}
-                    onPress={() => setNotificationPreference('both')}
-                    activeOpacity={0.9}
-                  >
-                    <Ionicons 
-                      name={notificationPreference === 'both' ? 'radio-button-on' : 'radio-button-off'} 
-                      size={18} 
-                      color={notificationPreference === 'both' ? ACCENT : colors.textSecondary} 
-                    />
-                    <View style={styles.notificationOptionText}>
-                      <Text style={[styles.notificationOptionTitle, notificationPreference === 'both' && { color: ACCENT }]}>Both Email & SMS</Text>
-                      <Text style={styles.notificationOptionDesc}>Receive credentials via both methods</Text>
                     </View>
                   </TouchableOpacity>
                 </View>

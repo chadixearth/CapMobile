@@ -240,19 +240,31 @@ function NotificationItem({ title, message, created_at, read, type, category, on
   const formatTime = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    const diffInSeconds = Math.floor((now - date) / 1000);
     
-    if (diffInMinutes < 1) {
-      return 'now';
-    } else if (diffInMinutes < 60) {
-      return `${diffInMinutes}m ago`;
-    } else if (diffInMinutes < 1440) { // Less than 24 hours
-      const hours = Math.floor(diffInMinutes / 60);
-      return `${hours}h ago`;
-    } else {
-      const days = Math.floor(diffInMinutes / 1440);
-      return `${days}d ago`;
+    if (diffInSeconds < 60) {
+      return 'Just now';
     }
+    
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes}m ago`;
+    }
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) {
+      return `${diffInHours}h ago`;
+    }
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays === 1) {
+      return 'Yesterday';
+    }
+    if (diffInDays < 7) {
+      return `${diffInDays}d ago`;
+    }
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   return (

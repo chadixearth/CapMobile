@@ -27,6 +27,10 @@ const PublicLocationToggle = () => {
     if (value) {
       const success = await LocationService.startDriverLocationTracking(userId, 'driver');
       setIsEnabled(success);
+      if (!success) {
+        // If failed, recheck status to ensure UI is in sync
+        setTimeout(() => checkStatus(), 500);
+      }
     } else {
       LocationService.stopTracking();
       setIsEnabled(false);

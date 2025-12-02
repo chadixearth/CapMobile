@@ -648,6 +648,7 @@ export default function AccountDetailsScreen({ navigation }) {
                       value={firstName}
                       onChangeText={setFirstName}
                       placeholder="First Name"
+                      currentValue={firstName}
                     />
                   </View>
                   <View style={styles.gridCol}>
@@ -655,6 +656,7 @@ export default function AccountDetailsScreen({ navigation }) {
                       value={middleName}
                       onChangeText={setMiddleName}
                       placeholder="Middle Name"
+                      currentValue={middleName}
                     />
                   </View>
                 </View>
@@ -664,6 +666,7 @@ export default function AccountDetailsScreen({ navigation }) {
                       value={lastName}
                       onChangeText={setLastName}
                       placeholder="Last Name"
+                      currentValue={lastName}
                     />
                   </View>
                   <View style={styles.gridCol} />
@@ -686,6 +689,7 @@ export default function AccountDetailsScreen({ navigation }) {
                       onChangeText={setEmail}
                       placeholder="Email Address"
                       keyboardType="email-address"
+                      currentValue={email}
                     />
                   </View>
                   <View style={styles.gridCol}>
@@ -694,6 +698,7 @@ export default function AccountDetailsScreen({ navigation }) {
                       onChangeText={setPhone}
                       placeholder="Phone Number"
                       keyboardType="phone-pad"
+                      currentValue={phone}
                     />
                   </View>
                 </View>

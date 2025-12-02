@@ -109,6 +109,18 @@ export default function LoginScreen({ navigation }) {
       const result = await loginUser(email, password, allowedRoles);
       console.log('[LoginScreen] Login result:', result);
       
+      // Check if device verification is required
+      if (result.success && result.requires_device_verification) {
+        console.log('[LoginScreen] Device verification required');
+        setLoading(false);
+        navigation.navigate('DeviceVerification', {
+          user_id: result.user?.id,
+          email: email,
+          device_fingerprint: result.device_fingerprint,
+        });
+        return;
+      }
+      
       // Check if password change is required on first login
       if (result.success && result.force_password_change) {
         console.log('[LoginScreen] Force password change required for user:', result.user?.id);

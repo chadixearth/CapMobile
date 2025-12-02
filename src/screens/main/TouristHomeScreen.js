@@ -849,7 +849,13 @@ export default function TouristHomeScreen({ navigation }) {
                     <View style={styles.metaInline}>
                       <Ionicons name="alarm-outline" size={12} />
                       <Text style={styles.metaInlineText} numberOfLines={1}>
-                        {pkg.start_time}
+                        {(() => {
+                          const [hours, minutes] = pkg.start_time.split(':');
+                          const hour = parseInt(hours);
+                          const ampm = hour >= 12 ? 'PM' : 'AM';
+                          const displayHour = hour % 12 || 12;
+                          return `${displayHour}:${minutes} ${ampm}`;
+                        })()}
                       </Text>
                     </View>
                   ) : null}
@@ -1374,51 +1380,49 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(107,46,43,0.45)',
     marginBottom: 16,
-    padding: 10,
-    minHeight: 210,
+    padding: 12,
+    minHeight: 240,
   },
-  packageImage: { width: '100%', height: 100, borderRadius: 12, marginBottom: 8 },
-  packageTitle: { color: '#333', fontSize: 13, fontWeight: '700', lineHeight: 16, minHeight: 32 },
+  packageImage: { width: '100%', height: 110, borderRadius: 12, marginBottom: 10 },
+  packageTitle: { color: '#333', fontSize: 14, fontWeight: '700', lineHeight: 18, marginBottom: 8, minHeight: 36 },
 
   /* Inline meta */
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 10,
-    marginTop: 2,
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 8,
   },
-  metaInline: { flexDirection: 'row', alignItems: 'center', maxWidth: '33%' },
-  metaInlineText: { marginLeft: 4, color: '#6B2E2B', fontSize: 11, fontWeight: '700' },
+  metaInline: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
+  metaInlineText: { marginLeft: 4, color: '#6B2E2B', fontSize: 11, fontWeight: '600' },
 
   /* Bottom row */
-  cardBottomRow: { marginTop: 'auto', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardBottomRow: { marginTop: 'auto', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
 
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 4,
-    paddingVertical: 5,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     backgroundColor: '#E7F6EC',
     borderColor: '#C8E6C9',
     borderWidth: 1,
     borderRadius: 999,
-    maxWidth: '65%',
-    marginRight: 2,
+    flex: 1,
   },
-  statusText: { fontSize: 10, fontWeight: '700' },
+  statusText: { fontSize: 10, fontWeight: '700', flexShrink: 1 },
 
   bookBtn: {
     backgroundColor: '#6B2E2B',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 16,
-    minWidth: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   bookBtnDisabled: {
     backgroundColor: '#C7C7C7',

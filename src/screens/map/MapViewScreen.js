@@ -468,19 +468,9 @@ const MapViewScreen = ({ navigation, route }) => {
     if (mode === 'viewLocation' && location) {
       setRoads([]);
     } else if (mode === 'viewRoute' && locations) {
-      const routeData = {
-        id: 'tour-route',
-        name: 'Tour Route',
-        start_latitude: parseFloat(locations.pickup.latitude),
-        start_longitude: parseFloat(locations.pickup.longitude),
-        end_latitude: parseFloat(locations.destination.latitude),
-        end_longitude: parseFloat(locations.destination.longitude),
-        stroke_color: '#007AFF',
-        stroke_width: 6,
-        stroke_opacity: 0.8,
-        highlight_type: 'tour_route'
-      };
-      setRoads([routeData]);
+      // Fetch OSRM route between pickup and destination
+      fetchOSRMRoute(locations.pickup, locations.destination);
+      setRoads([]);
     } else {
       // Show ALL road highlights immediately
       console.log('Setting ALL road highlights for display:', processedRoads.length, 'roads');
@@ -979,6 +969,49 @@ const MapViewScreen = ({ navigation, route }) => {
     }
   };
 
+  const fetchOSRMRoute = async (pickup, destination) => {
+    try {
+      console.log('Fetching OSRM route from', pickup.name, 'to', destination.name);
+      
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`
+      );
+      
+      const data = await response.json();
+      
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]); // Convert [lng, lat] to [lat, lng]
+        
+        console.log('OSRM route fetched:', coordinates.length, 'points');
+        
+        const routeRoad = {
+          id: 'tour-route',
+          name: 'Tour Route',
+          road_coordinates: coordinates,
+          coordinates: coordinates,
+          stroke_color: '#6B2E2B',
+          color: '#6B2E2B',
+          stroke_width: 5,
+          weight: 5,
+          stroke_opacity: 0.9,
+          opacity: 0.9,
+          highlight_type: 'tour_route',
+          distance: route.distance,
+          duration: route.duration
+        };
+        
+        setRoads([routeRoad]);
+      } else {
+        console.warn('OSRM routing failed:', data.code);
+        Alert.alert('Route Not Available', 'Could not calculate route between locations.');
+      }
+    } catch (error) {
+      console.error('Error fetching OSRM route:', error);
+      Alert.alert('Error', 'Failed to load route. Please check your connection.');
+    }
+  };
+
   const handleClearCache = async () => {
     Alert.alert(
       'Clear Cache',
@@ -1067,95 +1100,12 @@ const MapViewScreen = ({ navigation, route }) => {
         
         {/* Floating Map Controls */}
         <View style={styles.floatingControls}>
-
-          
-          {/* Driver Toggle Button */}
-          <TouchableOpacity 
-            style={[styles.floatingButton, showDrivers && styles.floatingButtonActive]}
-            onPress={() => {
-              const newShowDrivers = !showDrivers;
-              setShowDrivers(newShowDrivers);
-              console.log('Driver visibility toggled:', newShowDrivers);
-              
-              // Immediately refresh markers to show/hide drivers
-              if (newShowDrivers && driverLocations.length > 0) {
-                // Add driver markers to current markers
-                const driverMarkers = driverLocations.map(driver => {
-                  const driverId = driver.driver_id || driver.user_id;
-                  const lastUpdate = new Date(driver.updated_at);
-                  const minutesAgo = Math.round((new Date() - lastUpdate) / (1000 * 60));
-                  
-                  return {
-                    latitude: parseFloat(driver.latitude),
-                    longitude: parseFloat(driver.longitude),
-                    title: `Driver ${driverId}`,
-                    description: `🐎 Tartanilla Driver - Available\nLast seen: ${minutesAgo} min ago`,
-                    pointType: 'driver',
-                    type: 'driver',
-                    iconColor: '#FF6B35',
-                    id: `driver-${driverId}`,
-                    isDriver: true,
-                    speed: driver.speed || 0,
-                    heading: driver.heading || 0,
-                    lastUpdate: driver.updated_at,
-                    driverId: driverId
-                  };
-                });
-                
-                setMarkers(prev => {
-                  // Remove existing driver markers and add new ones
-                  const nonDriverMarkers = prev.filter(m => !m.isDriver && m.pointType !== 'driver');
-                  return [...nonDriverMarkers, ...driverMarkers];
-                });
-              } else {
-                // Remove driver markers
-                setMarkers(prev => prev.filter(m => !m.isDriver && m.pointType !== 'driver'));
-              }
-            }}
-          >
-            <Text style={[styles.floatingButtonText, showDrivers && { color: '#fff' }]}>🐎</Text>
-          </TouchableOpacity>
-          
-          {/* Reset View Button */}
-          <TouchableOpacity 
-            style={[styles.floatingButton, styles.resetViewButton]}
-            onPress={() => {
-              setMarkers(allMarkers);
-              setRoads(allRoads);
-            }}
-          >
-            <Text style={styles.floatingButtonText}>🔄</Text>
-          </TouchableOpacity>
-          
           {/* Refresh Button */}
           <TouchableOpacity 
-            style={[styles.floatingButton, styles.refreshButton]}
+            style={styles.floatingButton}
             onPress={onRefresh}
           >
-            <Text style={styles.floatingButtonText}>🔄</Text>
-          </TouchableOpacity>
-          
-          {/* Force Refresh Button */}
-          <TouchableOpacity 
-            style={[styles.floatingButton, styles.forceRefreshButton]}
-            onPress={() => {
-              Alert.alert(
-                'Force Refresh',
-                'Clear cache and reload fresh data?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Refresh',
-                    onPress: async () => {
-                      await clearMapCache();
-                      loadMapDataWithCache();
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.floatingButtonText}>💾</Text>
+            <Ionicons name="refresh" size={22} color="#6B2E2B" />
           </TouchableOpacity>
           
           {/* Satellite Toggle */}
@@ -1163,15 +1113,7 @@ const MapViewScreen = ({ navigation, route }) => {
             style={[styles.floatingButton, showSatellite && styles.floatingButtonActive]}
             onPress={() => setShowSatellite(!showSatellite)}
           >
-            <Text style={styles.floatingButtonText}>{showSatellite ? '🗺️' : '🛰️'}</Text>
-          </TouchableOpacity>
-          
-          {/* Legend Toggle */}
-          <TouchableOpacity 
-            style={styles.floatingButton}
-            onPress={() => setShowLegend(!showLegend)}
-          >
-            <Text style={styles.floatingButtonText}>ℹ️</Text>
+            <Ionicons name={showSatellite ? 'map' : 'satellite'} size={22} color={showSatellite ? '#fff' : '#6B2E2B'} />
           </TouchableOpacity>
         </View>
         
@@ -1218,62 +1160,7 @@ const MapViewScreen = ({ navigation, route }) => {
           </View>
         )}
         
-        {/* Bottom Info Card */}
-        {mapData && (
-          <View style={styles.bottomCard}>
-            <View style={styles.dragHandle} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{mapData.total_items?.points || 0}</Text>
-                  <Text style={styles.statLabel}>Points</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{roads.length}</Text>
-                  <Text style={styles.statLabel}>Roads</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{Object.keys(pickupDropoffGroups).length}</Text>
-                  <Text style={styles.statLabel}>Groups</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{driverLocations.length}</Text>
-                  <Text style={styles.statLabel}>Drivers</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{mapData.total_items?.routes || 0}</Text>
-                  <Text style={styles.statLabel}>Routes</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{mapData.total_items?.zones || 0}</Text>
-                  <Text style={styles.statLabel}>Zones</Text>
-                </View>
-                {cacheInfo && !cacheInfo.isExpired && (
-                  <>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statItem}>
-                      <Text style={[styles.statValue, { color: '#4CAF50', fontSize: 20 }]}>✓</Text>
-                      <Text style={styles.statLabel}>Cached</Text>
-                    </View>
-                  </>
-                )}
-              </View>
-            </ScrollView>
-            
-            {/* Settings button */}
-            <TouchableOpacity 
-              style={styles.settingsButton}
-              onPress={handleClearCache}
-            >
-              <Text style={styles.settingsIcon}>⚙️</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+
       </View>
     );
   };
@@ -1315,9 +1202,8 @@ const MapViewScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#6B2E2B',
   },
-
   
   // Header styles
   header: {
@@ -1325,7 +1211,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#6B2E2B',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1370,40 +1256,28 @@ const styles = StyleSheet.create({
   // Floating controls
   floatingControls: {
     position: 'absolute',
-    top: 20,
+    top: 16,
     right: 16,
     gap: 8,
   },
   floatingButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    elevation: 6,
-    shadowColor: '#6B2E2B',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
     borderWidth: 1,
-    borderColor: '#F0E7E3',
+    borderColor: '#E0E0E0',
   },
   floatingButtonActive: {
     backgroundColor: '#6B2E2B',
-  },
-  floatingButtonText: {
-    fontSize: 22,
-  },
-  refreshButton: {
-    backgroundColor: '#4CAF50',
-  },
-  resetViewButton: {
-    backgroundColor: '#81C784',
-  },
-  forceRefreshButton: {
-    backgroundColor: '#FFB74D',
   },
   
   // Legend overlay
@@ -1472,71 +1346,7 @@ const styles = StyleSheet.create({
     color: '#555',
   },
   
-  // Bottom card
-  bottomCard: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    elevation: 12,
-    shadowColor: '#6B2E2B',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0E7E3',
-  },
-  dragHandle: {
-    width: 48,
-    height: 4,
-    backgroundColor: '#6B2E2B',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-    opacity: 0.3,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  statItem: {
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  statValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#6B2E2B',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#8D6E63',
-    marginTop: 4,
-    textTransform: 'uppercase',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  statDivider: {
-    width: 1,
-    height: 44,
-    backgroundColor: '#F0E7E3',
-  },
-  settingsButton: {
-    position: 'absolute',
-    top: 12,
-    right: 16,
-    padding: 4,
-  },
-  settingsIcon: {
-    fontSize: 20,
-  },
+
   
   // Selection mode styles
   selectionHeader: {
@@ -1608,7 +1418,7 @@ const styles = StyleSheet.create({
   },
   driverToggleContainer: {
     position: 'absolute',
-    top: 20,
+    top: 16,
     left: 16,
     right: 80,
     zIndex: 10,

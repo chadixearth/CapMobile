@@ -43,6 +43,7 @@ import ReviewSubmissionScreen from '../screens/main/ReviewSubmissionScreen';
 import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
 import ForcePasswordChangeScreen from '../screens/auth/ForcePasswordChangeScreen';
 import DriverRideTrackingScreen from '../screens/main/DriverRideTrackingScreen';
+import DeviceVerificationScreen from '../screens/auth/DeviceVerificationScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -125,6 +126,7 @@ export default function RootNavigator() {
           <Stack.Screen name={Routes.REGISTRATION} component={RegistrationScreen} />
           <Stack.Screen name={Routes.FORGOT_PASSWORD} component={ForgotPasswordScreen} />
           <Stack.Screen name={Routes.FORCE_PASSWORD_CHANGE} component={ForcePasswordChangeScreen} />
+          <Stack.Screen name="DeviceVerification" component={DeviceVerificationScreen} />
           <Stack.Screen name={Routes.ROLE_SELECTION} component={RoleSelectionScreen} />
           <Stack.Screen name={Routes.MAP_VIEW} component={MapViewScreen} />
         </>

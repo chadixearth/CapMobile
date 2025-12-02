@@ -224,15 +224,17 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
 
                 {/* Availability moved here */}
                 <AdaptiveChip>
-                  <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#16A34A' : '#DC2626' }]} />
-                  <Text
-                    style={[
-                      styles.chipText,
-                      { color: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
-                    ]}
-                  >
-                    {packageData?.expiration_date && new Date(packageData.expiration_date) < new Date() ? 'Expired' : packageData?.is_active && packageData?.status === 'active' ? 'Available' : 'Unavailable'}
-                  </Text>
+                  <>
+                    <View style={[styles.pillDot, { backgroundColor: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#16A34A' : '#DC2626' }]} />
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: (packageData?.is_active && packageData?.status === 'active' && (!packageData?.expiration_date || new Date(packageData.expiration_date) >= new Date())) ? '#86EFAC' : '#FCA5A5', fontWeight: '800' },
+                      ]}
+                    >
+                      {packageData?.expiration_date && new Date(packageData.expiration_date) < new Date() ? 'Expired' : packageData?.is_active && packageData?.status === 'active' ? 'Available' : 'Unavailable'}
+                    </Text>
+                  </>
                 </AdaptiveChip>
               </View>
             </View>
@@ -298,15 +300,69 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                 />
               )}
               
-              <InfoRow
-                title="Pick-up Location"
-                subtitle={packageData?.pickup_location || 'Tartanilla Terminal'}
-              />
-              
-              <InfoRow
-                title="Destination"
-                subtitle={packageData?.destination || 'Various scenic locations around Cebu City'}
-              />
+              {/* Route Card */}
+              <View style={styles.routeCard}>
+                <View style={styles.routeHeader}>
+                  <Ionicons name="navigate-circle" size={20} color="#6B2E2B" />
+                  <Text style={styles.routeHeaderText}>Tour Route</Text>
+                </View>
+                
+                <View style={styles.routeContent}>
+                  {/* Pickup */}
+                  <View style={styles.locationBlock}>
+                    <View style={styles.locationIconWrapper}>
+                      <View style={styles.pickupDot} />
+                    </View>
+                    <View style={styles.locationInfo}>
+                      <Text style={styles.locationLabel}>Pick-up Point</Text>
+                      <Text style={styles.locationName}>{packageData?.pickup_location || 'Tartanilla Terminal'}</Text>
+                    </View>
+                  </View>
+
+                  {/* Connecting Line */}
+                  <View style={styles.routeLine} />
+
+                  {/* Destination */}
+                  <View style={styles.locationBlock}>
+                    <View style={styles.locationIconWrapper}>
+                      <View style={styles.destinationDot} />
+                    </View>
+                    <View style={styles.locationInfo}>
+                      <Text style={styles.locationLabel}>Destination</Text>
+                      <Text style={styles.locationName}>{packageData?.destination || 'Various scenic locations'}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* View on Map Button */}
+                <TouchableOpacity 
+                  style={styles.mapActionButton}
+                  onPress={() => {
+                    onClose?.();
+                    if (navigation) {
+                      navigation.navigate('MapView', {
+                        mode: 'viewRoute',
+                        locations: {
+                          pickup: {
+                            name: packageData?.pickup_location || 'Pickup Location',
+                            latitude: packageData?.pickup_lat || 10.295,
+                            longitude: packageData?.pickup_lng || 123.89
+                          },
+                          destination: {
+                            name: packageData?.destination || 'Destination',
+                            latitude: packageData?.destination_lat || 10.295,
+                            longitude: packageData?.destination_lng || 123.89
+                          }
+                        }
+                      });
+                    }
+                  }}
+                >
+                  <Ionicons name="map" size={16} color="#6B2E2B" />
+                  <Text style={styles.mapActionText}>View Full Route on Map</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#6B2E2B" />
+                </TouchableOpacity>
+              </View>
               
               {packageData?.expiration_date && (
                 <InfoRow
@@ -354,34 +410,7 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                   subtitle={packageData.requirements}
                 />
               )}
-              <View style={styles.mapButtonContainer}>
-                <TouchableOpacity 
-                  style={styles.viewRouteButton} 
-                  onPress={() => {
-                    onClose?.();
-                    if (navigation) {
-                      navigation.navigate('MapView', {
-                        mode: 'viewRoute',
-                        locations: {
-                          pickup: {
-                            name: packageData?.pickup_location || 'Pickup Location',
-                            latitude: packageData?.pickup_lat || 10.295,
-                            longitude: packageData?.pickup_lng || 123.89
-                          },
-                          destination: {
-                            name: packageData?.destination || 'Destination',
-                            latitude: packageData?.destination_lat || 10.295,
-                            longitude: packageData?.destination_lng || 123.89
-                          }
-                        }
-                      });
-                    }
-                  }}
-                >
-                  <Ionicons name="map" size={18} color="#fff" />
-                  <Text style={styles.viewRouteButtonText}>View Pickup & Destination</Text>
-                </TouchableOpacity>
-              </View>
+
               {packageData?.stops_lat && packageData?.stops_lng && packageData.stops_lat.length > 0 && (
                 <InfoRow
                   title="Stops"
@@ -735,23 +764,97 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0CFC2',
   },
-  mapButtonContainer: {
-    marginTop: 8,
-    alignItems: 'center',
+  // Route Card
+  routeCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  viewRouteButton: {
+  routeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6B2E2B',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
+    marginBottom: 16,
     gap: 8,
   },
-  viewRouteButtonText: {
-    color: '#fff',
+  routeHeaderText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  routeContent: {
+    marginBottom: 12,
+  },
+  locationBlock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  locationIconWrapper: {
+    width: 32,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  pickupDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 3,
+    borderColor: '#D1FAE5',
+  },
+  destinationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+    backgroundColor: '#EF4444',
+    borderWidth: 3,
+    borderColor: '#FEE2E2',
+  },
+  routeLine: {
+    width: 2,
+    height: 24,
+    backgroundColor: '#D1D5DB',
+    marginLeft: 15,
+    marginVertical: 4,
+  },
+  locationInfo: {
+    flex: 1,
+    paddingLeft: 12,
+  },
+  locationLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  locationName: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  mapActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#6B2E2B',
+    gap: 8,
+  },
+  mapActionText: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#6B2E2B',
+    flex: 1,
+    textAlign: 'center',
   },
   infoTitle: {
     fontSize: 14,

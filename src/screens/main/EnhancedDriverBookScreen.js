@@ -14,6 +14,7 @@ import {
   acceptRideBooking,
   driverCancelRideBooking 
 } from '../../services/rideHailingService';
+import * as Location from 'expo-location';
 import BookingDetailsCard from '../../components/BookingDetailsCard';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 
@@ -73,6 +74,13 @@ export default function EnhancedDriverBookScreen({ navigation }) {
 
   const handleAcceptBooking = async (booking) => {
     if (acceptingBooking) return; // Prevent double-tap
+
+    // Check if location services are enabled
+    const LocationService = (await import('../../services/locationService')).default;
+    const hasPermission = await LocationService.requestPermissions('driver');
+    if (!hasPermission) {
+      return; // Alert already shown by requestPermissions
+    }
 
     Alert.alert(
       'Accept Booking',

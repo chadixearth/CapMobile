@@ -706,6 +706,17 @@ export async function loginUser(email, password, allowedRoles = null) {
   console.log('[authService] API result:', apiResult);
 
   if (apiResult.success && apiResult.data.success) {
+    // Check if device verification is required
+    if (apiResult.data.requires_device_verification) {
+      return {
+        success: true,
+        requires_device_verification: true,
+        device_fingerprint: apiResult.data.device_fingerprint,
+        user: apiResult.data.user,
+        message: 'Device verification required',
+      };
+    }
+    
     // Store session data with proper token handling
     const sessionData = {
       access_token: apiResult.data.session?.access_token || apiResult.data.jwt?.token,

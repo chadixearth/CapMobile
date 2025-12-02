@@ -185,8 +185,9 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
     <Modal
       visible={visible}
       transparent={true}
-      animationType="fade"
+      animationType="slide"
       onRequestClose={onClose}
+      statusBarTranslucent={true}
     >
       <View style={styles.modalOverlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
@@ -339,8 +340,10 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowDateModal(false)}
+        statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowDateModal(false)} />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -531,8 +534,10 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowTimeModal(false)}
+        statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowTimeModal(false)} />
           <View style={styles.timeModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Set Available Hours</Text>
@@ -541,7 +546,11 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
               </TouchableOpacity>
             </View>
             
-            <View style={styles.timeSelectionContainer}>
+            <ScrollView 
+              style={styles.timeSelectionContainer}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
               <Text style={styles.timeSelectionTitle}>
                 {selectedDate && `${new Date(selectedDate.dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`}
               </Text>
@@ -758,7 +767,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                   </Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -800,7 +809,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -808,12 +817,13 @@ const styles = StyleSheet.create({
     width: '90%',
     height: '80%',
     backgroundColor: '#FAFAFA',
-    borderRadius: 16,
+    borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
+    overflow: 'hidden',
   },
   scheduleHeader: {
     flexDirection: 'row',
@@ -1026,10 +1036,20 @@ const styles = StyleSheet.create({
   // Date modal styles
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
-    width: '90%',
+    width: '100%',
     maxHeight: '80%',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1244,13 +1264,24 @@ const styles = StyleSheet.create({
   // Time modal styles
   timeModalContent: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
-    width: '90%',
-    maxHeight: '80%',
+    width: '100%',
+    maxHeight: '75%',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   timeSelectionContainer: {
     flex: 1,
+    paddingBottom: 20,
   },
   timeSelectionTitle: {
     fontSize: 16,

@@ -604,22 +604,15 @@ export default function DriverCarriageAssignmentsScreen({ navigation, hideHeader
         {/* Empty State */}
         {carriages.length === 0 && (
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="cart-outline" size={64} color={MUTED} />
+            <Image 
+              source={require('../../../assets/carriage-icon.png')} 
+              style={styles.emptyStateIcon}
+              resizeMode="contain"
+            />
             <Text style={styles.emptyTitle}>No Carriage Assignments</Text>
             <Text style={styles.emptyText}>
               You don't have any carriage assignments yet. Owners will invite you to drive their carriages.
             </Text>
-            <TouchableOpacity 
-              style={styles.refreshButton}
-              onPress={onRefresh}
-            >
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
-            {user && (
-              <Text style={styles.debugText}>
-                Debug: Driver ID {user.id}
-              </Text>
-            )}
           </View>
         )}
       </ScrollView>
@@ -860,24 +853,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  debugText: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'center',
-    marginTop: 8,
-    fontFamily: 'monospace',
-  },
-  refreshButton: {
-    backgroundColor: MAROON,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  refreshButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  emptyStateIcon: {
+    width: 80,
+    height: 80,
+    opacity: 0.5,
   },
   statusActions: {
     marginTop: 8,

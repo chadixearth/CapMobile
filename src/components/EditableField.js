@@ -4,7 +4,9 @@ import React from 'react';
 import { View, TextInput, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const EditableField = ({ value, onChangeText, placeholder, keyboardType, secureTextEntry }) => {
+const EditableField = ({ value, onChangeText, placeholder, keyboardType, secureTextEntry, currentValue }) => {
+  const displayPlaceholder = currentValue || placeholder;
+  
   return (
     <View style={styles.inputRow}>
       <TextInput
@@ -12,7 +14,7 @@ const EditableField = ({ value, onChangeText, placeholder, keyboardType, secureT
         style={styles.input}
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={displayPlaceholder}
         placeholderTextColor="#888"
         keyboardType={keyboardType}
         secureTextEntry={secureTextEntry}
