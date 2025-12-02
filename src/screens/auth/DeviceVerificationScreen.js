@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing } from '../../styles/global';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../../services/apiClient';
 
 const ACCENT = '#6B2E2B';
@@ -28,10 +28,20 @@ const DeviceVerificationScreen = ({ navigation, route }) => {
   const inputRefs = useRef([]);
 
   useEffect(() => {
-    // Focus first input on mount
-    if (inputRefs.current[0]) {
-      setTimeout(() => inputRefs.current[0].focus(), 300);
+    console.log('[DeviceVerification] Screen mounted with params:', { user_id, email, device_fingerprint });
+    
+    if (!user_id || !email || !device_fingerprint) {
+      Alert.alert('Error', 'Missing verification information. Please try logging in again.', 
+        [{ text: 'OK', onPress: () => navigation.navigate('Login') }]);
+      return;
     }
+    
+    // Send code immediately
+    apiClient.post('/auth/check-device/', { user_id, email, device_fingerprint })
+      .then(res => console.log('[DeviceVerification] Code sent:', res.data))
+      .catch(err => console.error('[DeviceVerification] Send failed:', err));
+    
+    setTimeout(() => inputRefs.current[0]?.focus(), 300);
   }, []);
 
   const handleCodeChange = (text, index) => {
@@ -79,18 +89,25 @@ const DeviceVerificationScreen = ({ navigation, route }) => {
       });
 
       if (response.data.success) {
+        // Store auth tokens if provided
+        if (response.data.access_token) {
+          await AsyncStorage.setItem('access_token', response.data.access_token);
+        }
+        if (response.data.refresh_token) {
+          await AsyncStorage.setItem('refresh_token', response.data.refresh_token);
+        }
+        if (response.data.user) {
+          await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
+        }
+        
         Alert.alert(
           'Device Verified',
-          'This device has been verified successfully. You can now continue.',
+          'This device has been verified successfully. You can now log in.',
           [
             {
-              text: 'Continue',
+              text: 'OK',
               onPress: () => {
-                // Navigate to main app or wherever needed
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'MainTabs' }],
-                });
+                navigation.navigate('Login');
               },
             },
           ]
@@ -119,6 +136,7 @@ const DeviceVerificationScreen = ({ navigation, route }) => {
       const response = await apiClient.post('/auth/check-device/', {
         user_id,
         email,
+        device_fingerprint,
       });
 
       if (response.data.success) {

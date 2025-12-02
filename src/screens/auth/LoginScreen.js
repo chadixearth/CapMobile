@@ -112,12 +112,20 @@ export default function LoginScreen({ navigation }) {
       // Check if device verification is required
       if (result.success && result.requires_device_verification) {
         console.log('[LoginScreen] Device verification required');
-        setLoading(false);
-        navigation.navigate('DeviceVerification', {
+        console.log('[LoginScreen] Navigating to DeviceVerification with:', {
           user_id: result.user?.id,
           email: email,
           device_fingerprint: result.device_fingerprint,
         });
+        setLoading(false);
+        // Use setTimeout to ensure state updates before navigation
+        setTimeout(() => {
+          navigation.navigate('DeviceVerification', {
+            user_id: result.user?.id,
+            email: email,
+            device_fingerprint: result.device_fingerprint,
+          });
+        }, 100);
         return;
       }
       
