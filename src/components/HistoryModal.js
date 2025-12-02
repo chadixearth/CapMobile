@@ -333,9 +333,9 @@ export default function HistoryModal({
                 <View style={[styles.breakRow, styles.feedDivider]}>
                   <View style={styles.breakLeft}>
                     <View style={[styles.dot, { backgroundColor: 'rgba(59,130,246,0.25)' }]} />
-                    <Text style={styles.mixLabel}>Custom tours (100%)</Text>
+                    <Text style={styles.mixLabel}>Ride hailing (100%)</Text>
                   </View>
-                  <Text style={styles.mixValue}>₱ {formatPeso(selectedHistory?.breakdown?.custom_share || 0)}</Text>
+                  <Text style={styles.mixValue}>₱ {formatPeso(selectedHistory?.breakdown?.ride_hailing_share || 0)}</Text>
                 </View>
               </View>
             </View>

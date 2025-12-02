@@ -268,25 +268,29 @@ export async function upsertBreakevenHistoryFromSummary({
       return { success: false, error: 'invalid params' };
     }
 
-    const revenue = Number(summary.revenue_period || 0);
-    const exps    = Number(expenses || 0);
-    const profit  = Number((revenue - exps).toFixed(2));
+    // Get total earnings including ride hailing
+    const period = periodType === 'daily' ? 'today' : periodType === 'weekly' ? 'week' : 'month';
+    const earningsRes = await getTotalDriverEarnings(driverId, period);
+    
+    const revenue = earningsRes?.success ? Number(earningsRes.data.total_earnings || 0) : Number(summary.revenue_period || 0);
+    const exps = Number(expenses || 0);
+    const profit = Number((revenue - exps).toFixed(2));
 
     const breakdown = {
-      standard_share: Number(summary?.breakdown?.driver_share_from_standard || 0),
-      custom_share:   Number(summary?.breakdown?.driver_share_from_custom || 0),
+      standard_share: earningsRes?.success ? Number(earningsRes.data.standard_earnings || 0) : Number(summary?.breakdown?.driver_share_from_standard || 0),
+      ride_hailing_share: earningsRes?.success ? Number(earningsRes.data.ride_hailing_earnings || 0) : Number(summary?.breakdown?.driver_share_from_ride_hailing || summary?.breakdown?.driver_share_from_custom || 0),
     };
 
     const row = {
       driver_id: driverId,
       period_type: periodType,
       period_start: summary.date_start,
-      period_end:   summary.date_end,
+      period_end: summary.date_end,
       expenses: exps,
       revenue_driver: revenue,
       profit,
       rides_needed: Number(summary.bookings_needed || 0),
-      rides_done:   Number(summary.total_bookings || 0),
+      rides_done: earningsRes?.success ? Number(earningsRes.data.count || 0) : Number(summary.total_bookings || 0),
       breakeven_hit: profit >= 0,
       profitable: profit > 0,
       breakdown,
@@ -382,12 +386,19 @@ export async function saveExpensesForPeriod({
     const exps = Number(expenses || 0);
     const role = 'driver';
     
-    // Use provided breakeven data or defaults
-    const revenue = Number(breakevenData?.revenue_period || 0);
+    // Get total earnings including ride hailing
+    const period = periodType === 'daily' ? 'today' : periodType === 'weekly' ? 'week' : 'month';
+    const earningsRes = await getTotalDriverEarnings(driverId, period);
+    
+    const revenue = earningsRes?.success ? Number(earningsRes.data.total_earnings || 0) : Number(breakevenData?.revenue_period || 0);
     const profit = Number((revenue - exps).toFixed(2));
     const ridesNeeded = Number(breakevenData?.bookings_needed || 0);
-    const ridesDone = Number(breakevenData?.total_bookings || 0);
-    const breakdown = breakevenData?.breakdown || {};
+    const ridesDone = earningsRes?.success ? Number(earningsRes.data.count || 0) : Number(breakevenData?.total_bookings || 0);
+    
+    const breakdown = earningsRes?.success ? {
+      standard_share: Number(earningsRes.data.standard_earnings || 0),
+      ride_hailing_share: Number(earningsRes.data.ride_hailing_earnings || 0),
+    } : (breakevenData?.breakdown || {});
 
     const row = {
       driver_id: driverId,
@@ -483,4 +494,112 @@ export async function saveOwnerBreakevenHistory({
     console.error('Save error:', e);
     return { success: false, error: e?.message || 'unexpected error' };
   }
+}
+/**
+ * Get total driver earnings including ride hailing for a period
+ */
+export async function getTotalDriverEarnings(driverId, period) {
+  try {
+    if (!driverId) return { success: false, error: 'driverId required' };
+    
+    let startUtc, endUtc;
+    if (period === 'today') {
+      [startUtc, endUtc] = getPhTodayUtcWindow();
+    } else if (period === 'week') {
+      [startUtc, endUtc] = getPhWeekUtcWindow();
+    } else if (period === 'month') {
+      [startUtc, endUtc] = getPhMonthUtcWindow();
+    } else {
+      return { success: false, error: 'Invalid period' };
+    }
+
+    const { data, error } = await supabase
+      .from('earnings')
+      .select('amount, booking_id, ride_hailing_booking_id, driver_earnings')
+      .eq('driver_id', driverId)
+      .gte('earning_date', startUtc)
+      .lt('earning_date', endUtc)
+      .in('status', ['finalized', 'posted', 'completed', 'pending']);
+
+    if (error) return { success: false, error: error.message };
+
+    let totalEarnings = 0;
+    let standardEarnings = 0;
+    let rideHailingEarnings = 0;
+    let count = 0;
+
+    for (const row of data || []) {
+      const driverEarnings = Number(row.driver_earnings || 0);
+      const amount = Number(row.amount || 0);
+      
+      if (driverEarnings > 0) {
+        totalEarnings += driverEarnings;
+        if (row.booking_id) standardEarnings += driverEarnings;
+        else if (row.ride_hailing_booking_id) rideHailingEarnings += driverEarnings;
+      } else {
+        // Fallback to calculated shares
+        if (row.booking_id) {
+          const earnings = amount * 0.80;
+          totalEarnings += earnings;
+          standardEarnings += earnings;
+        } else if (row.ride_hailing_booking_id) {
+          const earnings = amount * 0.80;
+          totalEarnings += earnings;
+          rideHailingEarnings += earnings;
+        }
+      }
+      count++;
+    }
+
+    return {
+      success: true,
+      data: {
+        total_earnings: Number(totalEarnings.toFixed(2)),
+        standard_earnings: Number(standardEarnings.toFixed(2)),
+        ride_hailing_earnings: Number(rideHailingEarnings.toFixed(2)),
+        count
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e?.message || 'unexpected error' };
+  }
+}
+
+// Helper functions for date windows
+function getPhTodayUtcWindow() {
+  const PH_OFFSET_HOURS = 8;
+  const nowUtcMs = Date.now();
+  const nowPh = new Date(nowUtcMs + PH_OFFSET_HOURS * 3600_000);
+  const y = nowPh.getUTCFullYear();
+  const m = nowPh.getUTCMonth();
+  const d = nowPh.getUTCDate();
+  const startUtcMs = Date.UTC(y, m, d, 0, 0, 0) - PH_OFFSET_HOURS * 3600_000;
+  const endUtcMs = Date.UTC(y, m, d + 1, 0, 0, 0) - PH_OFFSET_HOURS * 3600_000;
+  return [new Date(startUtcMs).toISOString(), new Date(endUtcMs).toISOString()];
+}
+
+function getPhWeekUtcWindow() {
+  const PH_OFFSET_HOURS = 8;
+  const now = new Date();
+  const nowPh = new Date(now.getTime() + PH_OFFSET_HOURS * 3600_000);
+  const d = new Date(Date.UTC(nowPh.getUTCFullYear(), nowPh.getUTCMonth(), nowPh.getUTCDate()));
+  const dow = (d.getUTCDay() + 6) % 7;
+  const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - dow);
+  const nextMon = new Date(mon); nextMon.setUTCDate(mon.getUTCDate() + 7);
+  const startUtc = new Date(mon.getTime() - PH_OFFSET_HOURS * 3600_000).toISOString();
+  const endUtc = new Date(nextMon.getTime() - PH_OFFSET_HOURS * 3600_000).toISOString();
+  return [startUtc, endUtc];
+}
+
+function getPhMonthUtcWindow() {
+  const PH_OFFSET_HOURS = 8;
+  const now = new Date();
+  const nowPh = new Date(now.getTime() + PH_OFFSET_HOURS * 3600_000);
+  const y = nowPh.getUTCFullYear();
+  const m = nowPh.getUTCMonth();
+  const first = new Date(Date.UTC(y, m, 1));
+  const nextFirst = new Date(Date.UTC(y, m + 1, 1));
+  const startUtc = new Date(first.getTime() - PH_OFFSET_HOURS * 3600_000).toISOString();
+  const endUtc = new Date(nextFirst.getTime() - PH_OFFSET_HOURS * 3600_000).toISOString();
+  return [startUtc, endUtc];
 }

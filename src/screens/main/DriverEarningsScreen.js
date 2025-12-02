@@ -31,6 +31,9 @@ import CalendarModal from '../../components/CalendarModal';
 import YearPicker from '../../components/YearPicker';
 import PayoutHistoryModal from '../../components/PayoutHistoryModal';
 
+
+
+
 const { width } = Dimensions.get('window');
 
 /* ----------------------------- Local date helpers ----------------------------- */
@@ -192,6 +195,7 @@ export default function DriverEarningsScreen({ navigation }) {
       }
 
       if (userId) {
+        
         await Promise.all([fetchEarningsData(userId), fetchDetailedEarnings(userId), fetchPayoutData(userId)]);
         fetchPercentageChange(userId); // can run after
       }
@@ -205,13 +209,18 @@ export default function DriverEarningsScreen({ navigation }) {
 
   const fetchEarningsData = useCallback(async (driverId) => {
     try {
+      console.log('[EARNINGS_SCREEN] Fetching earnings for driver:', driverId);
       const data = await getDriverEarningsStats(driverId, selectedPeriod, customDateRange);
+      console.log('[EARNINGS_SCREEN] Earnings data received:', data);
       if (data.success) {
         setEarningsData(data.data);
+        console.log('[EARNINGS_SCREEN] Earnings data set:', data.data);
+      } else {
+        console.log('[EARNINGS_SCREEN] Earnings data failed:', data);
       }
       return data;
     } catch (error) {
-      console.error('Error fetching earnings data:', error);
+      console.error('[EARNINGS_SCREEN] Error fetching earnings data:', error);
       return null;
     }
   }, [selectedPeriod, customDateRange]);
@@ -265,13 +274,19 @@ export default function DriverEarningsScreen({ navigation }) {
   const fetchDetailedEarnings = useCallback(async (driverId) => {
     try {
       const filters = getDateFilters(selectedPeriod);
+      console.log('[EARNINGS_SCREEN] Fetching detailed earnings with filters:', filters);
       const data = await getDriverEarnings(driverId, filters);
+      console.log('[EARNINGS_SCREEN] Detailed earnings received:', data);
       if (data.success) {
-        setDetailedEarnings(data.data.earnings || []);
+        const earnings = data.data.earnings || [];
+        console.log('[EARNINGS_SCREEN] Setting detailed earnings:', earnings);
+        setDetailedEarnings(earnings);
+      } else {
+        console.log('[EARNINGS_SCREEN] Detailed earnings failed:', data);
       }
       return data;
     } catch (error) {
-      console.error('Error fetching detailed earnings:', error);
+      console.error('[EARNINGS_SCREEN] Error fetching detailed earnings:', error);
       return null;
     }
   }, [selectedPeriod, getDateFilters]);
@@ -312,12 +327,39 @@ export default function DriverEarningsScreen({ navigation }) {
   }, [fetchUserAndEarnings]);
 
   const { visibleTotal, visibleCount, visibleAvg } = useMemo(() => {
+    console.log('[FRONTEND_EARNINGS] detailedEarnings:', detailedEarnings);
+    
     const total = detailedEarnings.reduce(
-      (sum, e) => sum + (Number(e?.driver_earnings) || 0),
+      (sum, e) => {
+        const driverEarnings = Number(e?.driver_earnings) || 0;
+        const totalAmount = Number(e?.total_amount) || 0;
+        const packageName = String(e?.package_name || '').toLowerCase();
+        const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+        
+        // For ride hailing, always use 100% of total amount. For others, use backend driver_earnings
+        const earnings = isRideHailing ? totalAmount : (driverEarnings > 0 ? driverEarnings : totalAmount);
+        
+        if (isRideHailing) {
+          console.log('[RIDE_HAILING_FRONTEND] Package:', packageName, 'Total:', totalAmount, 'Driver gets:', earnings, '(should be 100%)');
+        }
+        
+        console.log('[FRONTEND_EARNINGS] item:', {
+          packageName,
+          isRideHailing,
+          driverEarnings,
+          totalAmount,
+          calculatedEarnings: earnings
+        });
+        
+        return sum + earnings;
+      },
       0
     );
     const count = detailedEarnings.length;
     const avg = count > 0 ? total / count : 0;
+    
+    console.log('[FRONTEND_EARNINGS] totals:', { visibleTotal: total, visibleCount: count, visibleAvg: avg });
+    
     return { visibleTotal: total, visibleCount: count, visibleAvg: avg };
   }, [detailedEarnings]);
 
@@ -431,7 +473,7 @@ export default function DriverEarningsScreen({ navigation }) {
     const avgEarning = earningsData?.avg_earning_per_booking ?? visibleAvg ?? 0;
 
     const changeData = percentageChange || { percentage_change: 0, is_increase: true };
-    const yourShare = earningsData?.driver_percentage ?? 80;
+    const yourShare = earningsData?.driver_percentage ?? 100;
 
     const periodTitle =
       selectedPeriod === 'today'
@@ -501,13 +543,29 @@ export default function DriverEarningsScreen({ navigation }) {
           </View>
           <View style={styles.vDivider} />
           <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Driver Share</Text>
-            <Text style={styles.splitValue}>{formatCurrency(totalEarnings)}</Text>
+            <Text style={styles.splitLabel}>Tour Packages</Text>
+            <Text style={styles.splitValue}>{formatCurrency((() => {
+              // Calculate tour package earnings from detailed earnings
+              const tourPackageEarnings = detailedEarnings.reduce((sum, e) => {
+                const packageName = String(e?.package_name || '').toLowerCase();
+                const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+                if (!isRideHailing) {
+                  const driverEarnings = Number(e?.driver_earnings) || 0;
+                  const totalAmount = Number(e?.total_amount) || 0;
+                  const earnings = driverEarnings > 0 ? driverEarnings : totalAmount * 0.8;
+                  console.log('[TOUR_PACKAGE_DEBUG] Package:', packageName, 'Driver earnings:', driverEarnings, 'Total:', totalAmount, 'Calculated:', earnings);
+                  return sum + earnings;
+                }
+                return sum;
+              }, 0);
+              console.log('[TOUR_PACKAGE_TOTAL] Total tour package earnings:', tourPackageEarnings);
+              return tourPackageEarnings;
+            })())}</Text>
           </View>
           <View style={styles.vDivider} />
           <View style={styles.splitCol}>
-            <Text style={styles.splitLabel}>Custom Bookings</Text>
-            <Text style={styles.splitValue}>{formatCurrency(earningsData?.custom_booking_earnings || 0)}</Text>
+            <Text style={styles.splitLabel}>Ride Hailing</Text>
+            <Text style={styles.splitValue}>{formatCurrency(earningsData?.total_ride_hailing_earnings || earningsData?.ride_hailing_earnings || 0)}</Text>
           </View>
         </View>
       </View>
@@ -545,7 +603,14 @@ export default function DriverEarningsScreen({ navigation }) {
 
             <View style={styles.earningAmounts}>
               <Text style={styles.driverEarning}>
-                {formatCurrency(earning.driver_earnings)}
+                {(() => {
+                  const driverEarnings = Number(earning.driver_earnings) || 0;
+                  const totalAmount = Number(earning.total_amount) || 0;
+                  const packageName = String(earning.package_name || '').toLowerCase();
+                  const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+                  const calculatedEarnings = isRideHailing ? totalAmount : (driverEarnings > 0 ? driverEarnings : totalAmount);
+                  return formatCurrency(calculatedEarnings);
+                })()}
               </Text>
               <Text style={styles.listTotalText}>
                 of {formatCurrency(earning.total_amount)}
