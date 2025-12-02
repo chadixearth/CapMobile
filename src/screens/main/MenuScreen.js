@@ -310,12 +310,16 @@ export default function MenuScreen({ navigation }) {
             </>
           )}
 
-          <Divider />
-          <ProfileItem
-            icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
-            label="Reviews"
-            onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
-          />
+          {displayRole === 'tourist' && (
+            <>
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
+                label="Reviews"
+                onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
+              />
+            </>
+          )}
         </View>
 
         {isDualRole && (
