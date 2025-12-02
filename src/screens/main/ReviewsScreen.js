@@ -14,7 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import TARTRACKHeader from '../../components/TARTRACKHeader';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../hooks/useAuth';
-import { getUserReviews } from '../../services/reviews';
+import { getUserReviews, checkExistingReviews } from '../../services/reviews';
+import { apiBaseUrl } from '../../services/networkConfig';
+import { getAccessToken } from '../../services/authService';
+import { getAnonymousReviewSetting } from '../../services/userSettings';
+import { Alert } from 'react-native';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -23,10 +27,11 @@ const CARD = '#FFFFFF';
 function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
-  const [activeTab, setActiveTab] = useState('given');
+  const [activeTab, setActiveTab] = useState('pending');
   const isTourist = user?.role === 'tourist';
   const isDriverOrOwner = user?.role === 'driver' || user?.role === 'driver-owner' || user?.role === 'owner';
   const [reviews, setReviews] = useState([]);
+  const [pendingReviews, setPendingReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState(null);
@@ -42,16 +47,85 @@ function ReviewsScreen({ navigation }) {
     else setLoading(true);
 
     try {
-      const result = await getUserReviews({
-        user_id: user?.id,
-        type: activeTab,
-        limit: 50,
-        user_role: user?.role
-      });
+      if (activeTab === 'pending') {
+        // Fetch completed bookings without reviews
+        const [tourResponse, rideResponse] = await Promise.all([
+          fetch(`${apiBaseUrl()}/tour-booking/`, {
+            headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+          }),
+          fetch(`${apiBaseUrl()}/ride-hailing/`, {
+            headers: { 'Authorization': `Bearer ${await getAccessToken()}` },
+          })
+        ]);
+        
+        let allBookings = [];
+        
+        if (tourResponse.ok) {
+          const tourData = await tourResponse.json();
+          const userTourBookings = (tourData.data || tourData).filter(
+            booking => booking.customer_id === user?.id && booking.status === 'completed'
+          );
+          allBookings = [...userTourBookings];
+        }
+        
+        if (rideResponse.ok) {
+          const rideData = await rideResponse.json();
+          let rideBookings = [];
+          
+          if (rideData.data?.data && Array.isArray(rideData.data.data)) {
+            rideBookings = rideData.data.data;
+          } else if (rideData.data && Array.isArray(rideData.data)) {
+            rideBookings = rideData.data;
+          } else if (Array.isArray(rideData)) {
+            rideBookings = rideData;
+          }
+          
+          const userRides = rideBookings.filter(ride => 
+            ride && ride.customer_id === user.id && ride.status === 'completed'
+          );
+          
+          allBookings = [...allBookings, ...userRides];
+        }
+        
+        // Check which bookings need reviews
+        const pendingReviewsList = [];
+        for (const booking of allBookings) {
+          try {
+            const result = await checkExistingReviews({
+              booking_id: booking.id,
+              reviewer_id: user?.id
+            });
+            
+            if (result.success) {
+              const needsReview = !result.data.hasPackageReview || !result.data.hasDriverReview;
+              if (needsReview) {
+                pendingReviewsList.push({
+                  ...booking,
+                  needsPackageReview: !result.data.hasPackageReview,
+                  needsDriverReview: !result.data.hasDriverReview
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error checking review status:', error);
+          }
+        }
+        
+        pendingReviewsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setPendingReviews(pendingReviewsList);
+      } else {
+        // Fetch submitted reviews
+        const result = await getUserReviews({
+          user_id: user?.id,
+          type: 'given',
+          limit: 50,
+          user_role: user?.role
+        });
 
-      if (result.success) {
-        setReviews(result.data || []);
-        setStats(result.stats || null);
+        if (result.success) {
+          setReviews(result.data || []);
+          setStats(result.stats || null);
+        }
       }
     } catch (error) {
       console.error('Error fetching reviews:', error);
@@ -138,6 +212,88 @@ function ReviewsScreen({ navigation }) {
     return <View style={styles.starsRow}>{stars}</View>;
   };
 
+  const handleReviewPress = async (booking) => {
+    try {
+      const anonymousSetting = await getAnonymousReviewSetting();
+      const isAnonymous = anonymousSetting.success ? anonymousSetting.data.isAnonymous : false;
+
+      Alert.alert(
+        'Leave a Review',
+        `Would you like to remain anonymous in your review?\n\nCurrent setting: ${isAnonymous ? 'Anonymous' : 'Show my name'}`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Change Setting',
+            onPress: () => navigation.navigate('AccountDetails')
+          },
+          {
+            text: 'Continue',
+            onPress: () => {
+              navigation.navigate('ReviewSubmission', {
+                booking: booking,
+                package: booking.package_data,
+                driver: booking.driver_data,
+              });
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error handling review press:', error);
+      navigation.navigate('ReviewSubmission', {
+        booking: booking,
+        package: booking.package_data,
+        driver: booking.driver_data,
+      });
+    }
+  };
+
+  const renderPendingReview = (booking, index) => {
+    const isRideHailing = booking.pickup_address && !booking.package_data;
+    
+    return (
+      <View key={index} style={styles.reviewCard}>
+        <View style={styles.reviewHeader}>
+          <View style={styles.reviewInfo}>
+            <Text style={styles.reviewerName}>
+              {booking.package_data?.package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package')}
+            </Text>
+            <Text style={styles.bookingDate}>
+              {booking.booking_date ? new Date(booking.booking_date + 'T00:00:00').toLocaleDateString() : new Date(booking.created_at).toLocaleDateString()}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.pendingItems}>
+          {booking.needsPackageReview && (
+            <View style={styles.pendingItem}>
+              <Ionicons name="location" size={14} color="#F57C00" />
+              <Text style={styles.pendingText}>Package review pending</Text>
+            </View>
+          )}
+          {booking.needsDriverReview && (
+            <View style={styles.pendingItem}>
+              <Ionicons name="person" size={14} color="#F57C00" />
+              <Text style={styles.pendingText}>Driver review pending</Text>
+            </View>
+          )}
+        </View>
+        
+        <TouchableOpacity
+          style={styles.reviewButton}
+          onPress={() => handleReviewPress(booking)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="star-outline" size={16} color="#fff" />
+          <Text style={styles.reviewButtonText}>Leave Review</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderReview = (review, index) => {
     const isPackageReview = !!review.package_id;
     const isDriverReview = !!review.driver_id;
@@ -147,11 +303,9 @@ function ReviewsScreen({ navigation }) {
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
             <Text style={styles.reviewerName}>
-              {activeTab === 'received' 
-                ? (review.reviewer_name || 'Anonymous User')
-                : isDriverReview
-                  ? (review.driver_name || 'Driver')
-                  : (review.package_name || 'Tour Package')
+              {isDriverReview
+                ? (review.driver_name || 'Driver')
+                : (review.package_name || 'Tour Package')
               }
             </Text>
             {renderStars(review.rating)}
@@ -216,6 +370,28 @@ function ReviewsScreen({ navigation }) {
           <Ionicons name="star-outline" size={24} color="#6B2E2B" />
           <Text style={styles.titleText}>Reviews</Text>
         </View>
+        
+        {/* Tabs */}
+        {isTourist && (
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
+              onPress={() => setActiveTab('pending')}
+            >
+              <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>
+                To Review
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'given' && styles.activeTab]}
+              onPress={() => setActiveTab('given')}
+            >
+              <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
+                My Reviews
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
 
@@ -245,14 +421,26 @@ function ReviewsScreen({ navigation }) {
               </View>
             </Animated.View>
           </View>
+        ) : activeTab === 'pending' ? (
+          pendingReviews.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="checkmark-circle-outline" size={64} color="#2E7D32" />
+              <Text style={styles.emptyTitle}>All Caught Up!</Text>
+              <Text style={styles.emptyText}>
+                You have no pending reviews. Complete a tour or ride to leave a review.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.reviewsList}>
+              {pendingReviews.map(renderPendingReview)}
+            </View>
+          )
         ) : reviews.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="star-outline" size={64} color="#DDD" />
             <Text style={styles.emptyTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyText}>
-              {isTourist
-                ? 'You haven\'t submitted any reviews yet. Complete a tour or ride to leave your first review!'
-                : 'You haven\'t received any reviews yet. Complete rides to get reviews from tourists.'}
+              You haven't submitted any reviews yet. Complete a tour or ride to leave your first review!
             </Text>
           </View>
         ) : (
@@ -307,9 +495,8 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 16,
+    backgroundColor: '#F5F5F5',
+    marginTop: 12,
     borderRadius: 12,
     padding: 4,
   },
@@ -425,6 +612,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
     fontWeight: '500',
+  },
+  pendingItems: {
+    marginVertical: 8,
+    gap: 6,
+  },
+  pendingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pendingText: {
+    fontSize: 12,
+    color: '#F57C00',
+    fontWeight: '500',
+  },
+  bookingDate: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  reviewButton: {
+    backgroundColor: MAROON,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  reviewButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

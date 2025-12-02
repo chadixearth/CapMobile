@@ -122,32 +122,17 @@ export async function getUserReviews({ user_id, type = 'received', limit = 50, u
       // Get reviews given by this user - fetch BOTH package and driver reviews
       const token = await getAccessToken().catch(() => null);
       
-      // Fetch driver reviews
-      const driverRes = await request(`/reviews/driver/all/?reviewer_id=${user_id}&limit=${limit}`, {
-        method: 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      
-      // Fetch package reviews
+      // Fetch package reviews only (driver reviews by reviewer not supported)
       const packageRes = await request(`/reviews/?reviewer_id=${user_id}&limit=${limit}`, {
         method: 'GET',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       
-      const driverReviews = (driverRes.ok && driverRes.data?.success) 
-        ? (driverRes.data.data?.reviews || driverRes.data.data || []) 
-        : [];
-      
       const packageReviews = (packageRes.ok && packageRes.data?.success)
         ? (packageRes.data.data || [])
         : [];
       
-      // Combine and sort by date
-      const allReviews = [...driverReviews, ...packageReviews].sort((a, b) => 
-        new Date(b.created_at) - new Date(a.created_at)
-      );
-      
-      return { success: true, data: allReviews, stats: null };
+      return { success: true, data: packageReviews, stats: null };
     }
   } catch (error) {
     return { success: false, error: error.message || 'Failed to fetch user reviews' };
