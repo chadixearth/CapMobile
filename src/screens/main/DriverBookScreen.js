@@ -292,10 +292,17 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
-      // Filter out cancelled bookings - only show pending/waiting_for_driver status
+      // Filter bookings: only show pending/waiting_for_driver status AND packages created by this driver
       const filteredBookings = processedBookings.filter(booking => {
         const status = (booking.status || '').toLowerCase();
-        return status === 'pending' || status === 'waiting_for_driver';
+        const isValidStatus = status === 'pending' || status === 'waiting_for_driver';
+        
+        // Only show bookings for packages created by this driver
+        const isDriverPackage = booking.package_created_by === driverId || 
+                                booking.created_by_driver_id === driverId ||
+                                booking.driver_id === driverId;
+        
+        return isValidStatus && isDriverPackage;
       });
       
       // Fetch customer profiles for each booking with error handling

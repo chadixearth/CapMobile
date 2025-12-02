@@ -268,11 +268,16 @@ const RequestBookingScreen = ({ route, navigation }) => {
     }
 
     const bookingDate = new Date(formData.booking_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (bookingDate < today) {
-      showError('Booking date cannot be in the past', {
-        title: 'Invalid Date',
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    
+    bookingDate.setHours(0, 0, 0, 0);
+    
+    if (bookingDate < tomorrow) {
+      showError('Bookings must be made at least 24 hours in advance. Please select a date from tomorrow onwards.', {
+        title: 'Advance Booking Required',
         type: 'warning',
       });
       return false;
@@ -420,8 +425,9 @@ const RequestBookingScreen = ({ route, navigation }) => {
     });
   };
 
-  const todayStart = (() => {
+  const tomorrowStart = (() => {
     const d = new Date();
+    d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
     return d;
   })();
@@ -547,7 +553,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.helperText}>
-                  💡 You can book any date - we'll notify available drivers
+                  ⏰ Must be at least 24 hours in advance
                 </Text>
               </View>
 
@@ -586,7 +592,7 @@ const RequestBookingScreen = ({ route, navigation }) => {
                 mode="date"
                 display="default"
                 onChange={onDateChange}
-                minimumDate={new Date()}
+                minimumDate={tomorrowStart}
               />
             )}
 

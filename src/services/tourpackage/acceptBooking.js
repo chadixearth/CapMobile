@@ -37,10 +37,11 @@ export const BOOKING_ERROR_CODES = {
  */
 export async function getAvailableBookingsForDrivers(driverId, filters = {}) {
   try {
-    // Build query parameters
+    // Build query parameters - include driver_id to filter packages created by this driver
     const queryParams = new URLSearchParams();
     queryParams.append('driver_id', driverId);
     queryParams.append('status', filters.status || 'pending');
+    queryParams.append('created_by_driver', driverId); // Only show bookings for packages created by this driver
     
     Object.keys(filters).forEach(key => {
       if (key !== 'status' && filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
