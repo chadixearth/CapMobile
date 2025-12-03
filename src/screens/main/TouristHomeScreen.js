@@ -424,7 +424,10 @@ export default function TouristHomeScreen({ navigation }) {
     if (roadHighlights.length === 0) {
       const point = { name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`, latitude, longitude };
       if (activePicker === 'pickup') setPickup(point);
-      else setDestination(point);
+      else {
+        setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
+      }
       return;
     }
     const nearestPoint = findNearestRoadPoint(roadHighlights, latitude, longitude, Infinity);
@@ -465,11 +468,15 @@ export default function TouristHomeScreen({ navigation }) {
         }
       } else if (activePicker === 'destination') {
         setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
       }
     } else {
       const point = { name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`, latitude, longitude };
       if (activePicker === 'pickup') setPickup(point);
-      else setDestination(point);
+      else {
+        setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
+      }
     }
   };
 
@@ -554,6 +561,7 @@ export default function TouristHomeScreen({ navigation }) {
         }
       } else if (activePicker === 'destination' && nearestPoint.pointType === 'dropoff') {
         setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
       }
       setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
     } else {
@@ -564,6 +572,30 @@ export default function TouristHomeScreen({ navigation }) {
   const swapPoints = () => {
     setPickup(destination);
     setDestination(pickup);
+  };
+
+  const fetchOSRMRoute = async (pickup, destination) => {
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`
+      );
+      const data = await response.json();
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+        const routeRoad = {
+          id: 'osrm-route',
+          name: 'Route',
+          coordinates: coordinates,
+          color: '#6B2E2B',
+          weight: 5,
+          opacity: 0.9
+        };
+        setRoadHighlights([routeRoad]);
+      }
+    } catch (error) {
+      console.warn('OSRM route fetch failed:', error);
+    }
   };
 
   const handleMarkerPress = async (marker) => {
@@ -602,6 +634,11 @@ export default function TouristHomeScreen({ navigation }) {
       }
       const point = { name: marker.title, latitude: marker.latitude, longitude: marker.longitude, id: marker.id };
       setDestination(point);
+      
+      // Fetch OSRM route when destination is selected
+      if (pickup) {
+        await fetchOSRMRoute(pickup, point);
+      }
     }
   };
 

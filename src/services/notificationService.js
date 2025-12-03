@@ -84,15 +84,14 @@ class NotificationService {
 
   static async markAsRead(notificationId) {
     try {
-      const result = await networkClient.put('/notifications/mark-read/', {
-        notification_id: notificationId
+      const result = await networkClient.patch(`/notifications/${notificationId}/`, {
+        read: true
       }, {
         timeout: 5000,
         retries: 0
       });
       return result?.data || { success: true };
     } catch (error) {
-      console.log('[NotificationService] Mark read failed:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -103,20 +102,15 @@ class NotificationService {
         return { success: true, message: 'No notifications to mark' };
       }
       
-      const notificationIds = notifications.map(n => n.id);
-      const result = await networkClient.put('/notifications/mark-all-read/', {
-        user_id: userId,
-        notification_ids: notificationIds
-      }, {
-        timeout: 10000,
-        retries: 2
-      });
+      // Fallback: mark each notification individually
+      const results = await Promise.allSettled(
+        notifications.map(n => this.markAsRead(n.id))
+      );
       
-      if (result?.success) {
-        return result.data || { success: true };
-      }
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      console.log(`[NotificationService] Marked ${successCount}/${notifications.length} notifications as read`);
       
-      return { success: false, error: result?.error || 'Failed to mark all as read' };
+      return { success: true, message: `Marked ${successCount} notifications as read` };
     } catch (error) {
       console.log('[NotificationService] Mark all read failed:', error?.message || 'Unknown error');
       return { success: false, error: error?.message || 'Unknown error' };
@@ -149,10 +143,8 @@ class NotificationService {
         if (this.isCircuitOpen) {
           const now = Date.now();
           if (now < this.backoffTime) {
-            console.log('[NotificationService] Circuit breaker open');
             return;
           } else {
-            console.log('[NotificationService] Circuit breaker reset');
             this.isCircuitOpen = false;
             this.consecutiveFailures = 0;
           }
@@ -175,7 +167,7 @@ class NotificationService {
               }).slice(0, 3);
           
           if (newNotifications.length > 0) {
-            console.log(`[NotificationService] Got ${newNotifications.length} new notifications`);
+            console.log(`[NotificationService] Sending ${newNotifications.length} local notifications`);
             
             for (const notif of newNotifications) {
               await this.sendLocalNotification(
@@ -232,16 +224,27 @@ class NotificationService {
       }
     }, 30000);
 
-    this.getNotifications(userId).then(result => {
-      if (result.success && callback) {
-        callback(result.data || []);
+    const initialLoad = async () => {
+      try {
+        const result = await this.getNotifications(userId);
+        if (result.success) {
+          const notifications = result.data || [];
+          if (callback) callback(notifications);
+          
+          const unreadNotifs = notifications.filter(n => !n.read).slice(0, 3);
+          for (const notif of unreadNotifs) {
+            const notifKey = `${notif.id}_${notif.created_at}`;
+            if (!this.processedNotifications.has(notifKey)) {
+              await this.sendLocalNotification(notif.title, notif.message, { type: notif.type, id: notif.id });
+              this.processedNotifications.add(notifKey);
+            }
+          }
+        }
+      } catch (error) {
+        if (callback) callback([]);
       }
-    }).catch(error => {
-      console.log('[NotificationService] Initial load failed');
-      if (callback) {
-        callback([]);
-      }
-    });
+    };
+    initialLoad();
   }
 
   static stopPolling() {

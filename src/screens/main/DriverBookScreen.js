@@ -749,7 +749,14 @@ export default function DriverBookScreen({ navigation }) {
       } else if (selectedBooking.request_type === 'ride_hailing') {
         result = await acceptRideBooking(selectedBooking.id, driverData);
       } else {
-        result = await driverAcceptBooking(selectedBooking.id, driverData);
+        // Pass booking details for schedule and ongoing booking validation
+        const bookingDetails = {
+          booking_date: selectedBooking.booking_date,
+          booking_time: selectedBooking.pickup_time || selectedBooking.booking_time,
+          package_id: selectedBooking.package_id,
+          package_name: selectedBooking.package_name
+        };
+        result = await driverAcceptBooking(selectedBooking.id, driverData, bookingDetails);
       }
 
       if (result.success) {
@@ -830,6 +837,33 @@ export default function DriverBookScreen({ navigation }) {
             [
               { text: 'OK' },
               { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else if (result.error_code === 'DIFFERENT_PACKAGE_SAME_DAY') {
+          Alert.alert(
+            '📦 Different Package',
+            result.friendly_message || 'You already have a booking for a different package on this day.',
+            [
+              { text: 'OK' },
+              { text: 'View Ongoing', onPress: () => setActiveTab('ongoing') }
+            ]
+          );
+        } else if (result.error_code === 'TIME_CONFLICT_SAME_PACKAGE') {
+          Alert.alert(
+            '⏰ Time Conflict',
+            result.friendly_message || 'This booking overlaps with your existing booking for the same package.',
+            [
+              { text: 'OK' },
+              { text: 'View Schedule', onPress: () => setShowScheduleModal(true) }
+            ]
+          );
+        } else if (result.error_code === 'SCHEDULE_CONFLICT') {
+          Alert.alert(
+            '📅 Schedule Conflict',
+            result.friendly_message || 'You are not available at this time. Please update your schedule.',
+            [
+              { text: 'OK' },
+              { text: 'Update Schedule', onPress: () => setShowScheduleModal(true) }
             ]
           );
         } else {

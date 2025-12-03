@@ -66,7 +66,6 @@ class NetworkClient {
         // Handle response with enhanced parsing
         let data;
         try {
-          // First check if response has content
           const responseText = await response.text();
           
           if (!responseText || responseText.trim() === '') {
@@ -77,14 +76,18 @@ class NetworkClient {
               message: 'Empty response from server'
             };
           } else {
-            // Parse the response text
+            // Check if response is HTML (404 error page)
+            if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+              console.error('[NetworkClient] Received HTML instead of JSON');
+              throw new Error(`HTTP ${response.status}: Endpoint not found or returned HTML`);
+            }
+            
             try {
               data = JSON.parse(responseText);
             } catch (jsonError) {
-              // Handle truncated JSON responses
               if (jsonError.message.includes('Unterminated string') || 
                   jsonError.message.includes('Unexpected end of input')) {
-                console.warn('[NetworkClient] Detected truncated JSON response - attempting reconstruction');
+                console.warn('[NetworkClient] Detected truncated JSON response');
                 
                 if (responseText.includes('"success": true')) {
                   const messageMatch = responseText.match(/"message":\s*"([^"]*)"/);;
@@ -93,7 +96,6 @@ class NetworkClient {
                     message: messageMatch ? messageMatch[1] : 'Operation completed successfully',
                     data: []
                   };
-                  console.log('[NetworkClient] Reconstructed successful response');
                 } else {
                   data = {
                     success: false,
@@ -104,17 +106,13 @@ class NetworkClient {
               } else {
                 console.error('[NetworkClient] JSON parse error:', jsonError.message);
                 console.error('[NetworkClient] Response text:', responseText.substring(0, 200));
-                data = {
-                  success: false,
-                  error: 'Invalid JSON response from server',
-                  data: []
-                };
+                throw new Error(`HTTP ${response.status}: Invalid JSON response from server`);
               }
             }
           }
         } catch (parseError) {
           console.error('[NetworkClient] Response parsing failed:', parseError);
-          data = ResponseHandler.handleError(parseError, []);
+          throw parseError;
         }
 
         if (response.ok) {
@@ -297,6 +295,10 @@ class NetworkClient {
 
   async put(endpoint, data, options = {}) {
     return this.request(endpoint, { ...options, method: 'PUT', body: data });
+  }
+
+  async patch(endpoint, data, options = {}) {
+    return this.request(endpoint, { ...options, method: 'PATCH', body: data });
   }
 
   async delete(endpoint, options = {}) {
