@@ -598,7 +598,7 @@ export async function driverCancelBooking(bookingId, driverId, reason = 'Cancell
  * Check if driver can accept booking based on ongoing bookings
  * Allows same package if no time conflict, rejects different packages
  * @param {string} driverId - The driver's ID
- * @param {Object} newBooking - New booking details {booking_date, booking_time, package_id, package_name}
+ * @param {Object} newBooking - New booking details {booking_date, booking_time, package_id, package_name, duration_days}
  * @returns {Promise<Object>} Check result
  */
 export async function checkOngoingBookings(driverId, newBooking = {}) {
@@ -608,40 +608,65 @@ export async function checkOngoingBookings(driverId, newBooking = {}) {
       return { canAccept: true };
     }
 
-    const endpoint = `/tour-booking/driver/${driverId}/?booking_date=${newBooking.booking_date}`;
+    // Calculate date range for the tour package
+    const startDate = new Date(newBooking.booking_date);
+    const durationDays = newBooking.duration_days || 1;
+    const dateRange = [];
+    
+    for (let i = 0; i < durationDays; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
+      dateRange.push(date.toISOString().split('T')[0]);
+    }
+
+    // Check driver's bookings for each date in the range
+    const endpoint = `/tour-booking/driver/${driverId}/`;
     const result = await apiClient.get(endpoint);
     
     if (result.data?.success && result.data.data?.bookings) {
-      const sameDayBookings = result.data.data.bookings.filter(b => 
+      const activeBookings = result.data.data.bookings.filter(b => 
         ['in_progress', 'driver_assigned', 'paid'].includes(b.status)
       );
       
-      if (sameDayBookings.length === 0) {
-        return { canAccept: true };
-      }
-
-      // Check if any booking is for a different package
-      const differentPackage = sameDayBookings.find(b => b.package_id !== newBooking.package_id);
-      if (differentPackage) {
-        return {
-          canAccept: false,
-          reason: 'DIFFERENT_PACKAGE_SAME_DAY',
-          friendly_message: `You already have a booking for "${differentPackage.package_name}" on this day. You can only accept one booking per day unless it's the same package.`,
-          existing_booking: differentPackage
-        };
-      }
-
-      // Same package - check for time conflicts
-      const { validateDriverBookingConstraints } = require('./driverBookingConstraints');
-      const validation = await validateDriverBookingConstraints(driverId, newBooking);
-      
-      if (!validation.canAccept) {
-        return {
-          canAccept: false,
-          reason: validation.reason,
-          friendly_message: validation.message,
-          existing_booking: validation.existingBooking
-        };
+      // Check if any active booking overlaps with the date range
+      for (const booking of activeBookings) {
+        const bookingStartDate = new Date(booking.booking_date);
+        const bookingDurationDays = booking.duration_days || 1;
+        
+        // Check if dates overlap
+        for (let i = 0; i < bookingDurationDays; i++) {
+          const bookingDate = new Date(bookingStartDate);
+          bookingDate.setDate(bookingDate.getDate() + i);
+          const bookingDateStr = bookingDate.toISOString().split('T')[0];
+          
+          if (dateRange.includes(bookingDateStr)) {
+            // Found overlap - check if it's a different package
+            if (booking.package_id !== newBooking.package_id) {
+              return {
+                canAccept: false,
+                reason: 'DIFFERENT_PACKAGE_SAME_DAY',
+                friendly_message: `You already have a booking for "${booking.package_name}" on ${bookingDateStr}. You can only accept one booking per day unless it's the same package.`,
+                existing_booking: booking
+              };
+            }
+            
+            // Same package - check for time conflicts on overlapping dates
+            const { validateDriverBookingConstraints } = require('./driverBookingConstraints');
+            const validation = await validateDriverBookingConstraints(driverId, {
+              ...newBooking,
+              booking_date: bookingDateStr
+            });
+            
+            if (!validation.canAccept) {
+              return {
+                canAccept: false,
+                reason: validation.reason,
+                friendly_message: validation.message,
+                existing_booking: validation.existingBooking
+              };
+            }
+          }
+        }
       }
     }
     

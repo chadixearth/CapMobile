@@ -259,41 +259,29 @@ export async function createCarriage(carriageData) {
       return { success: false, error: 'User not authenticated' };
     }
 
-    console.log('[tartanillaService] Creating carriage for user:', user.id);
+    console.log('[tartanillaService] Creating carriage directly in Supabase for user:', user.id);
     
-    const res = await request('/tartanilla-carriages/', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...carriageData,
-        assigned_owner_id: user.id
-      }),
-    });
+    const { data, error } = await supabase
+      .from('tartanilla_carriages')
+      .insert([{
+        plate_number: carriageData.plate_number,
+        capacity: carriageData.capacity,
+        status: carriageData.status || 'available',
+        notes: carriageData.notes || null,
+        img: carriageData.img || null,
+        assigned_owner_id: user.id,
+        assigned_driver_id: null
+      }])
+      .select()
+      .single();
     
-    console.log('[tartanillaService] Create response:', res);
-    
-    if (res.ok && res.data?.success) {
-      return { success: true, data: res.data?.data };
+    if (error) {
+      console.error('[tartanillaService] Supabase error:', error);
+      return { success: false, error: error.message };
     }
     
-    if (res.data?.error === 'Owner not found') {
-      console.log('[tartanillaService] Owner not found, retrying after delay...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const retryRes = await request('/tartanilla-carriages/', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...carriageData,
-          assigned_owner_id: user.id
-        }),
-      });
-      
-      if (retryRes.ok && retryRes.data?.success) {
-        return { success: true, data: retryRes.data?.data };
-      }
-      return { success: false, error: retryRes.data?.error || 'Failed to create carriage' };
-    }
-    
-    return { success: false, error: res.data?.error || 'Failed to create carriage' };
+    console.log('[tartanillaService] Carriage created:', data);
+    return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };
   }
