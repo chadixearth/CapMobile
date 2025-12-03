@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,6 +7,7 @@ const MAROON = '#6B2E2B';
 export default function ChatBubble({ message }) {
   const isMe = message.sender === 'me';
   const showStatus = isMe && message.status;
+  const [translated, setTranslated] = useState('');
   
   // Enhanced status icon display
   const getStatusIcon = () => {
@@ -35,12 +36,46 @@ export default function ChatBubble({ message }) {
     }
   };
 
+  // Client-side translation Tagalog (tl) -> English (en) via Google Translate web API
+  useEffect(() => {
+    let ignore = false;
+    async function translate() {
+      if (!message.text) return;
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=tl&tl=en&dt=t&q=${encodeURIComponent(message.text)}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error('Google Translate API error: ' + res.status);
+        }
+        const data = await res.json();
+        if (!ignore) {
+          if (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0]) && data[0][0][0]) {
+            setTranslated(data[0][0][0]);
+          } else {
+            setTranslated('[Translation unavailable]');
+            console.error('Google Translate API returned unexpected data:', data);
+          }
+        }
+      } catch (e) {
+        if (!ignore) {
+          setTranslated('[Translation failed]');
+          console.error('Translation error:', e);
+        }
+      }
+    }
+    translate();
+    return () => { ignore = true; };
+  }, [message.text]);
+
   return (
     <View style={[
       styles.bubble,
       isMe ? styles.meBubble : styles.otherBubble
     ]}>
       <Text style={styles.bubbleText}>{message.text}</Text>
+      {translated && translated !== message.text && (
+        <Text style={styles.translatedText}>{translated}</Text>
+      )}
       <View style={styles.timeRow}>
         {message.time && <Text style={styles.timeText}>{message.time}</Text>}
         {showStatus && (
@@ -98,5 +133,11 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#6BAE6A',
     marginLeft: 2,
+  },
+  translatedText: {
+    fontSize: 12,
+    color: '#6BAE6A',
+    marginTop: 2,
+    fontStyle: 'italic',
   }
 });
