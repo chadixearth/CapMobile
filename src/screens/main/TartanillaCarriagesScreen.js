@@ -839,10 +839,24 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           </View>
 
           {/* Status Badge */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
             <View style={[styles.statusBadge, { backgroundColor: status.bgColor }]}>
               <Ionicons name={status.icon} size={12} color={status.color} />
               <Text style={[styles.statusText, { color: status.color, fontSize: 10 }]}>{status.text}</Text>
+            </View>
+            {/* Eligibility Indicator */}
+            <View style={[styles.statusBadge, { backgroundColor: carriage.eligibility === 'eligible' ? '#ECFDF5' : '#FEF2F2' }]}>
+              <Ionicons 
+                name={carriage.eligibility === 'eligible' ? 'shield-checkmark' : 'shield-outline'} 
+                size={12} 
+                color={carriage.eligibility === 'eligible' ? '#10B981' : '#EF4444'} 
+              />
+              <Text style={[styles.statusText, { 
+                color: carriage.eligibility === 'eligible' ? '#10B981' : '#EF4444', 
+                fontSize: 10 
+              }]}>
+                {carriage.eligibility === 'eligible' ? 'Eligible' : 'Not Eligible'}
+              </Text>
             </View>
           </View>
 
@@ -1426,6 +1440,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
           }
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={renderEmptyState}
+          numColumns={user?.role === 'driver' ? 1 : 1}
         />
       )}
       

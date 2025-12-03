@@ -102,11 +102,45 @@ export async function getBookingStats() {
  * @param {string} driverData.driver_name - Driver's name
  * @returns {Promise<Object>} Acceptance result
  */
-export async function driverAcceptBooking(bookingId, driverData) {
+export async function driverAcceptBooking(bookingId, driverData, bookingDetails = {}) {
   try {
     console.log('Accepting booking:', bookingId, 'for driver:', driverData);
     
-    // Check carriage eligibility before accepting
+    // 1. Check driver schedule availability first
+    if (bookingDetails.booking_date && bookingDetails.booking_time) {
+      const scheduleCheck = await checkDriverSchedule(
+        driverData.driver_id,
+        bookingDetails.booking_date,
+        bookingDetails.booking_time
+      );
+      if (!scheduleCheck.available) {
+        return {
+          success: false,
+          error: scheduleCheck.conflict_reason || 'Schedule conflict detected',
+          error_code: 'SCHEDULE_CONFLICT',
+          friendly_message: scheduleCheck.conflict_reason || 'You are not available at this time. Please update your schedule.',
+          booking_date: bookingDetails.booking_date,
+          booking_time: bookingDetails.booking_time
+        };
+      }
+    }
+    
+    // 2. Check for same-day bookings (different package or time conflict)
+    const ongoingCheck = await checkOngoingBookings(driverData.driver_id, bookingDetails);
+    if (!ongoingCheck.canAccept) {
+      const errorCode = ongoingCheck.reason === 'DIFFERENT_PACKAGE_SAME_DAY' 
+        ? 'DIFFERENT_PACKAGE_SAME_DAY' 
+        : 'TIME_CONFLICT_SAME_PACKAGE';
+      return {
+        success: false,
+        error: ongoingCheck.reason,
+        error_code: errorCode,
+        friendly_message: ongoingCheck.friendly_message,
+        existing_booking: ongoingCheck.existing_booking
+      };
+    }
+    
+    // 3. Check carriage eligibility
     const eligibilityCheck = await checkCarriageEligibility(driverData.driver_id);
     if (!eligibilityCheck.eligible) {
       return {
@@ -362,7 +396,10 @@ export async function driverCompleteBooking(bookingId, driverId) {
 export async function driverStartBooking(bookingId, driverId) {
   try {
     const endpoint = `${API_BASE_URL}/start/${bookingId}/`;
-    const result = await apiClient.post(endpoint, { driver_id: driverId });
+    const result = await apiClient.post(endpoint, { 
+      driver_id: driverId,
+      client_time: new Date().toISOString() // Send phone's current time
+    });
     
     console.log('Driver start booking response:', result.data);
     
@@ -554,6 +591,98 @@ export async function driverCancelBooking(bookingId, driverId, reason = 'Cancell
       return { success: false, error: 'Request timeout. Please try again.' };
     }
     throw error;
+  }
+}
+
+/**
+ * Check if driver can accept booking based on ongoing bookings
+ * Allows same package if no time conflict, rejects different packages
+ * @param {string} driverId - The driver's ID
+ * @param {Object} newBooking - New booking details {booking_date, booking_time, package_id, package_name}
+ * @returns {Promise<Object>} Check result
+ */
+export async function checkOngoingBookings(driverId, newBooking = {}) {
+  try {
+    // If no booking details provided, skip this check (will be caught by other validations)
+    if (!newBooking.booking_date || !newBooking.package_id) {
+      return { canAccept: true };
+    }
+
+    const endpoint = `/tour-booking/driver/${driverId}/?booking_date=${newBooking.booking_date}`;
+    const result = await apiClient.get(endpoint);
+    
+    if (result.data?.success && result.data.data?.bookings) {
+      const sameDayBookings = result.data.data.bookings.filter(b => 
+        ['in_progress', 'driver_assigned', 'paid'].includes(b.status)
+      );
+      
+      if (sameDayBookings.length === 0) {
+        return { canAccept: true };
+      }
+
+      // Check if any booking is for a different package
+      const differentPackage = sameDayBookings.find(b => b.package_id !== newBooking.package_id);
+      if (differentPackage) {
+        return {
+          canAccept: false,
+          reason: 'DIFFERENT_PACKAGE_SAME_DAY',
+          friendly_message: `You already have a booking for "${differentPackage.package_name}" on this day. You can only accept one booking per day unless it's the same package.`,
+          existing_booking: differentPackage
+        };
+      }
+
+      // Same package - check for time conflicts
+      const { validateDriverBookingConstraints } = require('./driverBookingConstraints');
+      const validation = await validateDriverBookingConstraints(driverId, newBooking);
+      
+      if (!validation.canAccept) {
+        return {
+          canAccept: false,
+          reason: validation.reason,
+          friendly_message: validation.message,
+          existing_booking: validation.existingBooking
+        };
+      }
+    }
+    
+    return { canAccept: true };
+  } catch (error) {
+    console.error('[checkOngoingBookings] Error:', error.message);
+    // On error, allow booking to prevent blocking
+    return { canAccept: true, error: error.message };
+  }
+}
+
+/**
+ * Check driver schedule availability for specific date and time
+ * @param {string} driverId - The driver's ID
+ * @param {string} bookingDate - Booking date (YYYY-MM-DD)
+ * @param {string} bookingTime - Booking time (HH:MM or HH:MM:SS)
+ * @returns {Promise<Object>} Availability check result
+ */
+export async function checkDriverSchedule(driverId, bookingDate, bookingTime) {
+  try {
+    const { driverScheduleService } = require('../driverScheduleService');
+    
+    const result = await driverScheduleService.checkAvailability(
+      driverId,
+      bookingDate,
+      bookingTime
+    );
+    
+    if (result.success) {
+      return {
+        available: result.available,
+        conflict_reason: result.conflict_reason
+      };
+    }
+    
+    // On error, allow booking to prevent blocking
+    return { available: true, error: result.error };
+  } catch (error) {
+    console.error('[checkDriverSchedule] Error:', error.message);
+    // On error, allow booking to prevent blocking
+    return { available: true, error: error.message };
   }
 }
 

@@ -806,131 +806,7 @@ export default function DriverHomeScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Financial Analytics - Real-time Business Intelligence */}
-        <View style={styles.analyticsCard}>
-          <Text style={styles.analyticsTitle}>How You're Doing</Text>
-          
-          {/* Profit Margin Analysis */}
-          <View style={styles.analyticsSection}>
-            <Text style={styles.analyticsSectionTitle}>How Much You Keep</Text>
-            <View style={styles.marginContainer}>
-              <View style={styles.marginRow}>
-                <Text style={styles.marginLabel}>Tour Package Trips</Text>
-                <View style={styles.marginBar}>
-                  <View style={[styles.marginFill, { width: `${(() => {
-                    const totalTrips = earningsData?.count || 0;
-                    const rideHailingEarnings = earningsData?.total_ride_hailing_earnings || 0;
-                    const rideHailingTrips = rideHailingEarnings > 0 ? Math.ceil(rideHailingEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
-                    const packageTrips = totalTrips - rideHailingTrips;
-                    return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
-                  })()}%` }]} />
-                  <Text style={styles.marginText}>{(() => {
-                    const totalTrips = earningsData?.count || 0;
-                    const rideHailingEarnings = earningsData?.total_ride_hailing_earnings || 0;
-                    const rideHailingTrips = rideHailingEarnings > 0 ? Math.ceil(rideHailingEarnings / (earningsData?.avg_earning_per_booking || 1)) : 0;
-                    const packageTrips = totalTrips - rideHailingTrips;
-                    return totalTrips > 0 ? Math.round((packageTrips / totalTrips) * 100) : 0;
-                  })()}%</Text>
-                </View>
-              </View>
-              <View style={styles.marginRow}>
-                <Text style={styles.marginLabel}>Ride Hailing</Text>
-                <View style={styles.marginBar}>
-                  <View style={[styles.marginFillCustom, { width: (earningsData?.total_ride_hailing_earnings || 0) > 0 ? '100%' : '0%' }]} />
-                  <Text style={styles.marginText}>{(earningsData?.total_ride_hailing_earnings || 0) > 0 ? '100%' : '0%'}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
 
-          {/* Key Financial Ratios */}
-          <View style={styles.analyticsSection}>
-            <Text style={styles.analyticsSectionTitle}>Your Numbers</Text>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{formatCurrency(earningsData?.avg_earning_per_booking || 0).replace('₱', '')}</Text>
-                <Text style={styles.metricLabel}>Per Trip</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{Math.round((totalEarnings / new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() / 8) || 0)}</Text>
-                <Text style={styles.metricLabel}>Per Hour</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{((earningsData?.count || 0) / new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()).toFixed(1)}</Text>
-                <Text style={styles.metricLabel}>Trips Daily</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={[styles.metricValue, { color: changeData.is_increase ? '#2E7D32' : '#C62828' }]}>
-                  {(changeData.percentage_change || 0).toFixed(1)}%
-                </Text>
-                <Text style={styles.metricLabel}>This Month</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Earnings Health Score */}
-          <View style={styles.analyticsSection}>
-            <Text style={styles.analyticsSectionTitle}>Earnings Score</Text>
-            <View style={styles.efficiencyContainer}>
-              <View style={styles.efficiencyCircle}>
-                <Text style={styles.efficiencyScore}>
-                  {(() => {
-                    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-                    const tripsPerDay = (earningsData?.count || 0) / daysInMonth;
-                    const monthlyEarnings = totalEarnings;
-                    const isGrowing = changeData.is_increase;
-                    const hasRideHailing = (earningsData?.total_ride_hailing_earnings || 0) > 0;
-                    
-                    let score = 0;
-                    
-                    // How active are you? (0-30 points)
-                    if (tripsPerDay >= 3) score += 30;
-                    else if (tripsPerDay >= 2) score += 20;
-                    else if (tripsPerDay >= 1) score += 10;
-                    
-                    // How much do you earn? (0-40 points)
-                    if (monthlyEarnings >= 30000) score += 40;
-                    else if (monthlyEarnings >= 20000) score += 30;
-                    else if (monthlyEarnings >= 10000) score += 20;
-                    else if (monthlyEarnings >= 5000) score += 10;
-                    
-                    // Are you growing? (0-20 points)
-                    if (isGrowing && changeData.percentage_change >= 10) score += 20;
-                    else if (isGrowing && changeData.percentage_change >= 5) score += 15;
-                    else if (isGrowing) score += 10;
-                    
-                    // Do you have different income sources? (0-10 points)
-                    if (hasRideHailing) score += 10;
-                    
-                    return Math.min(100, score).toString();
-                  })()
-                }
-                </Text>
-                <Text style={styles.efficiencyLabel}>Score</Text>
-              </View>
-              <View style={styles.efficiencyDetails}>
-                <Text style={styles.efficiencyText}>Shows how well you earn money. Based on: Daily trips, Monthly income, Growth, Ride hailing</Text>
-                <Text style={styles.efficiencyTip}>
-                  {(() => {
-                    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-                    const score = Math.min(100, 
-                      ((earningsData?.count || 0) / daysInMonth >= 3 ? 30 : (earningsData?.count || 0) / daysInMonth >= 2 ? 20 : (earningsData?.count || 0) / daysInMonth >= 1 ? 10 : 0) +
-                      (totalEarnings >= 30000 ? 40 : totalEarnings >= 20000 ? 30 : totalEarnings >= 10000 ? 20 : totalEarnings >= 5000 ? 10 : 0) +
-                      (changeData.is_increase ? (changeData.percentage_change >= 10 ? 20 : changeData.percentage_change >= 5 ? 15 : 10) : 0) +
-                      ((earningsData?.total_ride_hailing_earnings || 0) > 0 ? 10 : 0)
-                    );
-                    
-                    if (score >= 80) return '🎉 Excellent! You have great earnings. Keep it up!';
-                    if (score >= 60) return '💼 Your earnings are fine. Keep accepting bookings.';
-                    if (score >= 40) return '🚗 Take more tours and bookings to earn more.';
-                    return '💪 Take more tours and bookings to increase earnings and score.';
-                  })()
-                }
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
       </ScrollView>
       
 
@@ -1374,5 +1250,7 @@ const styles = StyleSheet.create({
     color: '#666',
     flex: 1,
   },
+
+
 
 });

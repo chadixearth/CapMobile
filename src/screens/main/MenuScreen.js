@@ -269,6 +269,12 @@ export default function MenuScreen({ navigation }) {
             <>
               <Divider />
               <ProfileItem
+                icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
+                label="Reviews"
+                onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
+              />
+              <Divider />
+              <ProfileItem
                 icon={<Ionicons name="cash-outline" size={22} color={MAROON} />}
                 label="Refunds"
                 onPress={() => navigation.navigate(Routes.TOURIST_REFUND)}
@@ -307,15 +313,27 @@ export default function MenuScreen({ navigation }) {
                 label="My Schedule"
                 onPress={() => navigation.navigate('DriverSchedule')}
               />
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
+                label="Reviews"
+                onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
+              />
             </>
           )}
 
-          <Divider />
-          <ProfileItem
-            icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
-            label="Reviews"
-            onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
-          />
+          {displayRole === 'owner' && (
+            <>
+              <Divider />
+              <ProfileItem
+                icon={<Ionicons name="star-outline" size={22} color={MAROON} />}
+                label="Reviews"
+                onPress={() => navigation.navigate(Routes.REVIEWS || 'Reviews')}
+              />
+            </>
+          )}
+
+
         </View>
 
         {isDualRole && (

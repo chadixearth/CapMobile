@@ -292,20 +292,19 @@ export default function DriverBookScreen({ navigation }) {
         processedBookings = [];
       }
       
-      // Filter bookings: show admin packages to all drivers, driver packages only to creator
+      // Backend already filters by package creator, but add client-side validation
+      // Show bookings that:
+      // 1. Have valid status (pending/waiting_for_driver)
+      // 2. Don't have a driver assigned yet
+      // 3. Backend already filtered by package creator (admin vs driver)
       const filteredBookings = processedBookings.filter(booking => {
         const status = (booking.status || '').toLowerCase();
         const isValidStatus = status === 'pending' || status === 'waiting_for_driver';
         const hasNoDriver = !booking.driver_id;
         
-        if (!isValidStatus || !hasNoDriver) return false;
-        
-        // If package created by admin (no driver creator), show to all drivers
-        const packageCreatorId = booking.package_created_by || booking.created_by_driver_id;
-        if (!packageCreatorId) return true;
-        
-        // If package created by a driver, only show to that driver
-        return packageCreatorId === driverId;
+        // Backend already handles package creator filtering via tourpackages join
+        // Just validate status and driver assignment here
+        return isValidStatus && hasNoDriver;
       });
       
       // Fetch customer profiles for each booking with error handling
@@ -329,6 +328,7 @@ export default function DriverBookScreen({ navigation }) {
         .filter(result => result.status === 'fulfilled')
         .map(result => result.value);
       
+      console.log(`[DriverBookScreen] Setting ${successfulBookings.length} available bookings for driver ${driverId}`);
       setAvailableBookings(successfulBookings);
     } catch (error) {
       console.error('Error fetching available bookings:', error);
@@ -693,13 +693,42 @@ export default function DriverBookScreen({ navigation }) {
   };
 
   const canStartToday = (booking) => {
-    if (!booking?.booking_date) return true;
+    if (!booking?.booking_date) {
+      console.log('[DriverBookScreen] ❌ No booking_date - button DISABLED');
+      return false;
+    }
     try {
-      const sched = String(booking.booking_date).split('T')[0];
-      const today = new Date().toISOString().split('T')[0];
-      return today >= sched;
-    } catch {
-      return true;
+      const bookingDateStr = String(booking.booking_date).split('T')[0];
+      const bookingTimeStr = booking.pickup_time || '09:00:00';
+      
+      // Parse time components
+      const [hours, minutes] = bookingTimeStr.split(':').map(Number);
+      
+      // Create booking datetime in local timezone
+      const [year, month, day] = bookingDateStr.split('-').map(Number);
+      const bookingDateTime = new Date(year, month - 1, day, hours, minutes, 0);
+      const now = new Date();
+      
+      // Allow starting 1 hour before scheduled time (matching backend)
+      const earlyStartAllowed = new Date(bookingDateTime.getTime() - (60 * 60 * 1000));
+      
+      const canStart = now >= earlyStartAllowed;
+      
+      console.log('═══════════════════════════════════════════════');
+      console.log('📱 PHONE TIME CHECK FOR START TRIP BUTTON');
+      console.log('═══════════════════════════════════════════════');
+      console.log('📅 Phone Current Time:', now.toString());
+      console.log('📅 Phone Current ISO:', now.toISOString());
+      console.log('🎯 Booking Scheduled:', bookingDateTime.toString());
+      console.log('⏰ Can Start From:', earlyStartAllowed.toString());
+      console.log('⏱️  Time Difference:', Math.floor((earlyStartAllowed - now) / 1000 / 60 / 60), 'hours');
+      console.log(canStart ? '✅ BUTTON ENABLED (clickable)' : '❌ BUTTON DISABLED (grayed out)');
+      console.log('═══════════════════════════════════════════════');
+      
+      return canStart;
+    } catch (e) {
+      console.error('[DriverBookScreen] ❌ Error in canStartToday:', e);
+      return false;
     }
   };
 
@@ -720,7 +749,14 @@ export default function DriverBookScreen({ navigation }) {
       } else if (selectedBooking.request_type === 'ride_hailing') {
         result = await acceptRideBooking(selectedBooking.id, driverData);
       } else {
-        result = await driverAcceptBooking(selectedBooking.id, driverData);
+        // Pass booking details for schedule and ongoing booking validation
+        const bookingDetails = {
+          booking_date: selectedBooking.booking_date,
+          booking_time: selectedBooking.pickup_time || selectedBooking.booking_time,
+          package_id: selectedBooking.package_id,
+          package_name: selectedBooking.package_name
+        };
+        result = await driverAcceptBooking(selectedBooking.id, driverData, bookingDetails);
       }
 
       if (result.success) {
@@ -801,6 +837,33 @@ export default function DriverBookScreen({ navigation }) {
             [
               { text: 'OK' },
               { text: 'Contact Admin', onPress: () => navigation.navigate('Chat') }
+            ]
+          );
+        } else if (result.error_code === 'DIFFERENT_PACKAGE_SAME_DAY') {
+          Alert.alert(
+            '📦 Different Package',
+            result.friendly_message || 'You already have a booking for a different package on this day.',
+            [
+              { text: 'OK' },
+              { text: 'View Ongoing', onPress: () => setActiveTab('ongoing') }
+            ]
+          );
+        } else if (result.error_code === 'TIME_CONFLICT_SAME_PACKAGE') {
+          Alert.alert(
+            '⏰ Time Conflict',
+            result.friendly_message || 'This booking overlaps with your existing booking for the same package.',
+            [
+              { text: 'OK' },
+              { text: 'View Schedule', onPress: () => setShowScheduleModal(true) }
+            ]
+          );
+        } else if (result.error_code === 'SCHEDULE_CONFLICT') {
+          Alert.alert(
+            '📅 Schedule Conflict',
+            result.friendly_message || 'You are not available at this time. Please update your schedule.',
+            [
+              { text: 'OK' },
+              { text: 'Update Schedule', onPress: () => setShowScheduleModal(true) }
             ]
           );
         } else {
@@ -1266,7 +1329,7 @@ const getCustomTitle = (r) => (
             >
               <Ionicons name="play" size={18} color="#fff" />
               <Text style={styles.acceptButtonText}>
-                {canStartToday(booking) ? 'Start Trip' : `Starts on ${formatDate(booking.booking_date)}`}
+                {canStartToday(booking) ? 'Start Trip' : `Can start 1h before (${formatTime(booking.pickup_time)})`}
               </Text>
             </TouchableOpacity>
           ) : (

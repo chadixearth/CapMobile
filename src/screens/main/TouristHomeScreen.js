@@ -193,14 +193,27 @@ export default function TouristHomeScreen({ navigation }) {
   });
 
   useEffect(() => {
-    const fetchPackages = async () => {
+    const fetchPackages = async (showLoading = true) => {
       try {
-        setLoadingPackages(true);
+        if (showLoading) setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
+        
+        // Debug: Log package data to see what fields are available
+        console.log('Tour packages received:', packages.length);
+        if (packages.length > 0) {
+          console.log('Sample package data:', JSON.stringify(packages[0], null, 2));
+          // Look for Plaza Independencia package specifically
+          const plazaPackage = packages.find(pkg => pkg.package_name?.includes('Plaza Independencia'));
+          if (plazaPackage) {
+            console.log('Plaza Independencia package:', JSON.stringify(plazaPackage, null, 2));
+          }
+        }
+        
         setTourPackages(packages);
         setFilteredPackages(packages);
         setNetworkStatus('Connected');
       } catch (error) {
+        console.error('Error fetching packages:', error);
         setTourPackages([]);
         setFilteredPackages([]);
         setNetworkStatus('Offline');
@@ -287,6 +300,13 @@ export default function TouristHomeScreen({ navigation }) {
     
     fetchPackages();
     loadMapData();
+    
+    // Poll for updates every 15 seconds
+    const interval = setInterval(() => {
+      fetchPackages(false);
+    }, 15000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Filter + Sort
@@ -404,7 +424,10 @@ export default function TouristHomeScreen({ navigation }) {
     if (roadHighlights.length === 0) {
       const point = { name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`, latitude, longitude };
       if (activePicker === 'pickup') setPickup(point);
-      else setDestination(point);
+      else {
+        setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
+      }
       return;
     }
     const nearestPoint = findNearestRoadPoint(roadHighlights, latitude, longitude, Infinity);
@@ -445,11 +468,15 @@ export default function TouristHomeScreen({ navigation }) {
         }
       } else if (activePicker === 'destination') {
         setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
       }
     } else {
       const point = { name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`, latitude, longitude };
       if (activePicker === 'pickup') setPickup(point);
-      else setDestination(point);
+      else {
+        setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
+      }
     }
   };
 
@@ -534,6 +561,7 @@ export default function TouristHomeScreen({ navigation }) {
         }
       } else if (activePicker === 'destination' && nearestPoint.pointType === 'dropoff') {
         setDestination(point);
+        if (pickup) await fetchOSRMRoute(pickup, point);
       }
       setMapRegion((r) => ({ ...r, latitude: point.latitude, longitude: point.longitude }));
     } else {
@@ -544,6 +572,30 @@ export default function TouristHomeScreen({ navigation }) {
   const swapPoints = () => {
     setPickup(destination);
     setDestination(pickup);
+  };
+
+  const fetchOSRMRoute = async (pickup, destination) => {
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${pickup.longitude},${pickup.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`
+      );
+      const data = await response.json();
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+        const routeRoad = {
+          id: 'osrm-route',
+          name: 'Route',
+          coordinates: coordinates,
+          color: '#6B2E2B',
+          weight: 5,
+          opacity: 0.9
+        };
+        setRoadHighlights([routeRoad]);
+      }
+    } catch (error) {
+      console.warn('OSRM route fetch failed:', error);
+    }
   };
 
   const handleMarkerPress = async (marker) => {
@@ -582,6 +634,11 @@ export default function TouristHomeScreen({ navigation }) {
       }
       const point = { name: marker.title, latitude: marker.latitude, longitude: marker.longitude, id: marker.id };
       setDestination(point);
+      
+      // Fetch OSRM route when destination is selected
+      if (pickup) {
+        await fetchOSRMRoute(pickup, point);
+      }
     }
   };
 
@@ -861,23 +918,48 @@ export default function TouristHomeScreen({ navigation }) {
                   ) : null}
                 </View>
 
-                {/* Rating row */}
+                {/* Rating and Reviews row */}
                 <View style={styles.metaRow}>
-                  {(typeof pkg.average_rating === 'number' && pkg.average_rating > 0) ? (
-                    <View style={styles.metaInline}>
-                      <Ionicons name="star" size={12} color="#FFD700" />
-                      <Text style={styles.metaInlineText} numberOfLines={1}>
-                        {pkg.average_rating.toFixed(1)} ({pkg.reviews_count || 0})
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.metaInline}>
-                      <Ionicons name="star-outline" size={12} color="#CCC" />
-                      <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
-                        No reviews
-                      </Text>
-                    </View>
-                  )}
+                  {(() => {
+                    const rating = Number(pkg.average_rating) || 0;
+                    const reviewCount = pkg.reviews_count || pkg.review_count || pkg.total_reviews || 0;
+                    
+                    return (
+                      <>
+                        {rating > 0 ? (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="star" size={12} color="#FFD700" />
+                            <Text style={styles.metaInlineText} numberOfLines={1}>
+                              {String(rating.toFixed(1))}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="star-outline" size={12} color="#CCC" />
+                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                              No rating
+                            </Text>
+                          </View>
+                        )}
+                        
+                        {reviewCount > 0 ? (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="chatbubble-outline" size={12} color="#6B2E2B" />
+                            <Text style={styles.metaInlineText} numberOfLines={1}>
+                              {String(reviewCount)} review{reviewCount !== 1 ? 's' : ''}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.metaInline}>
+                            <Ionicons name="chatbubble-outline" size={12} color="#CCC" />
+                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                              No reviews
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    );
+                  })()}
                 </View>
 
                 {/* Bottom row: Availability + Book */}

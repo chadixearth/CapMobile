@@ -19,6 +19,9 @@ import { checkExistingReviews } from '../../services/reviews';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { getAccessToken } from '../../services/authService';
+import DriverProfileModal from '../../components/DriverProfileModal';
+import { getVerificationStatus } from '../../services/tourpackage/bookingVerification';
+import PointImageModal from '../../components/PointImageModal';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -32,6 +35,11 @@ export default function BookingHistoryScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reviewStatus, setReviewStatus] = useState({});
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedDriver, setSelectedDriver] = useState(null);
+  const [driverModalVisible, setDriverModalVisible] = useState(false);
+  const [verificationPhotos, setVerificationPhotos] = useState({});
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
   
   // Animation refs for loading
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -69,9 +77,9 @@ export default function BookingHistoryScreen({ navigation }) {
     ? bookings 
     : bookings.filter(b => categorizeBooking(b) === selectedCategory);
 
-  const fetchBookings = async (showRefresh = false) => {
+  const fetchBookings = async (showRefresh = false, showLoading = true) => {
     if (showRefresh) setRefreshing(true);
-    else setLoading(true);
+    else if (showLoading) setLoading(true);
 
     try {
       const isDriver = user?.role === 'driver' || user?.role === 'driver-owner';
@@ -154,6 +162,26 @@ export default function BookingHistoryScreen({ navigation }) {
       }
       
       setReviewStatus(reviewStatusMap);
+      
+      // Fetch verification photos for completed bookings (tourist only)
+      if (user?.role === 'tourist') {
+        const photoMap = {};
+        for (const booking of completedBookings) {
+          try {
+            const result = await getVerificationStatus(booking.id, user.id);
+            console.log(`Verification check for booking ${booking.id}:`, result);
+            if (result?.success && result?.data?.verification_photo_url) {
+              photoMap[booking.id] = result.data.verification_photo_url;
+            } else if (result?.data?.verification_available && result?.data?.verification_photo_url) {
+              photoMap[booking.id] = result.data.verification_photo_url;
+            }
+          } catch (error) {
+            console.log('Error fetching verification photo for booking:', booking.id, error);
+          }
+        }
+        console.log('Verification photos loaded:', photoMap);
+        setVerificationPhotos(photoMap);
+      }
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {
@@ -164,6 +192,13 @@ export default function BookingHistoryScreen({ navigation }) {
 
   useEffect(() => {
     fetchBookings();
+    
+    // Poll for updates every 10 seconds
+    const interval = setInterval(() => {
+      fetchBookings(false);
+    }, 10000);
+    
+    return () => clearInterval(interval);
   }, [user]);
 
   // Animation effect for loading
@@ -339,6 +374,7 @@ export default function BookingHistoryScreen({ navigation }) {
     const hasPackageReview = status?.hasPackageReview || false;
     const hasDriverReview = status?.hasDriverReview || false;
     const canReview = booking.status === 'completed' && (!hasPackageReview || !hasDriverReview);
+    const hasVerificationPhoto = verificationPhotos[booking.id];
 
     return (
       <View key={booking.id} style={styles.bookingCard}>
@@ -411,17 +447,47 @@ export default function BookingHistoryScreen({ navigation }) {
           </View>
         ) : null}
 
-        {booking.driver_data && (
-          <View style={styles.driverInfo}>
+        {booking.driver_data && booking.status === 'driver_assigned' && (
+          <TouchableOpacity 
+            style={styles.driverInfo}
+            onPress={() => {
+              setSelectedDriver(booking.driver_data);
+              setDriverModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
             <Ionicons name="person" size={16} color={MAROON} />
             <Text style={styles.driverName}>
               Driver: {booking.driver_data.name || 'Assigned Driver'}
             </Text>
-          </View>
+            <Ionicons name="chevron-forward" size={14} color={MAROON} />
+          </TouchableOpacity>
         )}
 
-        {/* Review Section for Completed Bookings */}
-        {booking.status === 'completed' && (
+        {/* Verification Photo for Completed Bookings - Only for tourists */}
+        {booking.status === 'completed' && user?.role === 'tourist' && (
+          <TouchableOpacity 
+            style={styles.photoSection}
+            onPress={() => {
+              if (hasVerificationPhoto) {
+                setSelectedPhoto(hasVerificationPhoto);
+                setPhotoModalVisible(true);
+              } else {
+                Alert.alert('No Photo', 'No verification photo was uploaded for this trip.');
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="image" size={16} color={hasVerificationPhoto ? MAROON : '#999'} />
+            <Text style={[styles.photoText, !hasVerificationPhoto && styles.photoTextDisabled]}>
+              {hasVerificationPhoto ? 'View Completion Photo' : 'No Verification Photo'}
+            </Text>
+            {hasVerificationPhoto && <Ionicons name="chevron-forward" size={14} color={MAROON} />}
+          </TouchableOpacity>
+        )}
+
+        {/* Review Section for Completed Bookings - Only for tourists */}
+        {booking.status === 'completed' && user?.role === 'tourist' && (
           <View style={styles.reviewSection}>
             <View style={styles.reviewHeader}>
               <Ionicons name="star" size={16} color="#FFD700" />
@@ -452,25 +518,38 @@ export default function BookingHistoryScreen({ navigation }) {
               </View>
             </View>
 
-            {canReview && (
+            <View style={styles.actionRow}>
+              {canReview && (
+                <TouchableOpacity
+                  style={[styles.reviewButton, styles.flexButton]}
+                  onPress={() => handleReviewPress(booking)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="star-outline" size={16} color="#fff" />
+                  <Text style={styles.reviewButtonText}>
+                    {!hasPackageReview && !hasDriverReview ? 'Review' : 'Complete'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {hasPackageReview && hasDriverReview && (
+                <View style={[styles.reviewCompleted, styles.flexButton]}>
+                  <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+                  <Text style={styles.reviewCompletedText}>Reviewed</Text>
+                </View>
+              )}
+
               <TouchableOpacity
-                style={styles.reviewButton}
-                onPress={() => handleReviewPress(booking)}
+                style={[styles.reportButton, styles.flexButton]}
+                onPress={() => navigation.navigate('ReportDriver', {
+                  booking: booking
+                })}
                 activeOpacity={0.8}
               >
-                <Ionicons name="star-outline" size={16} color="#fff" />
-                <Text style={styles.reviewButtonText}>
-                  {!hasPackageReview && !hasDriverReview ? 'Leave Review' : 'Complete Review'}
-                </Text>
+                <Ionicons name="flag-outline" size={16} color="#DC3545" />
+                <Text style={styles.reportButtonText}>Report</Text>
               </TouchableOpacity>
-            )}
-
-            {hasPackageReview && hasDriverReview && (
-              <View style={styles.reviewCompleted}>
-                <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
-                <Text style={styles.reviewCompletedText}>Reviews completed</Text>
-              </View>
-            )}
+            </View>
           </View>
         )}
 
@@ -604,6 +683,19 @@ export default function BookingHistoryScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
+
+      <DriverProfileModal
+        visible={driverModalVisible}
+        onClose={() => setDriverModalVisible(false)}
+        driver={selectedDriver}
+      />
+
+      <PointImageModal
+        visible={photoModalVisible}
+        onClose={() => setPhotoModalVisible(false)}
+        imageUrl={selectedPhoto}
+        title="Completion Photo"
+      />
     </View>
   );
 }
@@ -821,11 +913,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFF5F3',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: MAROON + '20',
   },
   driverName: {
     fontSize: 12,
     color: MAROON,
-    fontWeight: '500',
+    fontWeight: '600',
+    flex: 1,
+  },
+  photoSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F0F8FF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: MAROON + '20',
+  },
+  photoText: {
+    fontSize: 12,
+    color: MAROON,
+    fontWeight: '600',
+    flex: 1,
+  },
+  photoTextDisabled: {
+    color: '#999',
   },
   reviewSection: {
     borderTopWidth: 1,
@@ -861,6 +981,13 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontWeight: '500',
   },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  flexButton: {
+    flex: 1,
+  },
   reviewButton: {
     backgroundColor: MAROON,
     borderRadius: 8,
@@ -870,6 +997,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  reportButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 14,
+    fontWeight: '600',
   },
   reviewButtonText: {
     color: '#fff',

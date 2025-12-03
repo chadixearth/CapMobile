@@ -19,6 +19,7 @@ import { apiBaseUrl } from '../../services/networkConfig';
 import { getAccessToken } from '../../services/authService';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 import { Alert } from 'react-native';
+import { getReviewDisplayName } from '../../utils/anonymousUtils';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -27,9 +28,9 @@ const CARD = '#FFFFFF';
 function ReviewsScreen({ navigation }) {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
-  const [activeTab, setActiveTab] = useState('pending');
   const isTourist = user?.role === 'tourist';
   const isDriverOrOwner = user?.role === 'driver' || user?.role === 'driver-owner' || user?.role === 'owner';
+  const [activeTab, setActiveTab] = useState(isTourist ? 'pending' : 'received');
   const [reviews, setReviews] = useState([]);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +48,20 @@ function ReviewsScreen({ navigation }) {
     else setLoading(true);
 
     try {
-      if (activeTab === 'pending') {
+      if (activeTab === 'received') {
+        // Fetch reviews received by this user (as driver/owner)
+        const result = await getUserReviews({
+          user_id: user?.id,
+          type: 'received',
+          limit: 50,
+          user_role: user?.role
+        });
+
+        if (result.success) {
+          setReviews(result.data || []);
+          setStats(result.stats || null);
+        }
+      } else if (activeTab === 'pending') {
         // Fetch completed bookings without reviews
         const [tourResponse, rideResponse] = await Promise.all([
           fetch(`${apiBaseUrl()}/tour-booking/`, {
@@ -113,7 +127,7 @@ function ReviewsScreen({ navigation }) {
         
         pendingReviewsList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setPendingReviews(pendingReviewsList);
-      } else {
+      } else if (activeTab === 'given') {
         // Fetch submitted reviews
         const result = await getUserReviews({
           user_id: user?.id,
@@ -253,13 +267,14 @@ function ReviewsScreen({ navigation }) {
 
   const renderPendingReview = (booking, index) => {
     const isRideHailing = booking.pickup_address && !booking.package_data;
+    const packageName = booking.package_name || booking.package_data?.package_name || booking.tour_package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package');
     
     return (
       <View key={index} style={styles.reviewCard}>
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
             <Text style={styles.reviewerName}>
-              {booking.package_data?.package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package')}
+              {packageName}
             </Text>
             <Text style={styles.bookingDate}>
               {booking.booking_date ? new Date(booking.booking_date + 'T00:00:00').toLocaleDateString() : new Date(booking.created_at).toLocaleDateString()}
@@ -295,19 +310,28 @@ function ReviewsScreen({ navigation }) {
   };
 
   const renderReview = (review, index) => {
-    const isPackageReview = !!review.package_id;
-    const isDriverReview = !!review.driver_id;
+    const isPackageReview = review.review_type === 'package' || !!review.package_id;
+    const isDriverReview = review.review_type === 'driver' || !!review.driver_id;
+    const isReceivedTab = activeTab === 'received';
     
     return (
       <View key={index} style={styles.reviewCard}>
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
             <Text style={styles.reviewerName}>
-              {isDriverReview
-                ? (review.driver_name || 'Driver')
-                : (review.package_name || 'Tour Package')
-              }
+              {String(isReceivedTab
+                ? getReviewDisplayName(review)
+                : (isDriverReview 
+                    ? (review.driver_name || review.driver?.name || 'Driver Review')
+                    : (review.package_name || review.tour_package_name || review.package_data?.package_name || review.package?.name || review.booking?.package_name || review.booking?.package_data?.package_name || review.booking?.tour_package_name || 'Package Review')
+                  )
+              )}
             </Text>
+            {!isReceivedTab && isDriverReview && (review.package_name || review.booking?.package_name) && (
+              <Text style={styles.packageInfo}>
+                Package: {review.package_name || review.booking?.package_name}
+              </Text>
+            )}
             {renderStars(review.rating)}
           </View>
           <Text style={styles.reviewDate}>
@@ -319,15 +343,23 @@ function ReviewsScreen({ navigation }) {
           <Text style={styles.reviewComment}>{review.comment}</Text>
         )}
         
-        <View style={styles.reviewType}>
-          <Ionicons 
-            name={isDriverReview ? 'person' : 'location'} 
-            size={12} 
-            color="#999" 
-          />
-          <Text style={styles.reviewTypeText}>
-            {isDriverReview ? 'Driver Review' : 'Package Review'}
-          </Text>
+        <View style={styles.reviewFooter}>
+          <View style={styles.reviewType}>
+            <Ionicons 
+              name={isDriverReview ? 'person' : 'location'} 
+              size={12} 
+              color="#999" 
+            />
+            <Text style={styles.reviewTypeText}>
+              {isDriverReview ? 'Driver Review' : 'Package Review'}
+            </Text>
+          </View>
+          
+          {(isReceivedTab && review.booking_date) || (!isReceivedTab && review.booking_date) ? (
+            <Text style={styles.bookingDateText}>
+              {new Date(review.booking_date).toLocaleDateString()}
+            </Text>
+          ) : null}
         </View>
       </View>
     );
@@ -352,8 +384,6 @@ function ReviewsScreen({ navigation }) {
     );
   };
 
-  const canReceiveReviews = user?.role === 'driver' || user?.role === 'owner';
-
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -372,26 +402,37 @@ function ReviewsScreen({ navigation }) {
         </View>
         
         {/* Tabs */}
-        {isTourist && (
-          <View style={styles.tabContainer}>
+        <View style={styles.tabContainer}>
+          {isTourist ? (
+            <>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
+                onPress={() => setActiveTab('pending')}
+              >
+                <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>
+                  To Review
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'given' && styles.activeTab]}
+                onPress={() => setActiveTab('given')}
+              >
+                <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
+                  My Reviews
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
-              onPress={() => setActiveTab('pending')}
+              style={[styles.tab, styles.activeTab]}
+              disabled
             >
-              <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>
-                To Review
+              <Text style={[styles.tabText, styles.activeTabText]}>
+                Reviews Received
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'given' && styles.activeTab]}
-              onPress={() => setActiveTab('given')}
-            >
-              <Text style={[styles.tabText, activeTab === 'given' && styles.activeTabText]}>
-                My Reviews
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </View>
 
 
@@ -440,7 +481,10 @@ function ReviewsScreen({ navigation }) {
             <Ionicons name="star-outline" size={64} color="#DDD" />
             <Text style={styles.emptyTitle}>No Reviews Yet</Text>
             <Text style={styles.emptyText}>
-              You haven't submitted any reviews yet. Complete a tour or ride to leave your first review!
+              {activeTab === 'received'
+                ? 'You haven\'t received any reviews yet. Complete bookings to receive reviews from customers!'
+                : 'You haven\'t submitted any reviews yet. Complete a tour or ride to leave your first review!'
+              }
             </Text>
           </View>
         ) : (
@@ -602,16 +646,26 @@ const styles = StyleSheet.create({
     color: MAROON,
     fontWeight: '500',
   },
+  reviewFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
   reviewType: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
   },
   reviewTypeText: {
     fontSize: 11,
     color: '#999',
     fontWeight: '500',
+  },
+  bookingDateText: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
   },
   pendingItems: {
     marginVertical: 8,

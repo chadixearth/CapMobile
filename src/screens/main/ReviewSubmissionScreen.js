@@ -26,7 +26,8 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
   const [driverRating, setDriverRating] = useState(0);
   const [packageComment, setPackageComment] = useState('');
   const [driverComment, setDriverComment] = useState('');
-  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [packageAnonymous, setPackageAnonymous] = useState(false);
+  const [driverAnonymous, setDriverAnonymous] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -35,7 +36,8 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       try {
         const result = await getAnonymousReviewSetting();
         if (result.success) {
-          setIsAnonymous(result.data.isAnonymous);
+          setPackageAnonymous(result.data.isAnonymous);
+          setDriverAnonymous(result.data.isAnonymous);
         }
       } catch (error) {
         console.error('Error loading anonymous setting:', error);
@@ -80,12 +82,12 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       // Submit package review if rating provided (tour bookings only)
       if (packageRating > 0 && bookingType === 'tour') {
         const packageResult = await createPackageReview({
-          package_id: tourPackage?.id,
+          package_id: tourPackage?.id || booking?.package_id || booking?.package_data?.id,
           booking_id: booking?.id,
           reviewer_id: user?.id,
           rating: packageRating,
           comment: packageComment.trim(),
-          is_anonymous: isAnonymous,
+          is_anonymous: packageAnonymous,
         });
         results.push({ type: 'package', result: packageResult });
       }
@@ -100,16 +102,16 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
             reviewer_id: user?.id,
             rating: driverRating,
             comment: driverComment.trim(),
-            is_anonymous: isAnonymous,
+            is_anonymous: driverAnonymous,
           });
         } else {
           driverResult = await createDriverReview({
-            driver_id: driver?.id,
+            driver_id: driver?.id || booking?.driver_id || booking?.assigned_driver_id,
             booking_id: booking?.id,
             reviewer_id: user?.id,
             rating: driverRating,
             comment: driverComment.trim(),
-            is_anonymous: isAnonymous,
+            is_anonymous: driverAnonymous,
           });
         }
         results.push({ type: 'driver', result: driverResult });
@@ -151,42 +153,15 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Anonymous Option */}
-        <View style={styles.anonymousCard}>
-          <View style={styles.anonymousHeader}>
-            <View style={styles.anonymousIconCircle}>
-              <Ionicons name="eye-off" size={18} color={MAROON} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.anonymousTitle}>Anonymous Review</Text>
-              <Text style={styles.anonymousSubtitle}>
-                Your name won't be shown with this review
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.anonymousToggle,
-                isAnonymous && styles.anonymousToggleActive
-              ]}
-              onPress={() => setIsAnonymous(!isAnonymous)}
-              activeOpacity={0.8}
-            >
-              <View style={[
-                styles.anonymousToggleThumb,
-                isAnonymous && styles.anonymousToggleThumbActive
-              ]} />
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* Package Review */}
-        {tourPackage && bookingType === 'tour' && (
+        {(tourPackage || booking?.package_name || booking?.package_data) && (
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <Ionicons name="location" size={20} color={MAROON} />
               <Text style={styles.reviewTitle}>Rate the Tour Package</Text>
             </View>
-            <Text style={styles.packageName}>{tourPackage.name}</Text>
+            <Text style={styles.packageName}>{tourPackage?.name || tourPackage?.package_name || booking?.package_name || booking?.package_data?.package_name || 'Tour Package'}</Text>
             
             {renderStars(packageRating, setPackageRating)}
             
@@ -204,13 +179,13 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
         )}
 
         {/* Driver Review */}
-        {(driver || (rideBooking && rideBooking.driver_id)) && (
+        {(driver || booking?.driver_id || booking?.assigned_driver_id) && (
           <View style={styles.reviewCard}>
             <View style={styles.reviewHeader}>
               <Ionicons name="person" size={20} color={MAROON} />
               <Text style={styles.reviewTitle}>Rate the Driver</Text>
             </View>
-            <Text style={styles.driverName}>{driver.name || 'Your Driver'}</Text>
+            <Text style={styles.driverName}>{driver?.name || booking?.driver_name || 'Your Driver'}</Text>
             
             {renderStars(driverRating, setDriverRating)}
             
@@ -227,25 +202,38 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={[
-            styles.submitButton,
-            loading && styles.submitButtonDisabled
-          ]}
-          onPress={handleSubmit}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="send" size={16} color="#fff" />
-              <Text style={styles.submitButtonText}>Submit Review</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Action Buttons - Only for tourists */}
+        {user?.role === 'tourist' && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                loading && styles.submitButtonDisabled
+              ]}
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="send" size={16} color="#fff" />
+                  <Text style={styles.submitButtonText}>Submit Review</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.reportButton}
+              onPress={() => navigation.navigate('ReportDriver', { booking })}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="flag-outline" size={16} color="#DC3545" />
+              <Text style={styles.reportButtonText}>Report Driver</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -278,67 +266,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  anonymousCard: {
-    backgroundColor: CARD,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  anonymousHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  anonymousIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FDF4F4',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F3DADA',
-  },
-  anonymousTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  anonymousSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  anonymousToggle: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#E5E7EB',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  anonymousToggleActive: {
-    backgroundColor: MAROON,
-  },
-  anonymousToggleThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
-  anonymousToggleThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
+
   reviewCard: {
     backgroundColor: CARD,
     borderRadius: 12,
@@ -392,6 +320,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
     minHeight: 80,
   },
+  actionButtons: {
+    gap: 12,
+    marginTop: 8,
+  },
   submitButton: {
     backgroundColor: MAROON,
     borderRadius: 12,
@@ -401,7 +333,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 8,
+  },
+  reportButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DC3545',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  reportButtonText: {
+    color: '#DC3545',
+    fontSize: 16,
+    fontWeight: '600',
   },
   submitButtonDisabled: {
     opacity: 0.7,

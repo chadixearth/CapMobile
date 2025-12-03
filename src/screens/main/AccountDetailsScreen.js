@@ -60,7 +60,9 @@ export default function AccountDetailsScreen({ navigation }) {
   const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [originalEmail, setOriginalEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -68,6 +70,12 @@ export default function AccountDetailsScreen({ navigation }) {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+
+  // Email verification state
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [sendingCode, setSendingCode] = useState(false);
 
 
 
@@ -112,7 +120,9 @@ export default function AccountDetailsScreen({ navigation }) {
             setMiddleName(userData.middle_name || '');
             setLastName(userData.last_name || '');
             setEmail(userData.email || '');
+            setOriginalEmail(userData.email || '');
             setPhone(userData.phone || '');
+            setAddress(userData.address || '');
 
             const profilePhotoUrl =
               userData.profile_photo_url ||
@@ -128,7 +138,9 @@ export default function AccountDetailsScreen({ navigation }) {
               setMiddleName(data.user.user_metadata?.middle_name || '');
               setLastName(data.user.user_metadata?.last_name || '');
               setEmail(data.user.email || '');
+              setOriginalEmail(data.user.email || '');
               setPhone(data.user.user_metadata?.phone || '');
+              setAddress(data.user.user_metadata?.address || '');
               const authPhotoUrl =
                 data.user.user_metadata?.profile_photo_url ||
                 data.user.user_metadata?.profile_photo ||
@@ -381,7 +393,50 @@ export default function AccountDetailsScreen({ navigation }) {
     setError('');
     setSuccess('');
     try {
+      // Validate email
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address');
+        setLoading(false);
+        return;
+      }
+
+      // Validate phone (Philippine format: 09XXXXXXXXX - 11 digits starting with 09)
+      if (phone && !/^09\d{9}$/.test(phone)) {
+        Alert.alert('Invalid Phone Number', 'Phone must be 11 digits starting with 09 (e.g., 09123456789)');
+        setLoading(false);
+        return;
+      }
+
       const currentUser = await getCurrentUser();
+
+      // Check if email changed
+      if (email !== originalEmail) {
+        Alert.alert(
+          'Email Change Required',
+          'To change your email, we need to verify your new email address. A verification code will be sent.',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+            { text: 'Send Code', onPress: () => sendEmailVerificationCode() }
+          ]
+        );
+        return;
+      }
+
+      // Check phone uniqueness
+      if (phone) {
+        const { data: existingPhone } = await supabase
+          .table('users')
+          .select('id')
+          .eq('phone', phone)
+          .neq('id', currentUser.id)
+          .single();
+        
+        if (existingPhone) {
+          Alert.alert('Phone Already Used', 'This phone number is already registered to another account');
+          setLoading(false);
+          return;
+        }
+      }
 
       if (currentUser) {
         const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
@@ -392,6 +447,7 @@ export default function AccountDetailsScreen({ navigation }) {
           last_name: lastName,
           email,
           phone,
+          address,
           profile_photo_url: photoUrl,
         };
         Object.keys(profileData).forEach((k) => {
@@ -696,11 +752,23 @@ export default function AccountDetailsScreen({ navigation }) {
                     <EditableField
                       value={phone}
                       onChangeText={setPhone}
-                      placeholder="Phone Number"
+                      placeholder="Phone Number (09XXXXXXXXX)"
                       keyboardType="phone-pad"
                       currentValue={phone}
+                      maxLength={11}
                     />
                   </View>
+                </View>
+                <View style={styles.gridRow}>
+                  <View style={styles.gridCol}>
+                    <EditableField
+                      value={address}
+                      onChangeText={setAddress}
+                      placeholder="Address"
+                      currentValue={address}
+                    />
+                  </View>
+                  <View style={styles.gridCol} />
                 </View>
               </View>
 
@@ -981,8 +1049,169 @@ export default function AccountDetailsScreen({ navigation }) {
         iconName="shield-checkmark"
         iconColor="#22C55E"
       />
+
+      {/* Email Verification Modal */}
+      <Modal
+        visible={showEmailVerification}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !sendingCode && setShowEmailVerification(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <View style={[styles.modalIconCircle, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}>
+                  <Ionicons name="mail" size={18} color="#4F46E5" />
+                </View>
+                <Text style={styles.modalTitle}>Verify Email</Text>
+              </View>
+              <TouchableOpacity onPress={() => !sendingCode && setShowEmailVerification(false)} disabled={sendingCode}>
+                <Ionicons name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.modalText}>
+                Enter the 6-digit code sent to:
+              </Text>
+              <Text style={[styles.modalText, { fontWeight: '700', color: COLORS.maroon, marginTop: 4 }]}>
+                {pendingEmail}
+              </Text>
+
+              <TextInput
+                style={styles.codeInput}
+                value={verificationCode}
+                onChangeText={setVerificationCode}
+                placeholder="Enter 6-digit code"
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnGhost]}
+                  onPress={() => {
+                    setShowEmailVerification(false);
+                    setVerificationCode('');
+                    setLoading(false);
+                  }}
+                  disabled={sendingCode}
+                  activeOpacity={0.95}
+                >
+                  <Text style={styles.modalBtnGhostText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: COLORS.maroon }, sendingCode && { opacity: 0.6 }]}
+                  onPress={verifyEmailCode}
+                  disabled={sendingCode || verificationCode.length !== 6}
+                  activeOpacity={0.95}
+                >
+                  {sendingCode ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalBtnDangerText}>Verify</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
+
+  async function sendEmailVerificationCode() {
+    try {
+      setSendingCode(true);
+      setPendingEmail(email);
+      
+      const response = await fetch('YOUR_BACKEND_URL/api/send-email-verification/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setShowEmailVerification(true);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to send verification code');
+        setLoading(false);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to send verification code');
+      setLoading(false);
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function verifyEmailCode() {
+    try {
+      setSendingCode(true);
+      
+      const response = await fetch('YOUR_BACKEND_URL/api/verify-email-code/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, code: verificationCode })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setShowEmailVerification(false);
+        setVerificationCode('');
+        setOriginalEmail(pendingEmail);
+        
+        // Now save profile with new email
+        await saveProfileWithNewEmail();
+      } else {
+        Alert.alert('Invalid Code', result.error || 'The verification code is incorrect');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to verify code');
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function saveProfileWithNewEmail() {
+    try {
+      const currentUser = await getCurrentUser();
+      const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+      const profileData = {
+        name: fullName,
+        first_name: firstName,
+        middle_name: middleName,
+        last_name: lastName,
+        email: pendingEmail,
+        phone,
+        address,
+        profile_photo_url: photoUrl,
+      };
+      Object.keys(profileData).forEach((k) => {
+        if (profileData[k] === '' || profileData[k] === null || profileData[k] === undefined) {
+          delete profileData[k];
+        }
+      });
+      const result = await updateUserProfile(currentUser.id, profileData);
+      if (result.success) {
+        setSuccess('Email and profile updated successfully!');
+        setShowSuccessModal(true);
+        if (auth.refreshUser) await auth.refreshUser();
+      } else {
+        setError(result.error || 'Failed to update profile.');
+      }
+    } catch (e) {
+      setError('Failed to save changes.');
+    } finally {
+      setLoading(false);
+    }
+  }
 }
 
 const CARD = {
@@ -1379,6 +1608,20 @@ const styles = StyleSheet.create({
   modalBtnGhostText: { color: COLORS.text, fontWeight: '900' },
   modalBtnDangerText: { color: '#FFFFFF', fontWeight: '900' },
 
+  /* CODE INPUT */
+  codeInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 8,
+    marginTop: 16,
+    backgroundColor: '#F9FAFB',
+  },
 
   /* LOADING */
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },

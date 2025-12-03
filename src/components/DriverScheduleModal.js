@@ -33,6 +33,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
   const [showToPicker, setShowToPicker] = useState(false);
   const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [isAllDay, setIsAllDay] = useState(false);
 
   useEffect(() => {
     if (visible && user?.id) {
@@ -418,6 +419,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                         setSelectedTimeSlots([]);
                         setAvailableFromTime('00:00');
                         setAvailableToTime('12:00');
+                        setIsAllDay(false);
                         setShowTimeModal(true);
                       }}
                     >
@@ -555,7 +557,31 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                 {selectedDate && `${new Date(selectedDate.dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`}
               </Text>
               
+              {/* All Day Toggle */}
+              <TouchableOpacity 
+                style={[styles.allDayToggle, isAllDay && styles.allDayToggleActive]}
+                onPress={() => {
+                  setIsAllDay(!isAllDay);
+                  if (!isAllDay) {
+                    setAvailabilityMode('range');
+                  }
+                }}
+              >
+                <View style={styles.allDayToggleContent}>
+                  <Ionicons 
+                    name={isAllDay ? "checkmark-circle" : "ellipse-outline"} 
+                    size={24} 
+                    color={isAllDay ? '#4CAF50' : '#999'} 
+                  />
+                  <View style={styles.allDayTextContainer}>
+                    <Text style={[styles.allDayText, isAllDay && styles.allDayTextActive]}>Available All Day</Text>
+                    <Text style={styles.allDaySubtext}>24 hours (12:00 AM - 11:59 PM)</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
               {/* Mode Selection */}
+              {!isAllDay && (
               <View style={styles.modeSelection}>
                 <TouchableOpacity 
                   style={[styles.modeBtn, availabilityMode === 'range' && styles.modeBtnActive]}
@@ -573,8 +599,9 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                   <Text style={[styles.modeBtnText, availabilityMode === 'custom' && styles.modeBtnTextActive]}>Select Hours</Text>
                 </TouchableOpacity>
               </View>
+              )}
               
-              {availabilityMode === 'range' ? (
+              {!isAllDay && availabilityMode === 'range' ? (
                 <>
                   <View style={styles.timeRow}>
                     <View style={styles.timeInputContainer}>
@@ -636,7 +663,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                     </View>
                   </View>
                 </>
-              ) : (
+              ) : !isAllDay && availabilityMode === 'custom' ? (
                 <>
                   <Text style={styles.customModeTitle}>Select specific hours you're available:</Text>
                   <View style={styles.timeSlotGrid}>
@@ -674,7 +701,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                     </View>
                   )}
                 </>
-              )}
+              ) : null}
               
               <View style={styles.timeModalActions}>
                 <TouchableOpacity 
@@ -687,11 +714,34 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                 <TouchableOpacity 
                   style={[
                     styles.timeModalSaveBtn,
-                    (availabilityMode === 'custom' && selectedTimeSlots.length === 0) && styles.timeModalSaveBtnDisabled
+                    (!isAllDay && availabilityMode === 'custom' && selectedTimeSlots.length === 0) && styles.timeModalSaveBtnDisabled
                   ]}
-                  disabled={availabilityMode === 'custom' && selectedTimeSlots.length === 0}
+                  disabled={!isAllDay && availabilityMode === 'custom' && selectedTimeSlots.length === 0}
                   onPress={async () => {
                     try {
+                      if (isAllDay) {
+                        const result = await driverScheduleService.setAvailability(
+                          user.id, 
+                          selectedDate.dateStr, 
+                          true, 
+                          [], 
+                          'Available all day (24 hours)'
+                        );
+                        
+                        if (result.success) {
+                          setShowTimeModal(false);
+                          setShowDateModal(false);
+                          onRefresh();
+                          setIsAllDay(false);
+                        } else {
+                          const errorMsg = result.errorType === 'NETWORK' 
+                            ? 'Network error. Please check your connection.'
+                            : result.error || 'Failed to set availability';
+                          Alert.alert('Error', errorMsg);
+                        }
+                        return;
+                      }
+
                       if (availabilityMode === 'range') {
                         if (isTimeInPast(selectedDate.dateStr, availableFromTime)) {
                           Alert.alert('Invalid Time', 'Start time is in the past.');
@@ -748,6 +798,7 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                         onRefresh();
                         setSelectedTimeSlots([]);
                         setAvailabilityMode('range');
+                        setIsAllDay(false);
                       } else {
                         const errorMsg = result.errorType === 'NETWORK' 
                           ? 'Network error. Please check your connection.'
@@ -760,9 +811,11 @@ export default function DriverScheduleModal({ visible, onClose, user, navigation
                   }}
                 >
                   <Text style={styles.timeModalSaveText}>
-                    {availabilityMode === 'custom' && selectedTimeSlots.length === 0 
-                      ? 'Select Hours First' 
-                      : 'Set Available'
+                    {isAllDay 
+                      ? 'Set All Day Available'
+                      : (availabilityMode === 'custom' && selectedTimeSlots.length === 0 
+                        ? 'Select Hours First' 
+                        : 'Set Available')
                     }
                   </Text>
                 </TouchableOpacity>
@@ -1459,4 +1512,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  allDayToggle: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#e9ecef'
+  },
+  allDayToggleActive: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4CAF50'
+  },
+  allDayToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  allDayTextContainer: {
+    marginLeft: 12,
+    flex: 1
+  },
+  allDayText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333'
+  },
+  allDayTextActive: {
+    color: '#2e7d32'
+  },
+  allDaySubtext: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2
+  }
 });

@@ -24,16 +24,17 @@ export const tourPackageService = {
       
       return packages.map(pkg => ({
         ...pkg,
-        // Add missing fields that mobile expects
         start_time: pkg.start_time || '09:00',
         destination_lat: pkg.destination_lat || pkg.dropoff_lat,
         destination_lng: pkg.destination_lng || pkg.dropoff_lng,
         status: pkg.status || (pkg.is_active ? 'active' : 'inactive'),
-        reviews: [],
-        reviews_count: 0,
-        average_rating: 0
+        // Use existing review data from API response
+        reviews: pkg.reviews || [],
+        reviews_count: pkg.reviews_count || (pkg.reviews ? pkg.reviews.length : 0),
+        average_rating: pkg.average_rating || 0
       }));
     } catch (error) {
+      console.error('Error fetching packages:', error);
       return [];
     }
   },
@@ -64,9 +65,10 @@ export const tourPackageService = {
         destination_lat: packageData.destination_lat || packageData.dropoff_lat,
         destination_lng: packageData.destination_lng || packageData.dropoff_lng,
         status: packageData.status || (packageData.is_active ? 'active' : 'inactive'),
-        reviews: [],
-        reviews_count: 0,
-        average_rating: 0
+        // Keep original review data from API
+        reviews: packageData.reviews || [],
+        reviews_count: packageData.reviews_count || packageData.review_count || (packageData.reviews ? packageData.reviews.length : 0),
+        average_rating: packageData.average_rating || packageData.avg_rating || 0
       };
     } catch (error) {
       throw error;

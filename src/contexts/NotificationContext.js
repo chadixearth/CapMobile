@@ -32,12 +32,13 @@ export const NotificationProvider = ({ children }) => {
     return notifications.map(n => {
       // Mark as read if it was previously marked as read and persisted
       const wasMarkedRead = persistedReadIds.includes(n.id);
-      if (wasMarkedRead && !n.read) {
-        console.log(`[NotificationContext] Restoring read state for notification ${n.id}`);
+      if (wasMarkedRead) {
+        if (!n.read) {
+          console.log(`[NotificationContext] Restoring read state for notification ${n.id}`);
+        }
         return { ...n, read: true };
       }
       
-      console.log('[NotificationContext] Processing notification:', { id: n.id, title: n.title, read: n.read });
       return n;
     });
   };
@@ -79,11 +80,26 @@ export const NotificationProvider = ({ children }) => {
 
   const markAsRead = async (notificationId) => {
     try {
-      await NotificationService.markAsRead(notificationId);
+      const notification = notifications.find(n => n.id === notificationId);
+      if (notification?.read) return;
+      
+      // Persist to AsyncStorage first
+      const stored = await AsyncStorage.getItem(`readNotifications_${user?.id}`);
+      const readIds = stored ? JSON.parse(stored) : [];
+      if (!readIds.includes(notificationId)) {
+        await AsyncStorage.setItem(`readNotifications_${user?.id}`, JSON.stringify([...readIds, notificationId]));
+      }
+      
+      // Update UI immediately
       setNotifications(prev => 
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+      
+      // Sync with backend (fire and forget)
+      NotificationService.markAsRead(notificationId).catch(err => {
+        console.log('[NotificationContext] Backend sync failed for single notification:', err?.message);
+      });
     } catch (error) {
       console.error('[NotificationContext] Error marking as read:', error);
     }
@@ -99,14 +115,10 @@ export const NotificationProvider = ({ children }) => {
       
       if (unreadNotifications.length === 0) {
         console.log('[NotificationContext] No unread notifications to mark');
-        return;
+        return { success: true };
       }
       
-      // Mark all notifications as read locally first for immediate UI update
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
-      
-      // Store read notifications in AsyncStorage to persist across app restarts
+      // Store read notifications in AsyncStorage first
       try {
         const readNotificationIds = unreadNotifications.map(n => n.id);
         const existingReadIds = await AsyncStorage.getItem(`readNotifications_${user?.id}`) || '[]';
@@ -117,18 +129,27 @@ export const NotificationProvider = ({ children }) => {
         console.error('[NotificationContext] Failed to persist read notifications:', storageError);
       }
       
-      // Then sync with backend
+      // Sync with backend
       const result = await NotificationService.markAllAsRead(user?.id, unreadNotifications);
       console.log('[NotificationContext] Backend sync result:', result);
       
-      if (!result.success) {
-        console.error('[NotificationContext] Failed to sync mark all as read with backend:', result.error);
-      } else {
+      if (result.success) {
+        // Only update UI after successful backend sync
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        setUnreadCount(0);
         console.log('[NotificationContext] All notifications marked as read successfully');
+        return { success: true };
+      } else {
+        console.error('[NotificationContext] Failed to sync with backend:', result.error);
+        // Still update UI since we persisted locally
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        setUnreadCount(0);
+        return { success: false, error: result.error };
       }
       
     } catch (error) {
       console.error('[NotificationContext] Error marking all as read:', error);
+      return { success: false, error: error?.message || 'Unknown error' };
     }
   };
 
