@@ -514,7 +514,7 @@ export default function TartanillaCarriagesScreen({ navigation }) {
         plate_number: newCarriage.plate_number.trim(),
         capacity: parseInt(newCarriage.capacity) || 4,
         status: 'available', // New carriages should be available for rent
-        eligibility: newCarriage.eligibility || 'eligible',
+        eligibility: 'not_eligible', // Default to not eligible, admin must approve
         notes: newCarriage.notes || '',
         image_urls: uploadedImages.map(i => i.url),
         // Store structured photos array compatible with Django TourPackages

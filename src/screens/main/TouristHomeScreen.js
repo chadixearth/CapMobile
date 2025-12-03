@@ -962,6 +962,14 @@ export default function TouristHomeScreen({ navigation }) {
                   })()}
                 </View>
 
+                {/* Price row */}
+                {pkg.price ? (
+                  <View style={styles.priceRow}>
+                    <Ionicons name="cash-outline" size={14} color="#6B2E2B" />
+                    <Text style={styles.priceText}>₱{pkg.price}</Text>
+                  </View>
+                ) : null}
+
                 {/* Bottom row: Availability + Book */}
                 <View style={styles.cardBottomRow}>
                   <View
@@ -1478,6 +1486,18 @@ const styles = StyleSheet.create({
   },
   metaInline: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   metaInlineText: { marginLeft: 4, color: '#6B2E2B', fontSize: 11, fontWeight: '600' },
+
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  priceText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#6B2E2B',
+  },
 
   /* Bottom row */
   cardBottomRow: { marginTop: 'auto', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
