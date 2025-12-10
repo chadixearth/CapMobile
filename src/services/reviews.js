@@ -59,6 +59,7 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
 
 export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
+    console.log('[createPackageReview] Submitting with is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
     const token = await getAccessToken().catch(() => null);
     const res = await request(`/reviews/`, {
       method: 'POST',
@@ -69,6 +70,7 @@ export async function createPackageReview({ package_id, booking_id, reviewer_id,
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {
+      console.log('[createPackageReview] Success, response:', res.data);
       return { success: true, data: res.data?.data || res.data };
     }
     return { success: false, error: res.data?.error || 'Failed to submit package review' };
@@ -79,6 +81,7 @@ export async function createPackageReview({ package_id, booking_id, reviewer_id,
 
 export async function createDriverReview({ driver_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
+    console.log('[createDriverReview] Submitting with is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
     const token = await getAccessToken().catch(() => null);
     const res = await request(`/reviews/driver/`, {
       method: 'POST',
@@ -89,6 +92,7 @@ export async function createDriverReview({ driver_id, booking_id, reviewer_id, r
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {
+      console.log('[createDriverReview] Success, response:', res.data);
       return { success: true, data: res.data?.data || res.data };
     }
     return { success: false, error: res.data?.error || 'Failed to submit driver review' };

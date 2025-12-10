@@ -39,7 +39,16 @@ export function maskName(name) {
 export function getReviewDisplayName(review) {
   if (!review) return 'Anonymous';
   
-  if (review.is_anonymous) {
+  // Debug logging
+  console.log('[getReviewDisplayName] Review data:', {
+    reviewer_name: review.reviewer_name,
+    is_anonymous: review.is_anonymous,
+    is_anonymous_type: typeof review.is_anonymous,
+    review_id: review.id
+  });
+  
+  // Check if is_anonymous is explicitly true (not just truthy)
+  if (review.is_anonymous === true) {
     // If backend returns generic anonymous names, just show 'Anonymous'
     if (!review.reviewer_name || 
         review.reviewer_name === 'Anonymous Tourist' || 
@@ -50,5 +59,6 @@ export function getReviewDisplayName(review) {
     return maskName(review.reviewer_name);
   }
   
+  // Not anonymous - show the actual name
   return review.reviewer_name || 'Customer';
 }

@@ -35,7 +35,6 @@ import MobilePhotoUpload from '../../services/MobilePhotoUpload';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import AccountDeletionHandler from '../../components/AccountDeletionHandler';
-import { getUserSettings, updateAnonymousReviewSetting } from '../../services/userSettings';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -86,9 +85,6 @@ export default function AccountDetailsScreen({ navigation }) {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState('');
   const [showPasswords, setShowPasswords] = useState(false);
-
-  // Privacy settings state
-  const [anonymousReviews, setAnonymousReviews] = useState(false);
 
   // Deactivation modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -146,19 +142,6 @@ export default function AccountDetailsScreen({ navigation }) {
                 data.user.user_metadata?.profile_photo ||
                 '';
               setPhotoUrl(authPhotoUrl);
-            }
-          }
-
-
-
-          if (auth.role === 'tourist') {
-            try {
-              const settingsResult = await getUserSettings();
-              if (settingsResult.success) {
-                setAnonymousReviews(settingsResult.data.anonymousReviews || false);
-              }
-            } catch (err) {
-              console.error('Error loading privacy settings:', err);
             }
           }
         } catch (err) {
@@ -867,49 +850,6 @@ export default function AccountDetailsScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </Section>
-
-
-
-          {/* PRIVACY (tourist) */}
-          {auth.role === 'tourist' && (
-            <Section icon="shield-outline" title="Privacy Settings" subtitle="Control how your name appears in reviews">
-              <View style={styles.privacyCard}>
-                <View style={styles.privacyHeader}>
-                  <View style={styles.privacyIconCircle}>
-                    <Ionicons name="eye-off" size={18} color={COLORS.maroon} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.privacyHeading}>Anonymous Reviews</Text>
-                    <Text style={styles.privacySub}>
-                      Choose whether to remain anonymous when giving reviews and ratings.
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.privacyToggle, anonymousReviews && styles.privacyToggleActive]}
-                    onPress={() => {
-                      const newValue = !anonymousReviews;
-                      setAnonymousReviews(newValue);
-                      updateAnonymousReviewSetting(newValue);
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.privacyToggleThumb, anonymousReviews && styles.privacyToggleThumbActive]} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.privacyInfo}>
-                  <View style={styles.privacyInfoItem}>
-                    <Ionicons name="checkmark-circle-outline" size={16} color={COLORS.green} />
-                    <Text style={styles.privacyInfoText}>When enabled, your name won't be shown in reviews</Text>
-                  </View>
-                  <View style={styles.privacyInfoItem}>
-                    <Ionicons name="information-circle-outline" size={16} color={COLORS.muted} />
-                    <Text style={styles.privacyInfoText}>You can still change this for individual reviews</Text>
-                  </View>
-                </View>
-              </View>
-            </Section>
-          )}
 
           {/* DANGER ZONE */}
           <Section icon="warning-outline" title="Account Deactivation" subtitle="Temporarily disable your account">

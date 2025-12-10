@@ -73,23 +73,41 @@ export async function getMyCarriages() {
     // For drivers, get carriages assigned to them
     if (user.role === 'driver') {
       console.log('Fetching carriages for driver:', user.id);
+      
+      // Try API endpoint first
       const res = await request(`/tartanilla-carriages/get_by_driver/?driver_id=${user.id}`);
-      console.log('Driver carriages response:', res);
+      console.log('Driver carriages API response:', res);
       
       if (res.ok && res.data) {
         console.log('Full driver response:', JSON.stringify(res.data, null, 2));
-        // Handle the response format: {"data": [...], "success": true}
         const carriages = res.data.data || res.data || [];
-        console.log('Parsed driver carriages data:', carriages);
-        console.log('Carriages count:', carriages.length);
-        
-        // Ensure we return an array
         const finalCarriages = Array.isArray(carriages) ? carriages : [];
-        console.log('Final carriages to return:', finalCarriages.length);
-        return { success: true, data: finalCarriages };
+        
+        if (finalCarriages.length > 0) {
+          console.log('Final carriages from API:', finalCarriages.length);
+          return { success: true, data: finalCarriages };
+        }
       }
-      console.error('Failed to fetch driver carriages:', res.data);
-      return { success: false, error: res.data?.error || 'Failed to fetch carriages' };
+      
+      // Fallback: Query Supabase directly
+      console.log('API returned no carriages, querying Supabase directly...');
+      try {
+        const { data: supabaseCarriages, error } = await supabase
+          .from('tartanilla_carriages')
+          .select('*')
+          .eq('assigned_driver_id', user.id);
+        
+        if (error) {
+          console.error('Supabase query error:', error);
+          return { success: false, error: error.message };
+        }
+        
+        console.log('Supabase carriages for driver:', supabaseCarriages);
+        return { success: true, data: supabaseCarriages || [] };
+      } catch (supabaseError) {
+        console.error('Supabase fallback error:', supabaseError);
+        return { success: false, error: supabaseError.message };
+      }
     }
     
     // For owners and driver-owners, get carriages they own

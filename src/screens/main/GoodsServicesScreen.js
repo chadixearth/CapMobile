@@ -78,20 +78,27 @@ export default function GoodsServicesScreen() {
   };
 
   const fetchUserProfile = useCallback(async () => {
-    if (!auth.user?.id || !isDriverOrOwner) return;
+    if (!auth.user?.id || !isDriverOrOwner) {
+      console.log('[GoodsServicesScreen] Skipping profile fetch - user:', auth.user?.id, 'isDriverOrOwner:', isDriverOrOwner);
+      return;
+    }
     try {
+      console.log('[GoodsServicesScreen] Fetching profile for user:', auth.user.id);
       const result = await getGoodsServicesProfileByAuthor(auth.user.id);
+      console.log('[GoodsServicesScreen] Profile fetch result:', result);
       
       if (result.success) {
+        console.log('[GoodsServicesScreen] Profile data:', result.data);
         setUserProfile(result.data);
         setEditDescription(result.data?.description || '');
-        // Reset selected images when fetching profile
         setSelectedImages([]);
       } else {
+        console.log('[GoodsServicesScreen] No profile found or error:', result.error);
         setUserProfile(null);
         setEditDescription('');
       }
     } catch (e) {
+      console.error('[GoodsServicesScreen] Profile fetch error:', e);
       setUserProfile(null);
       setEditDescription('');
     }
@@ -105,6 +112,8 @@ export default function GoodsServicesScreen() {
       
       if (result.success) {
         const postsData = Array.isArray(result.data) ? result.data : [];
+        console.log('[GoodsServicesScreen] Fetched posts:', postsData.length, 'Current user:', auth.user?.id);
+        console.log('[GoodsServicesScreen] Posts data:', JSON.stringify(postsData, null, 2));
         setPosts(postsData);
         setError('');
       } else {
@@ -117,7 +126,7 @@ export default function GoodsServicesScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [auth.user?.id]);
 
   const fetchRecentReviews = useCallback(async () => {
     setLoadingReviews(true);
@@ -282,11 +291,6 @@ export default function GoodsServicesScreen() {
       return;
     }
     
-    if (!editDescription.trim() && selectedImages.length === 0) {
-      Alert.alert('Required', 'Please add a description or at least one photo');
-      return;
-    }
-    
     setSaving(true);
     try {
       console.log('Saving profile for user:', auth.user.id);
@@ -327,15 +331,16 @@ export default function GoodsServicesScreen() {
       
       const result = await upsertGoodsServicesProfile(auth.user.id, editDescription.trim(), allMediaUrls);
       if (result.success) {
-        // Clear cache and force refresh
-        setPosts([]);
-        setAuthorMap({});
-        
         setEditModalVisible(false);
         setSelectedImages([]);
         Alert.alert('Success', 'Your goods & services profile has been updated.');
         
-        // Force refresh all data
+        // Clear cache and wait a moment for backend to process
+        setPosts([]);
+        setAuthorMap({});
+        
+        // Wait 500ms then force refresh all data
+        await new Promise(resolve => setTimeout(resolve, 500));
         await Promise.all([
           fetchPosts(),
           fetchUserProfile(),

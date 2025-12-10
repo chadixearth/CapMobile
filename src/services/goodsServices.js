@@ -67,6 +67,7 @@ export async function listGoodsServicesPosts({ author_id, author_role } = {}) {
   const params = new URLSearchParams();
   if (author_id) params.append('author_id', author_id);
   if (author_role) params.append('author_role', author_role);
+  params.append('_t', Date.now().toString()); // Cache buster
   const qs = params.toString();
   
   const res = await request(`/goods-services-profiles/${qs ? `?${qs}` : ''}`, { 
@@ -107,7 +108,7 @@ export async function createGoodsServicesPost(authorId, description, media = [])
   };
   console.log('[goodsServices] Creating/updating post with payload:', JSON.stringify(payload, null, 2));
   
-  const res = await request('/goods-services-profiles/', { 
+  const res = await request(`/goods-services-profiles/?_t=${Date.now()}`, { 
     method: 'POST', 
     body: JSON.stringify(payload), 
     timeoutMs: 30000,

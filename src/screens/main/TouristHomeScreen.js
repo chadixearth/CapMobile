@@ -858,7 +858,7 @@ export default function TouristHomeScreen({ navigation }) {
                 }}
               >
                 {(() => {
-                  let imageSource = require('../../../assets/images/tourA.png');
+                  let imageSource = require('../../../assets/tartanilla.jpg');
                   if (pkg.photos && pkg.photos.length > 0) {
                     const photo = pkg.photos[0];
                     if (typeof photo === 'string' && photo.startsWith('http')) {

@@ -6,8 +6,8 @@ import ResponseHandler from './responseHandler';
 class NetworkClient {
   constructor() {
     this.baseURL = apiBaseUrl();
-    this.defaultTimeout = 8000; // Reduced to prevent hanging requests
-    this.maxRetries = 1; // Reduced retries to prevent congestion
+    this.defaultTimeout = 15000; // Increased for better reliability
+    this.maxRetries = 2;
   }
 
   async request(endpoint, options = {}) {

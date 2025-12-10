@@ -622,10 +622,15 @@ export async function updateDriverLocation(userId, latitude, longitude, speed = 
         longitude,
         speed,
         heading
-      }
+      },
+      timeout: 20000 // Longer timeout for location updates
     });
     return result;
   } catch (error) {
+    // Silently handle timeout errors for location updates
+    if (error.message?.includes('timeout') || error.message?.includes('Aborted')) {
+      return { success: false, error: 'Request timeout' };
+    }
     if (!error.message?.includes('JWT expired') && !error.message?.includes('PGRST301')) {
       console.error('[updateDriverLocation] Error:', error);
     }

@@ -17,8 +17,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { getUserReviews, checkExistingReviews } from '../../services/reviews';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { getAccessToken } from '../../services/authService';
-import { getAnonymousReviewSetting } from '../../services/userSettings';
-import { Alert } from 'react-native';
 import { getReviewDisplayName } from '../../utils/anonymousUtils';
 
 const MAROON = '#6B2E2B';
@@ -226,43 +224,12 @@ function ReviewsScreen({ navigation }) {
     return <View style={styles.starsRow}>{stars}</View>;
   };
 
-  const handleReviewPress = async (booking) => {
-    try {
-      const anonymousSetting = await getAnonymousReviewSetting();
-      const isAnonymous = anonymousSetting.success ? anonymousSetting.data.isAnonymous : false;
-
-      Alert.alert(
-        'Leave a Review',
-        `Would you like to remain anonymous in your review?\n\nCurrent setting: ${isAnonymous ? 'Anonymous' : 'Show my name'}`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Change Setting',
-            onPress: () => navigation.navigate('AccountDetails')
-          },
-          {
-            text: 'Continue',
-            onPress: () => {
-              navigation.navigate('ReviewSubmission', {
-                booking: booking,
-                package: booking.package_data,
-                driver: booking.driver_data,
-              });
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error handling review press:', error);
-      navigation.navigate('ReviewSubmission', {
-        booking: booking,
-        package: booking.package_data,
-        driver: booking.driver_data,
-      });
-    }
+  const handleReviewPress = (booking) => {
+    navigation.navigate('ReviewSubmission', {
+      booking: booking,
+      package: booking.package_data,
+      driver: booking.driver_data,
+    });
   };
 
   const renderPendingReview = (booking, index) => {

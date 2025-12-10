@@ -175,6 +175,19 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
               numberOfLines={4}
               textAlignVertical="top"
             />
+            
+            <TouchableOpacity
+              style={styles.anonymousToggle}
+              onPress={() => setPackageAnonymous(!packageAnonymous)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={packageAnonymous ? 'checkmark-circle' : 'ellipse-outline'}
+                size={20}
+                color={packageAnonymous ? MAROON : '#999'}
+              />
+              <Text style={styles.anonymousText}>Post as Anonymous</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -199,6 +212,19 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
               numberOfLines={4}
               textAlignVertical="top"
             />
+            
+            <TouchableOpacity
+              style={styles.anonymousToggle}
+              onPress={() => setDriverAnonymous(!driverAnonymous)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={driverAnonymous ? 'checkmark-circle' : 'ellipse-outline'}
+                size={20}
+                color={driverAnonymous ? MAROON : '#999'}
+              />
+              <Text style={styles.anonymousText}>Post as Anonymous</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -358,5 +384,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  anonymousToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  anonymousText: {
+    fontSize: 14,
+    color: '#666',
   },
 });
