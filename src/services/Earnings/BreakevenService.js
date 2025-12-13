@@ -515,7 +515,7 @@ export async function getTotalDriverEarnings(driverId, period) {
 
     const { data, error } = await supabase
       .from('earnings')
-      .select('amount, booking_id, ride_hailing_booking_id, driver_earnings')
+      .select('driver_earnings, booking_id, custom_tour_id, ride_hailing_booking_id, booking_type')
       .eq('driver_id', driverId)
       .gte('earning_date', startUtc)
       .lt('earning_date', endUtc)
@@ -530,25 +530,19 @@ export async function getTotalDriverEarnings(driverId, period) {
 
     for (const row of data || []) {
       const driverEarnings = Number(row.driver_earnings || 0);
-      const amount = Number(row.amount || 0);
       
       if (driverEarnings > 0) {
         totalEarnings += driverEarnings;
-        if (row.booking_id) standardEarnings += driverEarnings;
-        else if (row.ride_hailing_booking_id) rideHailingEarnings += driverEarnings;
-      } else {
-        // Fallback to calculated shares
-        if (row.booking_id) {
-          const earnings = amount * 0.80;
-          totalEarnings += earnings;
-          standardEarnings += earnings;
+        
+        // Categorize earnings based on booking type
+        if (row.booking_id || row.custom_tour_id) {
+          standardEarnings += driverEarnings;
         } else if (row.ride_hailing_booking_id) {
-          const earnings = amount * 0.80;
-          totalEarnings += earnings;
-          rideHailingEarnings += earnings;
+          rideHailingEarnings += driverEarnings;
         }
+        
+        count++;
       }
-      count++;
     }
 
     return {

@@ -166,7 +166,7 @@ async function fetchIncomeTodayByDriver(driverId, {
 
   let q = supabase
     .from('earnings')
-    .select('amount, status, booking_id, ride_hailing_booking_id, earning_date')
+    .select('driver_earnings, booking_id, custom_tour_id, ride_hailing_booking_id, earning_date')
     .eq('driver_id', driverId)
     .gte('earning_date', gteISO)
     .lt('earning_date', ltISO);
@@ -179,10 +179,11 @@ async function fetchIncomeTodayByDriver(driverId, {
   let revenue = 0;
   let count = 0;
   for (const r of rows || []) {
-    const amt = Math.max(Number(r?.amount) || 0, 0);
-    if (r.booking_id) revenue += amt * BOOKING_SHARE;
-    else if (r.ride_hailing_booking_id) revenue += amt * RIDE_HAILING_SHARE;
-    count += 1;
+    const driverEarnings = Number(r?.driver_earnings || 0);
+    if (driverEarnings > 0) {
+      revenue += driverEarnings;
+      count += 1;
+    }
   }
 
   return {
