@@ -74,6 +74,10 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       return;
     }
 
+    console.log('[ReviewSubmissionScreen] Submitting reviews with anonymous flags:');
+    console.log('Package anonymous:', packageAnonymous, 'type:', typeof packageAnonymous);
+    console.log('Driver anonymous:', driverAnonymous, 'type:', typeof driverAnonymous);
+
     setLoading(true);
     
     try {
@@ -81,6 +85,7 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       
       // Submit package review if rating provided (tour bookings only)
       if (packageRating > 0 && bookingType === 'tour') {
+        console.log('[ReviewSubmissionScreen] Submitting package review with is_anonymous:', packageAnonymous);
         const packageResult = await createPackageReview({
           package_id: tourPackage?.id || booking?.package_id || booking?.package_data?.id,
           booking_id: booking?.id,
@@ -94,6 +99,7 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       
       // Submit driver review
       if (driverRating > 0) {
+        console.log('[ReviewSubmissionScreen] Submitting driver review with is_anonymous:', driverAnonymous);
         let driverResult;
         if (bookingType === 'ride_hailing') {
           driverResult = await createRideHailingDriverReview({
@@ -215,7 +221,11 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
             
             <TouchableOpacity
               style={styles.anonymousToggle}
-              onPress={() => setDriverAnonymous(!driverAnonymous)}
+              onPress={() => {
+                const newValue = !driverAnonymous;
+                console.log('[ReviewSubmissionScreen] Driver anonymous toggle:', driverAnonymous, '->', newValue);
+                setDriverAnonymous(newValue);
+              }}
               activeOpacity={0.7}
             >
               <Ionicons

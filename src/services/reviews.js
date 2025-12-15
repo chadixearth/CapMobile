@@ -59,14 +59,21 @@ export async function listReviews({ package_id, booking_id, reviewer_id, limit =
 
 export async function createPackageReview({ package_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
-    console.log('[createPackageReview] Submitting with is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
+    // Ensure is_anonymous is explicitly a boolean
+    const anonymousFlag = Boolean(is_anonymous);
+    console.log('[createPackageReview] Original is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
+    console.log('[createPackageReview] Converted anonymousFlag:', anonymousFlag, 'type:', typeof anonymousFlag);
+    
     const token = await getAccessToken().catch(() => null);
+    const requestBody = { package_id, booking_id, reviewer_id, rating, comment, is_anonymous: anonymousFlag };
+    console.log('[createPackageReview] Request body:', JSON.stringify(requestBody, null, 2));
+    
     const res = await request(`/reviews/`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ package_id, booking_id, reviewer_id, rating, comment, is_anonymous }),
+      body: JSON.stringify(requestBody),
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {
@@ -81,14 +88,21 @@ export async function createPackageReview({ package_id, booking_id, reviewer_id,
 
 export async function createDriverReview({ driver_id, booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
-    console.log('[createDriverReview] Submitting with is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
+    // Ensure is_anonymous is explicitly a boolean
+    const anonymousFlag = Boolean(is_anonymous);
+    console.log('[createDriverReview] Original is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
+    console.log('[createDriverReview] Converted anonymousFlag:', anonymousFlag, 'type:', typeof anonymousFlag);
+    
     const token = await getAccessToken().catch(() => null);
+    const requestBody = { driver_id, booking_id, reviewer_id, rating, comment, is_anonymous: anonymousFlag };
+    console.log('[createDriverReview] Request body:', JSON.stringify(requestBody, null, 2));
+    
     const res = await request(`/reviews/driver/`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ driver_id, booking_id, reviewer_id, rating, comment, is_anonymous }),
+      body: JSON.stringify(requestBody),
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {
@@ -220,21 +234,29 @@ export async function checkExistingReviews({ booking_id, reviewer_id }) {
 
 export async function createRideHailingDriverReview({ driver_id, ride_booking_id, reviewer_id, rating, comment = '', is_anonymous = false }) {
   try {
+    // Ensure is_anonymous is explicitly a boolean
+    const anonymousFlag = Boolean(is_anonymous);
+    console.log('[createRideHailingDriverReview] Original is_anonymous:', is_anonymous, 'type:', typeof is_anonymous);
+    console.log('[createRideHailingDriverReview] Converted anonymousFlag:', anonymousFlag, 'type:', typeof anonymousFlag);
+    
     const token = await getAccessToken().catch(() => null);
+    const requestBody = { 
+      driver_id, 
+      booking_id: ride_booking_id, 
+      reviewer_id, 
+      rating, 
+      comment, 
+      is_anonymous: anonymousFlag,
+      booking_type: 'ride_hailing'
+    };
+    console.log('[createRideHailingDriverReview] Request body:', JSON.stringify(requestBody, null, 2));
+    
     const res = await request(`/reviews/driver/`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ 
-        driver_id, 
-        booking_id: ride_booking_id, 
-        reviewer_id, 
-        rating, 
-        comment, 
-        is_anonymous,
-        booking_type: 'ride_hailing'
-      }),
+      body: JSON.stringify(requestBody),
       timeoutMs: 20000,
     });
     if (res.ok && (res.data?.success || res.status === 201)) {

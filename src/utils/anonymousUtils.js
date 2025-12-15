@@ -39,26 +39,21 @@ export function maskName(name) {
 export function getReviewDisplayName(review) {
   if (!review) return 'Anonymous';
   
-  // Debug logging
-  console.log('[getReviewDisplayName] Review data:', {
-    reviewer_name: review.reviewer_name,
-    is_anonymous: review.is_anonymous,
-    is_anonymous_type: typeof review.is_anonymous,
-    review_id: review.id
-  });
+  // Backend hides reviewer identity from other users, so we need to handle this
+  // If users object exists, use that name (when viewing own review)
+  // If users is null but reviewer_name is "Customer", we need the actual name for proper masking
   
-  // Check if is_anonymous is explicitly true (not just truthy)
   if (review.is_anonymous === true) {
-    // If backend returns generic anonymous names, just show 'Anonymous'
-    if (!review.reviewer_name || 
-        review.reviewer_name === 'Anonymous Tourist' || 
-        review.reviewer_name === 'Anonymous' ||
-        review.reviewer_name === 'Customer') {
-      return 'Anonymous';
+    // For anonymous reviews, we need the actual name to mask properly
+    if (review.users?.name) {
+      // Viewing own review - use actual name
+      return maskName(review.users.name);
+    } else {
+      // Viewing someone else's review - backend hides name, so use generic mask
+      return 'A*******s'; // Generic anonymous display
     }
-    return maskName(review.reviewer_name);
   }
   
-  // Not anonymous - show the actual name
-  return review.reviewer_name || 'Customer';
+  // Not anonymous - show name if available, otherwise show "Customer"
+  return review.users?.name || review.reviewer_name || 'Customer';
 }

@@ -611,6 +611,9 @@ export default function BookScreen({ navigation }) {
       Alert.alert('Select rating', 'Please select a rating from 1 to 5 stars.');
       return;
     }
+    
+    console.log('[BookScreen] Submitting rating with anonymous flag:', ratingAnonymous, 'type:', typeof ratingAnonymous);
+    
     try {
       let res;
       if (ratingModal.type === 'package') {
@@ -619,6 +622,7 @@ export default function BookScreen({ navigation }) {
           Alert.alert('Error', 'Missing package ID for this booking.');
           return;
         }
+        console.log('[BookScreen] Submitting package review with is_anonymous:', ratingAnonymous);
         res = await createPackageReview({
           package_id: packageId,
           booking_id: bk.id,
@@ -633,6 +637,7 @@ export default function BookScreen({ navigation }) {
           Alert.alert('Error', 'No driver assigned to this booking.');
           return;
         }
+        console.log('[BookScreen] Submitting driver review with is_anonymous:', ratingAnonymous);
         res = await createDriverReview({
           driver_id: driverId,
           booking_id: bk.id,
@@ -1410,13 +1415,19 @@ export default function BookScreen({ navigation }) {
                 />
                 <TouchableOpacity
                   style={styles.checkboxRow}
-                  onPress={() => setRatingAnonymous(!ratingAnonymous)}
+                  onPress={() => {
+                    const newValue = !ratingAnonymous;
+                    console.log('[BookScreen] Anonymous toggle:', ratingAnonymous, '->', newValue);
+                    setRatingAnonymous(newValue);
+                  }}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, ratingAnonymous && styles.checkboxChecked]}>
-                    {ratingAnonymous && <Ionicons name="checkmark" size={14} color="white" />}
-                  </View>
-                  <Text style={styles.checkboxLabel}>Rate anonymously</Text>
+                  <Ionicons
+                    name={ratingAnonymous ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={20}
+                    color={ratingAnonymous ? MAROON : '#999'}
+                  />
+                  <Text style={styles.checkboxLabel}>Post as Anonymous</Text>
                 </TouchableOpacity>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                   <TouchableOpacity style={[styles.pillBtn, { backgroundColor: '#444', flex: 1 }]} onPress={() => setRatingModal({ visible: false, type: 'package', booking: null })}>
@@ -1871,30 +1882,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderStyle: 'SOLID',
   },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    gap: 8,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'white',
-  },
-  checkboxChecked: {
-    backgroundColor: MAROON,
-    borderColor: MAROON,
-  },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#333',
-  },
+
 
   checkboxRow: {
     flexDirection: 'row',
@@ -1902,22 +1890,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'white',
-  },
-  checkboxChecked: {
-    backgroundColor: MAROON,
-    borderColor: MAROON,
-  },
   checkboxLabel: {
     fontSize: 14,
-    color: '#333',
+    color: '#666',
   },
 });

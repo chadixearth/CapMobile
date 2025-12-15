@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../services/supabase';
 import { tourPackageService } from '../services/tourpackage/fetchPackage';
 import LeafletMapView from './LeafletMapView';
+import { getReviewDisplayName } from '../utils/anonymousUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMG_HEIGHT = 200;
@@ -51,36 +52,32 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
     if (!packageData?.id) return;
     setLoadingReviews(true);
     try {
-      const [{ data: allRatings, error: rErr }, { data: latest, error: lErr }] = await Promise.all([
-        supabase.from('package_reviews').select('rating').eq('package_id', packageData.id),
-        supabase
-          .from('package_reviews')
-          .select('id, rating, comment, created_at, users(name)')
-          .eq('package_id', packageData.id)
-          .order('created_at', { ascending: false })
-          .limit(3),
-      ]);
-
-      if (rErr) throw rErr;
-      if (lErr) throw lErr;
-
-      setReviews(latest || []);
-
-      if (allRatings && allRatings.length) {
-        const safe = allRatings
-          .map((r) => Number(r.rating) || 0)
-          .map((n) => Math.max(1, Math.min(5, n)));
-        const avg = safe.reduce((a, b) => a + b, 0) / safe.length;
-        setStats({ total: safe.length, average: avg });
+      // Use Django API instead of Supabase to get proper reviewer names
+      const { apiRequest } = await import('../services/authService');
+      const result = await apiRequest(`/reviews/?package_id=${packageData.id}&limit=3`);
+      
+      if (result.success && result.data) {
+        const reviewsData = result.data.data || result.data;
+        setReviews(reviewsData || []);
+        
+        // Calculate stats from the reviews
+        if (reviewsData && reviewsData.length > 0) {
+          const ratings = reviewsData.map(r => Number(r.rating) || 0).filter(r => r > 0);
+          if (ratings.length > 0) {
+            const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+            setStats({ total: ratings.length, average: avg });
+          } else {
+            setStats({ total: 0, average: 0 });
+          }
+        } else {
+          setStats({ total: 0, average: 0 });
+        }
       } else {
+        setReviews([]);
         setStats({ total: 0, average: 0 });
       }
     } catch (e) {
-      if (e?.code === '42P01' || e?.message?.includes('does not exist')) {
-        console.log('Reviews table not available, using fallback data');
-      } else {
-        console.error('loadReviews error:', e);
-      }
+      console.error('loadReviews error:', e);
       setReviews([]);
       setStats({ total: 0, average: 0 });
     } finally {
@@ -553,7 +550,7 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                               </Text>
                             </View>
                             <View>
-                              <Text style={styles.revName}>{item?.users?.name || 'Anonymous'}</Text>
+                              <Text style={styles.revName}>{getReviewDisplayName(item)}</Text>
                               <View style={{ flexDirection: 'row' }}>
                                 {renderStars(Number(item.rating) || 0)}
                               </View>
