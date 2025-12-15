@@ -198,17 +198,6 @@ export default function TouristHomeScreen({ navigation }) {
         if (showLoading) setLoadingPackages(true);
         const packages = await tourPackageService.getAllPackages();
         
-        // Debug: Log package data to see what fields are available
-        console.log('Tour packages received:', packages.length);
-        if (packages.length > 0) {
-          console.log('Sample package data:', JSON.stringify(packages[0], null, 2));
-          // Look for Plaza Independencia package specifically
-          const plazaPackage = packages.find(pkg => pkg.package_name?.includes('Plaza Independencia'));
-          if (plazaPackage) {
-            console.log('Plaza Independencia package:', JSON.stringify(plazaPackage, null, 2));
-          }
-        }
-        
         setTourPackages(packages);
         setFilteredPackages(packages);
         setNetworkStatus('Connected');

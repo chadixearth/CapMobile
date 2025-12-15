@@ -259,10 +259,10 @@ const LeafletMapView = ({
           });
 
           // Custom markers with icons
-          function getMarkerIcon(color, type, id) {
+          function getMarkerIcon(color, type, id, label) {
             var iconHtml = '';
-            var iconSize = [24, 24];
-            var iconAnchor = [12, 12];
+            var iconSize = [32, 32];
+            var iconAnchor = [16, 16];
             
             console.log('getMarkerIcon called with - color:', color, 'type:', type, 'id:', id);
             
@@ -272,6 +272,10 @@ const LeafletMapView = ({
               iconHtml = '<div style="background-color: ' + color + '; width: 36px; height: 36px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 3px 10px rgba(0,0,0,0.4); animation: pulse 2s infinite;">🐎</div>';
               iconSize = [36, 36];
               iconAnchor = [18, 18];
+            } else if (label) {
+              console.log('Creating numbered marker icon:', label);
+              // Numbered marker
+              iconHtml = '<div style="background-color: ' + color + '; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: white; box-shadow: 0 3px 8px rgba(0,0,0,0.3);">' + label + '</div>';
             } else {
               console.log('Creating regular marker icon for type:', type);
               // Regular colored circle for other markers
@@ -301,7 +305,7 @@ const LeafletMapView = ({
             if (marker.lat && marker.lng && !isNaN(marker.lat) && !isNaN(marker.lng)) {
               try {
                 var leafletMarker = L.marker([marker.lat, marker.lng], {
-                  icon: getMarkerIcon(marker.color, marker.type, marker.id)
+                  icon: getMarkerIcon(marker.color, marker.type, marker.id, marker.label)
                 }).addTo(map);
                 
                 addedMarkers++;

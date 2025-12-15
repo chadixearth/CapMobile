@@ -21,9 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { supabase } from '../services/supabase';
+import { tourPackageService } from '../services/tourpackage/fetchPackage';
+import LeafletMapView from './LeafletMapView';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IMG_HEIGHT = 280;
+const IMG_HEIGHT = 200;
 
 const formatPeso = (val) => (typeof val === 'number' ? `₱${val.toLocaleString()}` : '—');
 
@@ -33,9 +35,16 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
   const [activePhoto, setActivePhoto] = useState(0);
   const scrollRef = useRef(null);
   const [stats, setStats] = useState({ total: 0, average: 0 });
+  const [itinerary, setItinerary] = useState([]);
+  const [loadingItinerary, setLoadingItinerary] = useState(false);
+  const [routeCoordinates, setRouteCoordinates] = useState([]);
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
-    if (visible && packageData?.id) loadReviews();
+    if (visible && packageData?.id) {
+      loadReviews();
+      loadItinerary();
+    }
   }, [visible, packageData?.id]);
 
   const loadReviews = async () => {
@@ -67,7 +76,6 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
         setStats({ total: 0, average: 0 });
       }
     } catch (e) {
-      // Handle missing reviews table gracefully
       if (e?.code === '42P01' || e?.message?.includes('does not exist')) {
         console.log('Reviews table not available, using fallback data');
       } else {
@@ -77,6 +85,41 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
       setStats({ total: 0, average: 0 });
     } finally {
       setLoadingReviews(false);
+    }
+  };
+
+  const loadItinerary = async () => {
+    if (!packageData?.id) return;
+    setLoadingItinerary(true);
+    try {
+      const itineraryData = await tourPackageService.getPackageItinerary(packageData.id);
+      setItinerary(itineraryData || []);
+      
+      if (itineraryData && itineraryData.length > 1) {
+        fetchRouteFromOSRM(itineraryData);
+      }
+    } catch (error) {
+      console.error('Error loading itinerary:', error);
+      setItinerary([]);
+    } finally {
+      setLoadingItinerary(false);
+    }
+  };
+
+  const fetchRouteFromOSRM = async (steps) => {
+    try {
+      const coordinates = steps.map(s => `${s.longitude},${s.latitude}`).join(';');
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`
+      );
+      const data = await response.json();
+      
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        setRouteCoordinates(coords);
+      }
+    } catch (error) {
+      console.error('Error fetching route:', error);
     }
   };
 
@@ -298,70 +341,6 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                 />
               )}
               
-              {/* Route Card */}
-              <View style={styles.routeCard}>
-                <View style={styles.routeHeader}>
-                  <Ionicons name="navigate-circle" size={20} color="#6B2E2B" />
-                  <Text style={styles.routeHeaderText}>Tour Route</Text>
-                </View>
-                
-                <View style={styles.routeContent}>
-                  {/* Pickup */}
-                  <View style={styles.locationBlock}>
-                    <View style={styles.locationIconWrapper}>
-                      <View style={styles.pickupDot} />
-                    </View>
-                    <View style={styles.locationInfo}>
-                      <Text style={styles.locationLabel}>Pick-up Point</Text>
-                      <Text style={styles.locationName}>{packageData?.pickup_location || 'Tartanilla Terminal'}</Text>
-                    </View>
-                  </View>
-
-                  {/* Connecting Line */}
-                  <View style={styles.routeLine} />
-
-                  {/* Destination */}
-                  <View style={styles.locationBlock}>
-                    <View style={styles.locationIconWrapper}>
-                      <View style={styles.destinationDot} />
-                    </View>
-                    <View style={styles.locationInfo}>
-                      <Text style={styles.locationLabel}>Destination</Text>
-                      <Text style={styles.locationName}>{packageData?.destination || 'Various scenic locations'}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* View on Map Button */}
-                <TouchableOpacity 
-                  style={styles.mapActionButton}
-                  onPress={() => {
-                    onClose?.();
-                    if (navigation) {
-                      navigation.navigate('MapView', {
-                        mode: 'viewRoute',
-                        locations: {
-                          pickup: {
-                            name: packageData?.pickup_location || 'Pickup Location',
-                            latitude: packageData?.pickup_lat || 10.295,
-                            longitude: packageData?.pickup_lng || 123.89
-                          },
-                          destination: {
-                            name: packageData?.destination || 'Destination',
-                            latitude: packageData?.destination_lat || 10.295,
-                            longitude: packageData?.destination_lng || 123.89
-                          }
-                        }
-                      });
-                    }
-                  }}
-                >
-                  <Ionicons name="map" size={16} color="#6B2E2B" />
-                  <Text style={styles.mapActionText}>View Full Route on Map</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#6B2E2B" />
-                </TouchableOpacity>
-              </View>
-              
               {packageData?.expiration_date && (
                 <InfoRow
                   title="Package Validity"
@@ -416,6 +395,131 @@ const TourPackageModal = ({ visible, onClose, packageData, onBook, navigation })
                 />
               )}
             </View>
+
+            {/* Itinerary Section */}
+            {(itinerary.length > 0 || loadingItinerary) && (
+              <View style={styles.card}>
+                <View style={styles.itineraryHeader}>
+                  <Ionicons name="map" size={20} color="#6B2E2B" />
+                  <Text style={styles.sectionTitle}>Tour Itinerary</Text>
+                </View>
+                <Text style={styles.itinerarySubtitle}>Step-by-step journey through Cebu</Text>
+
+                {itinerary.length > 0 && (
+                  <TouchableOpacity 
+                    style={styles.showMapButton}
+                    onPress={() => setShowMap(!showMap)}
+                  >
+                    <Ionicons name={showMap ? 'map' : 'map-outline'} size={18} color="#6B2E2B" />
+                    <Text style={styles.showMapButtonText}>
+                      {showMap ? 'Hide Route Map' : 'Show Route Map'}
+                    </Text>
+                    <Ionicons name={showMap ? 'chevron-up' : 'chevron-down'} size={18} color="#6B2E2B" />
+                  </TouchableOpacity>
+                )}
+
+                {showMap && itinerary.length > 0 && (
+                  <View style={styles.mapContainer}>
+                    <LeafletMapView
+                      style={styles.itineraryMap}
+                      region={{
+                        latitude: itinerary[0]?.latitude || 10.295,
+                        longitude: itinerary[0]?.longitude || 123.89,
+                        latitudeDelta: 0.02,
+                        longitudeDelta: 0.02,
+                      }}
+                      roads={routeCoordinates.length > 0 ? [{
+                        id: 'route',
+                        coordinates: routeCoordinates,
+                        stroke_color: '#6B2E2B',
+                        stroke_width: 4,
+                        stroke_opacity: 0.8
+                      }] : []}
+                      markers={itinerary.map((step, idx) => ({
+                        latitude: step.latitude,
+                        longitude: step.longitude,
+                        title: `${step.step_order}. ${step.location_name}`,
+                        id: step.id || idx,
+                        iconColor: step.location_type === 'pickup' ? '#10B981' : 
+                                   step.location_type === 'dropoff' ? '#EF4444' : '#6B2E2B',
+                        label: String(step.step_order)
+                      }))}
+                    />
+                  </View>
+                )}
+
+                {loadingItinerary ? (
+                  <View style={styles.loadingItinerary}>
+                    <ActivityIndicator size="small" color="#6B2E2B" />
+                    <Text style={styles.loadingText}>Loading itinerary...</Text>
+                  </View>
+                ) : itinerary.length > 0 ? (
+                  <View style={styles.itineraryList}>
+                    {itinerary.map((step, index) => (
+                      <View key={step.id || index} style={styles.itineraryStep}>
+                        <View style={styles.stepIndicator}>
+                          <View style={styles.stepNumber}>
+                            <Text style={styles.stepNumberText}>{step.step_order || index + 1}</Text>
+                          </View>
+                          {index < itinerary.length - 1 && <View style={styles.stepLine} />}
+                        </View>
+                        
+                        <View style={styles.stepContent}>
+                          <View style={styles.stepHeader}>
+                            <Text style={styles.stepLocation}>{step.location_name}</Text>
+                            {step.location_type && (
+                              <View style={[
+                                styles.stepTypeBadge,
+                                step.location_type === 'pickup' && styles.pickupBadge,
+                                step.location_type === 'dropoff' && styles.dropoffBadge
+                              ]}>
+                                <Text style={styles.stepTypeText}>
+                                  {step.location_type === 'pickup' ? 'Start' : step.location_type === 'dropoff' ? 'End' : 'Stop'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          
+                          {(step.image_url || (step.image_urls && step.image_urls.length > 0)) && (
+                            <Image 
+                              source={{ uri: step.image_url || step.image_urls[0] }}
+                              style={styles.stepImage}
+                              resizeMode="cover"
+                            />
+                          )}
+                          
+                          {step.description && (
+                            <Text style={styles.stepDescription}>{step.description}</Text>
+                          )}
+                          
+                          {(step.duration_hours > 0 || step.duration_minutes > 0) && (
+                            <View style={styles.stepDuration}>
+                              <Ionicons name="time-outline" size={16} color="#6B2E2B" />
+                              <Text style={styles.stepDurationText}>
+                                Duration: {step.duration_hours > 0 && `${step.duration_hours} hour${step.duration_hours > 1 ? 's' : ''} `}
+                                {step.duration_minutes > 0 && `${step.duration_minutes} min${step.duration_minutes > 1 ? 's' : ''}`}
+                              </Text>
+                            </View>
+                          )}
+                          
+                          {step.activities && step.activities.length > 0 && (
+                            <View style={styles.stepActivities}>
+                              <Text style={styles.activitiesLabel}>Things to do:</Text>
+                              {step.activities.map((activity, idx) => (
+                                <View key={idx} style={styles.activityItem}>
+                                  <View style={styles.activityBullet} />
+                                  <Text style={styles.activityText}>{activity}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            )}
 
             {/* Reviews */}
             <View style={styles.card}>
@@ -641,10 +745,10 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 8,
+    marginBottom: 6,
   },
 
   // Chips (adaptive)
@@ -864,6 +968,182 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     color: '#6B7280',
     lineHeight: 20,
+  },
+  
+  // Itinerary Styles
+  itineraryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  itinerarySubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  loadingItinerary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  itineraryList: {
+    marginTop: 8,
+  },
+  itineraryStep: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  stepIndicator: {
+    alignItems: 'center',
+    marginRight: 16,
+    width: 32,
+  },
+  stepNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#6B2E2B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  stepNumberText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  stepLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+    minHeight: 20,
+  },
+  stepContent: {
+    flex: 1,
+    paddingBottom: 4,
+  },
+  stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  stepLocation: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+  },
+  stepTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  pickupBadge: {
+    backgroundColor: '#D1FAE5',
+  },
+  dropoffBadge: {
+    backgroundColor: '#FEE2E2',
+  },
+  stepTypeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+  },
+  stepImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+    marginVertical: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  stepDescription: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  stepDuration: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  stepDurationText: {
+    fontSize: 13,
+    color: '#6B2E2B',
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  stepActivities: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  activitiesLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  activityBullet: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#6B2E2B',
+    marginTop: 7,
+    marginRight: 8,
+  },
+  activityText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+  },
+  mapContainer: {
+    marginVertical: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  itineraryMap: {
+    height: 250,
+    width: '100%',
+  },
+  showMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5E9E2',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#6B2E2B',
+    gap: 8,
+    marginBottom: 12,
+  },
+  showMapButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B2E2B',
   },
   expiredText: {
     color: '#DC2626',

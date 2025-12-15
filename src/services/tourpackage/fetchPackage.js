@@ -60,18 +60,41 @@ export const tourPackageService = {
       
       return {
         ...packageData,
-        // Add missing fields that mobile expects
         start_time: packageData.start_time || '09:00',
         destination_lat: packageData.destination_lat || packageData.dropoff_lat,
         destination_lng: packageData.destination_lng || packageData.dropoff_lng,
         status: packageData.status || (packageData.is_active ? 'active' : 'inactive'),
-        // Keep original review data from API
         reviews: packageData.reviews || [],
         reviews_count: packageData.reviews_count || packageData.review_count || (packageData.reviews ? packageData.reviews.length : 0),
-        average_rating: packageData.average_rating || packageData.avg_rating || 0
+        average_rating: packageData.average_rating || packageData.avg_rating || 0,
+        itinerary: packageData.itinerary || []
       };
     } catch (error) {
       throw error;
+    }
+  },
+
+  async getPackageItinerary(packageId) {
+    try {
+      const result = await apiRequest(`/tourpackage/${packageId}/get_itinerary/`);
+      
+      if (!result.success || !result.data) {
+        return [];
+      }
+      
+      const data = result.data;
+      const itinerary = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+      
+      return itinerary.map(step => ({
+        ...step,
+        image_url: step.image_url || null,
+        image_urls: step.image_urls || [],
+        description: step.description || `Visit ${step.location_name}`,
+        activities: step.activities || []
+      }));
+    } catch (error) {
+      console.error('Error fetching itinerary:', error);
+      return [];
     }
   },
 };
