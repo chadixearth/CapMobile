@@ -10,11 +10,10 @@ const log = (...a) => DEBUG_EARNINGS && console.log('[EARNINGS]', ...a);
 const EARNINGS_API_BASE_URL = `${apiBaseUrl()}/earnings/`;
 
 /* ----------------------------- Date utilities ----------------------------- */
+import { toPhilippinesYMD, getPhTodayUtcWindow } from '../../utils/timezone';
+
 function toLocalYMD(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return toPhilippinesYMD(d);
 }
 function addDays(d, n) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -121,6 +120,15 @@ async function fetchEarningsRowsFromSupabase(driverId, filters = {}, mode = 'iso
   }
   const rows = (data || []).filter((r) => !statusIsReversed(r));
   log(`Supabase (${mode}) rows:`, rows.length);
+  
+  // DEBUG: Log raw Supabase data
+  console.log(`[SUPABASE_DEBUG] Mode: ${mode}, Filters:`, filters);
+  console.log(`[SUPABASE_DEBUG] Raw data count:`, data?.length || 0);
+  console.log(`[SUPABASE_DEBUG] Filtered rows count:`, rows.length);
+  if (rows.length > 0) {
+    console.log(`[SUPABASE_DEBUG] Sample row:`, rows[0]);
+  }
+  
   return rows;
 }
 
