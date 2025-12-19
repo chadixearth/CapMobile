@@ -2,6 +2,7 @@
 import { getAccessToken } from '../authService';
 import { apiBaseUrl } from '../networkConfig';
 import { supabase } from '../supabase';
+import { getPhTodayUtcWindow, toPhilippinesYMD } from '../../utils/timezone';
 
 const EARNINGS_API_BASE_URL = `${apiBaseUrl()}/breakeven/`;
 
@@ -272,7 +273,11 @@ export async function upsertBreakevenHistoryFromSummary({
     const period = periodType === 'daily' ? 'today' : periodType === 'weekly' ? 'week' : 'month';
     const earningsRes = await getTotalDriverEarnings(driverId, period);
     
-    const revenue = earningsRes?.success ? Number(earningsRes.data.total_earnings || 0) : Number(summary.revenue_period || 0);
+    // Use earnings data if available, otherwise fallback to summary
+    const revenue = earningsRes?.success && earningsRes.data.total_earnings > 0 
+      ? Number(earningsRes.data.total_earnings || 0) 
+      : Number(summary.revenue_period || 0);
+    
     const exps = Number(expenses || 0);
     const profit = Number((revenue - exps).toFixed(2));
 
@@ -295,18 +300,27 @@ export async function upsertBreakevenHistoryFromSummary({
       profitable: profit > 0,
       breakdown,
       snapshot_at: new Date().toISOString(),
+      role: 'driver',
+      bucket_tz: 'ph',
     };
 
     // Keep server cron in sync with the same expenses value (daily use)
     await setBreakevenExpenseCache(driverId, exps);
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('breakeven_history')
-      .upsert(row, { onConflict: 'driver_id,period_type,period_start' });
+      .upsert(row, { onConflict: 'driver_id,role,period_type,period_start' })
+      .select();
 
-    if (error) return { success: false, error: error.message || 'supabase error' };
-    return { success: true };
+    if (error) {
+      console.error('Error upserting breakeven history:', error);
+      return { success: false, error: error.message || 'supabase error' };
+    }
+    
+    console.log('Breakeven history upserted with revenue:', revenue, 'for period:', periodType);
+    return { success: true, data };
   } catch (e) {
+    console.error('Upsert breakeven history error:', e);
     return { success: false, error: e?.message || 'unexpected error' };
   }
 }
@@ -390,6 +404,8 @@ export async function saveExpensesForPeriod({
     const period = periodType === 'daily' ? 'today' : periodType === 'weekly' ? 'week' : 'month';
     const earningsRes = await getTotalDriverEarnings(driverId, period);
     
+    console.log(`[BreakevenService] Earnings result for ${period}:`, earningsRes);
+    
     const revenue = earningsRes?.success ? Number(earningsRes.data.total_earnings || 0) : Number(breakevenData?.revenue_period || 0);
     const profit = Number((revenue - exps).toFixed(2));
     const ridesNeeded = Number(breakevenData?.bookings_needed || 0);
@@ -418,6 +434,8 @@ export async function saveExpensesForPeriod({
       bucket_tz: 'ph',
     };
 
+    console.log(`[BreakevenService] Saving breakeven data with revenue: ₱${revenue} for ${periodType}:`, row);
+
     const { data, error } = await supabase
       .from('breakeven_history')
       .upsert(row, { onConflict: 'driver_id,role,period_type,period_start' })
@@ -428,7 +446,7 @@ export async function saveExpensesForPeriod({
       return { success: false, error: error.message || 'supabase error' };
     }
     
-    console.log('Complete breakeven data saved:', data);
+    console.log('Complete breakeven data saved with revenue:', data?.[0]?.revenue_driver);
     return { success: true, data };
   } catch (e) {
     console.error('Save breakeven data error:', e);
@@ -513,15 +531,23 @@ export async function getTotalDriverEarnings(driverId, period) {
       return { success: false, error: 'Invalid period' };
     }
 
+    console.log(`[getTotalDriverEarnings] Querying earnings for driver ${driverId}, period ${period}`);
+    console.log(`[getTotalDriverEarnings] Date range: ${startUtc} to ${endUtc}`);
+    
     const { data, error } = await supabase
       .from('earnings')
-      .select('driver_earnings, booking_id, custom_tour_id, ride_hailing_booking_id, booking_type')
+      .select('driver_earnings, amount, total_amount, booking_id, custom_tour_id, ride_hailing_booking_id, booking_type, organization_percentage, earning_date, status')
       .eq('driver_id', driverId)
       .gte('earning_date', startUtc)
       .lt('earning_date', endUtc)
       .in('status', ['finalized', 'posted', 'completed', 'pending']);
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.error(`[getTotalDriverEarnings] Query error:`, error);
+      return { success: false, error: error.message };
+    }
+    
+    console.log(`[getTotalDriverEarnings] Found ${data?.length || 0} earnings records`);
 
     let totalEarnings = 0;
     let standardEarnings = 0;
@@ -529,7 +555,17 @@ export async function getTotalDriverEarnings(driverId, period) {
     let count = 0;
 
     for (const row of data || []) {
-      const driverEarnings = Number(row.driver_earnings || 0);
+      let driverEarnings = Number(row.driver_earnings || 0);
+      
+      console.log(`[getTotalDriverEarnings] Processing record: driver_earnings=${row.driver_earnings}, amount=${row.amount}, status=${row.status}`);
+      
+      // If driver_earnings is 0 or null, calculate from amount
+      if (driverEarnings === 0 && row.amount) {
+        const totalAmount = Number(row.amount || 0);
+        const orgPercentage = Number(row.organization_percentage || 20) / 100;
+        driverEarnings = totalAmount * (1 - orgPercentage);
+        console.log(`[getTotalDriverEarnings] Calculated driver earnings: ${driverEarnings} from amount ${totalAmount} with org percentage ${orgPercentage * 100}%`);
+      }
       
       if (driverEarnings > 0) {
         totalEarnings += driverEarnings;
@@ -537,15 +573,25 @@ export async function getTotalDriverEarnings(driverId, period) {
         // Categorize earnings based on booking type
         if (row.booking_id || row.custom_tour_id) {
           standardEarnings += driverEarnings;
+          console.log(`[getTotalDriverEarnings] Added ${driverEarnings} to standard earnings`);
         } else if (row.ride_hailing_booking_id) {
           rideHailingEarnings += driverEarnings;
+          console.log(`[getTotalDriverEarnings] Added ${driverEarnings} to ride hailing earnings`);
+        } else {
+          // Default to standard if booking type is unclear
+          standardEarnings += driverEarnings;
+          console.log(`[getTotalDriverEarnings] Added ${driverEarnings} to standard earnings (default)`);
         }
         
         count++;
+      } else {
+        console.log(`[getTotalDriverEarnings] Skipped record with zero earnings`);
       }
     }
+    
+    console.log(`[getTotalDriverEarnings] Final totals: total=${totalEarnings}, standard=${standardEarnings}, ride_hailing=${rideHailingEarnings}, count=${count}`);
 
-    return {
+    const result = {
       success: true,
       data: {
         total_earnings: Number(totalEarnings.toFixed(2)),
@@ -554,23 +600,16 @@ export async function getTotalDriverEarnings(driverId, period) {
         count
       }
     };
+    
+    console.log(`[getTotalDriverEarnings] Returning result:`, result);
+    return result;
   } catch (e) {
     return { success: false, error: e?.message || 'unexpected error' };
   }
 }
 
 // Helper functions for date windows
-function getPhTodayUtcWindow() {
-  const PH_OFFSET_HOURS = 8;
-  const nowUtcMs = Date.now();
-  const nowPh = new Date(nowUtcMs + PH_OFFSET_HOURS * 3600_000);
-  const y = nowPh.getUTCFullYear();
-  const m = nowPh.getUTCMonth();
-  const d = nowPh.getUTCDate();
-  const startUtcMs = Date.UTC(y, m, d, 0, 0, 0) - PH_OFFSET_HOURS * 3600_000;
-  const endUtcMs = Date.UTC(y, m, d + 1, 0, 0, 0) - PH_OFFSET_HOURS * 3600_000;
-  return [new Date(startUtcMs).toISOString(), new Date(endUtcMs).toISOString()];
-}
+// Using centralized timezone utility
 
 function getPhWeekUtcWindow() {
   const PH_OFFSET_HOURS = 8;
