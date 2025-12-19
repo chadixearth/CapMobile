@@ -130,17 +130,6 @@ export default function BreakevenChart({ data = [], currentData = null, timeZone
     <View style={styles.container}>
       <View style={styles.titleContainer}>
         <Text style={styles.title}>Breakeven Report — Earnings vs Expenses</Text>
-        <TouchableOpacity 
-          style={[styles.pdfButton, exporting && styles.pdfButtonDisabled]} 
-          onPress={handleExport}
-          disabled={exporting}
-        >
-          {exporting ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <Ionicons name="document-text" size={20} color={colors.primary} />
-          )}
-        </TouchableOpacity>
       </View>
 
       <View style={[styles.chartRow, { height: chartHeight + X_LABEL_H }]}>
@@ -306,29 +295,14 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   titleContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
-    position: 'relative',
   },
   title: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
-    marginRight: 32,
-  },
-  pdfButton: {
-    position: 'absolute',
-    right: 0,
-    top: -2,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 6,
-  },
-  pdfButtonDisabled: {
-    opacity: 0.6,
   },
   chartRow: {
     flexDirection: 'row',

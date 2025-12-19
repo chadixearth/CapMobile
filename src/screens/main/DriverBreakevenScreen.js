@@ -42,6 +42,7 @@ import {
   saveExpensesForPeriod,
   getTotalDriverEarnings,
 } from '../../services/Earnings/BreakevenService';
+import { fixAllBreakevenHistoryRevenue } from '../../services/Earnings/BreakevenHistoryFixer';
 
 const PERIOD_BY_FREQ = {
   Daily: 'today',
@@ -166,7 +167,7 @@ async function fetchIncomeTodayByDriver(driverId, {
 
   let q = supabase
     .from('earnings')
-    .select('driver_earnings, booking_id, custom_tour_id, ride_hailing_booking_id, earning_date')
+    .select('driver_earnings, amount, total_amount, booking_id, custom_tour_id, ride_hailing_booking_id, earning_date, booking_type')
     .eq('driver_id', driverId)
     .gte('earning_date', gteISO)
     .lt('earning_date', ltISO);
@@ -174,18 +175,36 @@ async function fetchIncomeTodayByDriver(driverId, {
   if (statuses?.length) q = q.in('status', statuses);
 
   const { data: rows, error } = await q;
-  if (error) throw error;
+  if (error) {
+    console.error('Error fetching daily earnings:', error);
+    throw error;
+  }
 
   let revenue = 0;
   let count = 0;
   for (const r of rows || []) {
-    const driverEarnings = Number(r?.driver_earnings || 0);
+    // Use driver_earnings if available, otherwise calculate from amount
+    let driverEarnings = Number(r?.driver_earnings || 0);
+    
+    // Fallback calculation if driver_earnings is not set
+    if (driverEarnings === 0 && r?.amount) {
+      const totalAmount = Number(r.amount || 0);
+      // Apply standard share rates based on booking type
+      if (r.booking_type === 'ride_hailing') {
+        driverEarnings = totalAmount * RIDE_HAILING_SHARE;
+      } else {
+        driverEarnings = totalAmount * BOOKING_SHARE;
+      }
+    }
+    
     if (driverEarnings > 0) {
       revenue += driverEarnings;
       count += 1;
     }
   }
 
+  console.log(`Daily earnings fetched: ₱${revenue.toFixed(2)} from ${count} bookings`);
+  
   return {
     revenue: Number(revenue.toFixed(2)),
     count,
@@ -258,6 +277,8 @@ export default function EarningsScreen({ navigation, route }) {
   const [errorText, setErrorText] = useState('');
   const [pendingPayoutAmount, setPendingPayoutAmount] = useState(0);
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [refreshingEarnings, setRefreshingEarnings] = useState(false);
+  const [showExpenseWarning, setShowExpenseWarning] = useState(false);
 
   // History state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -498,6 +519,12 @@ export default function EarningsScreen({ navigation, route }) {
     const val = parseFloat(String(expenseInput).replace(/,/g, '')) || 0;
     if (val <= 0) return;
 
+    // Show warning for weekly/monthly periods
+    if (frequency !== 'Daily') {
+      setShowExpenseWarning(true);
+      return;
+    }
+
     try {
       // Calculate new total expenses
       const sessionAdds = expenseItems.reduce((s, n) => s + (Number(n) || 0), 0);
@@ -714,24 +741,7 @@ export default function EarningsScreen({ navigation, route }) {
         }
 
         // DAILY: keep today’s history updated
-        if ((currentFrequency === 'Weekly' || currentFrequency === 'Monthly') && earningsData && baseExp >= 0) {
-          const periodType = currentFrequency === 'Weekly' ? 'weekly' : 'monthly';
-          await saveExpensesForPeriod({
-            driverId: drvId,
-            periodType,
-            periodStart: baseData?.period_from ? new Date(baseData.period_from + 'T00:00:00').toISOString() : new Date().toISOString(),
-            periodEnd: baseData?.period_to ? new Date(baseData.period_to + 'T23:59:59').toISOString() : new Date().toISOString(),
-            expenses: baseExp,
-            breakevenData: {
-              revenue_period: earningsData.total_earnings,
-              total_bookings: earningsData.count,
-              breakdown: {
-                driver_share_from_standard: earningsData.standard_earnings,
-                driver_share_from_ride_hailing: earningsData.ride_hailing_earnings,
-              }
-            },
-          });
-        }
+        // Weekly/monthly records should be aggregated from daily records, not created from current day data
 
         if (currentFrequency === 'Daily' && summary && baseExp > 0) {
           await upsertBreakevenHistoryFromSummary({
@@ -742,12 +752,39 @@ export default function EarningsScreen({ navigation, route }) {
           });
         }
 
-        // Daily direct fallback
+        // Daily direct fallback - get fresh data and use it if better than main data
         if (currentFrequency === 'Daily') {
           try {
             const r = await fetchIncomeTodayByDriver(drvId);
-            setIncomeToday(r.revenue || 0);
-          } catch {
+            const fallbackRevenue = r.revenue || 0;
+            setIncomeToday(fallbackRevenue);
+            
+            // If fallback has better data, use it for the main display
+            if (fallbackRevenue > 0 && (!earningsData || Number(earningsData.total_earnings || 0) === 0)) {
+              console.log(`Using fallback revenue: ₱${fallbackRevenue} instead of main: ₱${Number(earningsData?.total_earnings || 0)}`);
+              setRevenuePeriod(fallbackRevenue);
+              setAcceptedBookings(r.count || 0);
+              
+              // Recalculate fare per ride with fallback data
+              const farePerRideCalc = (r.count || 0) > 0 ? fallbackRevenue / (r.count || 0) : 0;
+              setFarePerRide(farePerRideCalc);
+              
+              // Recalculate bookings needed
+              if (fallbackRevenue >= baseExp) {
+                setBookingsNeeded(0);
+              } else if (farePerRideCalc > 0) {
+                const deficit = baseExp - fallbackRevenue;
+                const additionalBookings = Math.ceil(deficit / farePerRideCalc);
+                setBookingsNeeded(additionalBookings);
+              } else {
+                setBookingsNeeded(0);
+              }
+              
+              const deficit = Math.max(baseExp - fallbackRevenue, 0);
+              setDeficitAmount(deficit);
+            }
+          } catch (error) {
+            console.error('Error fetching daily fallback:', error);
             setIncomeToday(0);
           }
         } else {
@@ -1065,6 +1102,30 @@ export default function EarningsScreen({ navigation, route }) {
     }
   };
 
+  // Refresh earnings data handler
+  const handleRefreshEarnings = async () => {
+    if (refreshingEarnings || !driverId) return;
+    
+    setRefreshingEarnings(true);
+    try {
+      const result = await fixAllBreakevenHistoryRevenue(driverId);
+      
+      if (result.success) {
+        setErrorText('');
+        // Refresh data after fixing
+        await fetchAll(driverId, frequency);
+        await loadChartData();
+        console.log(`Refreshed ${result.totalFixed} out of ${result.totalRecords} records`);
+      } else {
+        setErrorText('Failed to refresh earnings data: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      setErrorText('Failed to refresh earnings data: ' + error.message);
+    } finally {
+      setRefreshingEarnings(false);
+    }
+  };
+
   // Profit for the tile
   const currentProfit = useMemo(
     () => (revenuePeriod || 0) - (totalExpenses || 0),
@@ -1093,9 +1154,9 @@ export default function EarningsScreen({ navigation, route }) {
   const revenueForTile = useMemo(() => {
     if (frequency === 'Daily') {
       const r = Number(revenuePeriod || 0);
-      if (r > 0) return r;
       const f = Number(incomeToday || 0);
-      return f > 0 ? f : r;
+      // Use the higher value between main revenue and fallback
+      return Math.max(r, f);
     }
     return Number(revenuePeriod || 0);
   }, [frequency, revenuePeriod, incomeToday]);
@@ -1343,6 +1404,18 @@ export default function EarningsScreen({ navigation, route }) {
             </View>
           </View>
 
+          {/* Debug info for daily earnings
+          {frequency === 'Daily' && __DEV__ && (
+            <View style={styles.badgeRow}>
+              <View style={[styles.badge, { backgroundColor: '#FFF3CD', borderColor: '#FFEAA7' }]}>
+                <Ionicons name="bug-outline" size={14} color="#856404" />
+                <Text style={[styles.badgeInfoText, { color: '#856404' }]}>
+                  Debug: Revenue={formatPeso(revenuePeriod)}, Fallback={formatPeso(incomeToday)}, Bookings={acceptedBookings}
+                </Text>
+              </View>
+            </View>
+          )} */}
+
           {/* Info when no base+session expenses */}
           {(expenseItems.length === 0 && dbExpensesBase <= 0) && (
             <View style={styles.badgeRow}>
@@ -1411,6 +1484,20 @@ export default function EarningsScreen({ navigation, route }) {
               <Ionicons name="refresh" size={14} color={colors.primary} />
               <Text style={styles.btnOutlineText}>Reset expenses</Text>
             </TouchableOpacity>
+            
+            {__DEV__ && (
+              <TouchableOpacity 
+                onPress={handleRefreshEarnings} 
+                style={[styles.btnOutline, { backgroundColor: refreshingEarnings ? '#f0f0f0' : '#fff' }]} 
+                activeOpacity={0.85}
+                disabled={refreshingEarnings}
+              >
+                <Ionicons name="refresh-circle" size={14} color={colors.primary} />
+                <Text style={styles.btnOutlineText}>
+                  {refreshingEarnings ? 'Refreshing...' : 'Refresh Earnings'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1559,6 +1646,27 @@ export default function EarningsScreen({ navigation, route }) {
           </View>
         )}
       </View>
+
+      {/* Expense Warning Modal */}
+      <Modal visible={showExpenseWarning} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.warningModal}>
+            <View style={styles.warningHeader}>
+              <Ionicons name="warning" size={24} color="#F59E0B" />
+              <Text style={styles.warningTitle}>Cannot Add Expenses</Text>
+            </View>
+            <Text style={styles.warningMessage}>
+              {frequency} expenses are calculated from daily records. Please switch to Daily view to add expenses.
+            </Text>
+            <TouchableOpacity 
+              style={styles.warningButton} 
+              onPress={() => setShowExpenseWarning(false)}
+            >
+              <Text style={styles.warningButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <HistoryModal
         visible={historyOpen}
@@ -1848,6 +1956,9 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
   },
   modalCard: {
     marginHorizontal: 20,
@@ -2199,5 +2310,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     letterSpacing: 0.5,
+  },
+  warningModal: {
+    backgroundColor: '#fff',
+    marginHorizontal: 40,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    maxWidth: 320,
+  },
+  warningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  warningTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginLeft: 8,
+  },
+  warningMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  warningButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  warningButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

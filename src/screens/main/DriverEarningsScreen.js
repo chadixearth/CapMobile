@@ -37,11 +37,10 @@ import PayoutHistoryModal from '../../components/PayoutHistoryModal';
 const { width } = Dimensions.get('window');
 
 /* ----------------------------- Local date helpers ----------------------------- */
+import { toPhilippinesYMD } from '../../utils/timezone';
+
 function toLocalYMD(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return toPhilippinesYMD(d);
 }
 function addDays(d, n) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -231,7 +230,10 @@ export default function DriverEarningsScreen({ navigation }) {
     // FIX: Only use custom range if both from & to exist
     if (customDateRange?.from && customDateRange?.to) {
       filters.date_from = customDateRange.from;
-      filters.date_to = customDateRange.to;
+      // Add one day to make it exclusive (database expects exclusive end date)
+      const endDate = new Date(customDateRange.to + 'T00:00:00');
+      endDate.setDate(endDate.getDate() + 1);
+      filters.date_to = toLocalYMD(endDate);
       return filters;
     }
 
@@ -565,7 +567,21 @@ export default function DriverEarningsScreen({ navigation }) {
           <View style={styles.vDivider} />
           <View style={styles.splitCol}>
             <Text style={styles.splitLabel}>Ride Hailing</Text>
-            <Text style={styles.splitValue}>{formatCurrency(earningsData?.total_ride_hailing_earnings || earningsData?.ride_hailing_earnings || 0)}</Text>
+            <Text style={styles.splitValue}>{formatCurrency((() => {
+              // Calculate ride hailing earnings from detailed earnings
+              const rideHailingEarnings = detailedEarnings.reduce((sum, e) => {
+                const packageName = String(e?.package_name || '').toLowerCase();
+                const isRideHailing = packageName.includes('ride') || packageName.includes('hailing');
+                if (isRideHailing) {
+                  const totalAmount = Number(e?.total_amount) || 0;
+                  console.log('[RIDE_HAILING_DEBUG] Package:', packageName, 'Total:', totalAmount);
+                  return sum + totalAmount;
+                }
+                return sum;
+              }, 0);
+              console.log('[RIDE_HAILING_TOTAL] Total ride hailing earnings:', rideHailingEarnings);
+              return rideHailingEarnings;
+            })())}</Text>
           </View>
         </View>
       </View>
