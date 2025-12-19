@@ -85,6 +85,7 @@ export default function DriverBookScreen({ navigation }) {
   const [showDriverCancelModal, setShowDriverCancelModal] = useState(false);
   const [showRideMapModal, setShowRideMapModal] = useState(false);
   const [selectedRide, setSelectedRide] = useState(null);
+  const [driverPercentage, setDriverPercentage] = useState(80); // Default 80%
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
   const dot3Anim = useRef(new Animated.Value(0)).current;
@@ -154,8 +155,34 @@ export default function DriverBookScreen({ navigation }) {
     }
   }, [loading, pulseAnim, dot1Anim, dot2Anim, dot3Anim]);
 
+  // Fetch driver percentage from Django backend
+  const fetchDriverPercentage = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl()}/earnings/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DriverBookScreen] API Response:', data);
+        if (data.driver_percentage) {
+          console.log('[DriverBookScreen] Setting driver percentage:', data.driver_percentage);
+          setDriverPercentage(data.driver_percentage);
+        }
+      } else {
+        console.log('[DriverBookScreen] API Error:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching driver percentage:', error);
+    }
+  };
+
   useEffect(() => {
     fetchUserAndBookings();
+    fetchDriverPercentage(); // Fetch percentage on component mount
     
     // Initialize notifications for drivers
     const initNotifications = async () => {
@@ -546,6 +573,7 @@ export default function DriverBookScreen({ navigation }) {
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchUserAndBookings();
+    await fetchDriverPercentage(); // Refresh percentage on pull-to-refresh
     setRefreshing(false);
   };
 
@@ -1260,8 +1288,8 @@ const getCustomTitle = (r) => (
               <Text style={styles.earningsAmount}>₱{booking.total_amount || 0}</Text>
             </View>
             <View style={styles.earningsItem}>
-              <Text style={styles.earningsLabel}>Your Share (80%)</Text>
-              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{((booking.total_amount || 0) * 0.8).toFixed(0)}</Text>
+              <Text style={styles.earningsLabel}>Your Share ({driverPercentage}%)</Text>
+              <Text style={[styles.earningsAmount, styles.driverShare]}>₱{((booking.total_amount || 0) * (driverPercentage / 100)).toFixed(0)}</Text>
             </View>
           </View>
           {booking.payment_status && (
@@ -1334,8 +1362,8 @@ const getCustomTitle = (r) => (
             </TouchableOpacity>
           ) : (
             <View style={[styles.acceptButton, styles.disabledButton]}>
-              <Ionicons name="card" size={18} color="#999" />
-              <Text style={[styles.acceptButtonText, { color: '#999' }]}>⏳ Waiting for Tourist Payment</Text>
+              <Ionicons name="card" size={18} color="#fff" />
+              <Text style={[styles.acceptButtonText, { color: '#fff' }]}>⏳ Waiting for Tourist Payment</Text>
             </View>
           )}
           {renderMessageButton(booking)}

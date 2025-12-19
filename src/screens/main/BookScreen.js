@@ -656,7 +656,8 @@ export default function BookScreen({ navigation }) {
             [ratingModal.type]: true,
           },
         }));
-        Alert.alert('Thank you!', 'Your review has been submitted.');
+        const { CustomAlert } = require('../../utils/customAlert');
+        CustomAlert.success('Thank you!', 'Your review has been submitted.');
         setRatingModal({ visible: false, type: 'package', booking: null });
       } else {
         const msg = res.error || 'Failed to submit review';

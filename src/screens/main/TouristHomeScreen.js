@@ -911,43 +911,27 @@ export default function TouristHomeScreen({ navigation }) {
                 <View style={styles.metaRow}>
                   {(() => {
                     const rating = Number(pkg.average_rating) || 0;
-                    const reviewCount = pkg.reviews_count || pkg.review_count || pkg.total_reviews || 0;
+                    const reviewCount = pkg.reviews_count || pkg.review_count || pkg.total_reviews || (pkg.reviews ? pkg.reviews.length : 0) || 0;
                     
-                    return (
-                      <>
-                        {rating > 0 ? (
-                          <View style={styles.metaInline}>
-                            <Ionicons name="star" size={12} color="#FFD700" />
-                            <Text style={styles.metaInlineText} numberOfLines={1}>
-                              {String(rating.toFixed(1))}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.metaInline}>
-                            <Ionicons name="star-outline" size={12} color="#CCC" />
-                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
-                              No rating
-                            </Text>
-                          </View>
-                        )}
-                        
-                        {reviewCount > 0 ? (
-                          <View style={styles.metaInline}>
-                            <Ionicons name="chatbubble-outline" size={12} color="#6B2E2B" />
-                            <Text style={styles.metaInlineText} numberOfLines={1}>
-                              {String(reviewCount)} review{reviewCount !== 1 ? 's' : ''}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={styles.metaInline}>
-                            <Ionicons name="chatbubble-outline" size={12} color="#CCC" />
-                            <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
-                              No reviews
-                            </Text>
-                          </View>
-                        )}
-                      </>
-                    );
+                    if (reviewCount > 0 || rating > 0) {
+                      return (
+                        <View style={styles.metaInline}>
+                          <Ionicons name="star" size={12} color="#FFD700" />
+                          <Text style={styles.metaInlineText} numberOfLines={1}>
+                            {rating > 0 ? rating.toFixed(1) : '0.0'} ({reviewCount} review{reviewCount !== 1 ? 's' : ''})
+                          </Text>
+                        </View>
+                      );
+                    } else {
+                      return (
+                        <View style={styles.metaInline}>
+                          <Ionicons name="star-outline" size={12} color="#CCC" />
+                          <Text style={[styles.metaInlineText, { color: '#999' }]} numberOfLines={1}>
+                            No reviews yet
+                          </Text>
+                        </View>
+                      );
+                    }
                   })()}
                 </View>
 
@@ -1463,7 +1447,7 @@ const styles = StyleSheet.create({
     minHeight: 240,
   },
   packageImage: { width: '100%', height: 110, borderRadius: 12, marginBottom: 10 },
-  packageTitle: { color: '#333', fontSize: 14, fontWeight: '700', lineHeight: 18, marginBottom: 8, minHeight: 36 },
+  packageTitle: { color: '#333', fontSize: 14, fontWeight: '700', lineHeight: 18, marginBottom: 2, minHeight: 30 },
 
   /* Inline meta */
   metaRow: {

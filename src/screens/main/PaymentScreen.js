@@ -105,9 +105,10 @@ const PaymentScreen = ({ route, navigation }) => {
           setPaymentCompleted(true);
           setBookingStatus(result.data);
           
-          // Show success message
+          // Show success message using CustomAlert
           setTimeout(() => {
-            alert('Payment completed successfully! Your booking is now confirmed.');
+            const { CustomAlert } = require('../../utils/customAlert');
+            CustomAlert.success('Payment Completed!', 'Your booking is now confirmed and your driver can start the trip on the scheduled date.');
           }, 500);
           
           return; // Don't proceed to createBookingAfterPayment for existing bookings

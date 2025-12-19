@@ -18,6 +18,8 @@ import { getUserReviews, checkExistingReviews } from '../../services/reviews';
 import { apiBaseUrl } from '../../services/networkConfig';
 import { getAccessToken } from '../../services/authService';
 import { getReviewDisplayName } from '../../utils/anonymousUtils';
+import TourPackageModal from '../../components/TourPackageModal';
+import { tourPackageService } from '../../services/tourpackage/fetchPackage';
 
 const MAROON = '#6B2E2B';
 const BG = '#F8F8F8';
@@ -34,6 +36,8 @@ function ReviewsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState(null);
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [packageModalVisible, setPackageModalVisible] = useState(false);
   
   // Animation refs for loading
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -232,6 +236,19 @@ function ReviewsScreen({ navigation }) {
     });
   };
 
+  const handlePackageNamePress = async (review) => {
+    const packageId = review.package_id || review.package?.id || review.booking?.package_id;
+    if (!packageId) return;
+    
+    try {
+      const packageData = await tourPackageService.getPackageById(packageId);
+      setSelectedPackage(packageData);
+      setPackageModalVisible(true);
+    } catch (error) {
+      console.error('Error loading package:', error);
+    }
+  };
+
   const renderPendingReview = (booking, index) => {
     const isRideHailing = booking.pickup_address && !booking.package_data;
     const packageName = booking.package_name || booking.package_data?.package_name || booking.tour_package_name || (isRideHailing ? 'Ride Hailing' : 'Tour Package');
@@ -285,15 +302,21 @@ function ReviewsScreen({ navigation }) {
       <View key={index} style={styles.reviewCard}>
         <View style={styles.reviewHeader}>
           <View style={styles.reviewInfo}>
-            <Text style={styles.reviewerName}>
-              {String(isReceivedTab
-                ? getReviewDisplayName(review)
-                : (isDriverReview 
-                    ? (review.driver_name || review.driver?.name || 'Driver Review')
-                    : (review.package_name || review.tour_package_name || review.package_data?.package_name || review.package?.name || review.booking?.package_name || review.booking?.package_data?.package_name || review.booking?.tour_package_name || 'Package Review')
-                  )
-              )}
-            </Text>
+            {isReceivedTab ? (
+              <Text style={styles.reviewerName}>
+                {getReviewDisplayName(review)}
+              </Text>
+            ) : isDriverReview ? (
+              <Text style={styles.reviewerName}>
+                {review.driver_name || review.driver?.name || 'Driver Review'}
+              </Text>
+            ) : (
+              <TouchableOpacity onPress={() => handlePackageNamePress(review)}>
+                <Text style={[styles.reviewerName, styles.packageNameClickable]}>
+                  {review.package_name || review.tour_package_name || review.package_data?.package_name || review.package?.name || review.booking?.package_name || review.booking?.package_data?.package_name || review.booking?.tour_package_name || 'Package Review'}
+                </Text>
+              </TouchableOpacity>
+            )}
             {!isReceivedTab && isDriverReview && (review.package_name || review.booking?.package_name) && (
               <Text style={styles.packageInfo}>
                 Package: {review.package_name || review.booking?.package_name}
@@ -460,6 +483,23 @@ function ReviewsScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
+      
+      {/* Tour Package Modal */}
+      <TourPackageModal
+        visible={packageModalVisible}
+        onClose={() => setPackageModalVisible(false)}
+        packageData={selectedPackage}
+        navigation={navigation}
+        onBook={() => {
+          setPackageModalVisible(false);
+          if (selectedPackage) {
+            navigation.navigate('RequestBooking', {
+              packageId: selectedPackage.id,
+              packageData: selectedPackage,
+            });
+          }
+        }}
+      />
     </View>
   );
 }
@@ -709,6 +749,10 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     paddingHorizontal: 32,
+  },
+  packageNameClickable: {
+    color: '#6B2E2B',
+    textDecorationLine: 'underline',
   },
 });
 
