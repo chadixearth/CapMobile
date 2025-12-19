@@ -8,9 +8,35 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { apiBaseUrl } from '../services/networkConfig';
 
 const BookingDetailsCard = ({ booking, onAccept, onDecline, userType = 'driver' }) => {
   const [timeElapsed, setTimeElapsed] = useState('');
+  const [driverPercentage, setDriverPercentage] = useState(80);
+
+  const fetchDriverPercentage = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl()}/earnings/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[BookingDetailsCard] API Response:', data);
+        if (data.driver_percentage) {
+          console.log('[BookingDetailsCard] Setting driver percentage:', data.driver_percentage);
+          setDriverPercentage(data.driver_percentage);
+        }
+      } else {
+        console.log('[BookingDetailsCard] API Error:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Error fetching driver percentage:', error);
+    }
+  };
 
   useEffect(() => {
     const updateTimeElapsed = () => {
@@ -32,6 +58,7 @@ const BookingDetailsCard = ({ booking, onAccept, onDecline, userType = 'driver' 
     };
 
     updateTimeElapsed();
+    fetchDriverPercentage();
     const interval = setInterval(updateTimeElapsed, 30000); // Update every 30 seconds
 
     return () => clearInterval(interval);
@@ -68,7 +95,7 @@ const BookingDetailsCard = ({ booking, onAccept, onDecline, userType = 'driver' 
   };
 
   const totalFare = (booking.passenger_count || 1) * 10;
-  const driverEarnings = totalFare * 0.8;
+  const driverEarnings = totalFare * (driverPercentage / 100);
 
   return (
     <View style={styles.card}>
@@ -149,7 +176,7 @@ const BookingDetailsCard = ({ booking, onAccept, onDecline, userType = 'driver' 
             <Text style={styles.fareAmount}>₱{totalFare}</Text>
           </View>
           <View style={styles.fareRow}>
-            <Text style={styles.fareLabel}>Your Share (80%)</Text>
+            <Text style={styles.fareLabel}>Your Share ({driverPercentage}%)</Text>
             <Text style={[styles.fareAmount, styles.driverEarnings]}>₱{driverEarnings}</Text>
           </View>
           <View style={styles.fareRow}>

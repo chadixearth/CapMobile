@@ -281,8 +281,10 @@ export default function DriverEarningsScreen({ navigation }) {
       console.log('[EARNINGS_SCREEN] Detailed earnings received:', data);
       if (data.success) {
         const earnings = data.data.earnings || [];
-        console.log('[EARNINGS_SCREEN] Setting detailed earnings:', earnings);
-        setDetailedEarnings(earnings);
+        // Sort by earning_date descending (newest first)
+        const sortedEarnings = earnings.sort((a, b) => new Date(b.earning_date) - new Date(a.earning_date));
+        console.log('[EARNINGS_SCREEN] Setting detailed earnings:', sortedEarnings);
+        setDetailedEarnings(sortedEarnings);
       } else {
         console.log('[EARNINGS_SCREEN] Detailed earnings failed:', data);
       }

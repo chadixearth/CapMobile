@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
-import { createPackageReview, createDriverReview, createRideHailingDriverReview } from '../../services/reviews';
+import { createPackageReview, createDriverReview, createRideHailingDriverReview, checkExistingReviews, listReviews } from '../../services/reviews';
 import { getAnonymousReviewSetting } from '../../services/userSettings';
 
 const MAROON = '#6B2E2B';
@@ -29,10 +29,15 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
   const [packageAnonymous, setPackageAnonymous] = useState(false);
   const [driverAnonymous, setDriverAnonymous] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [existingPackageReview, setExistingPackageReview] = useState(null);
+  const [existingDriverReview, setExistingDriverReview] = useState(null);
+  const [loadingReviews, setLoadingReviews] = useState(true);
 
   useEffect(() => {
-    // Load user's anonymous preference
-    const loadAnonymousSetting = async () => {
+    const loadData = async () => {
+      setLoadingReviews(true);
+      
+      // Load user's anonymous preference
       try {
         const result = await getAnonymousReviewSetting();
         if (result.success) {
@@ -42,20 +47,54 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
       } catch (error) {
         console.error('Error loading anonymous setting:', error);
       }
+      
+      // Check for existing reviews
+      if (booking?.id && user?.id) {
+        try {
+          const reviewsResult = await listReviews({
+            booking_id: booking.id,
+            reviewer_id: user.id
+          });
+          
+          if (reviewsResult.success && reviewsResult.data) {
+            const packageReview = reviewsResult.data.find(r => r.package_id);
+            const driverReview = reviewsResult.data.find(r => r.driver_id);
+            
+            if (packageReview) {
+              setExistingPackageReview(packageReview);
+              setPackageRating(packageReview.rating);
+              setPackageComment(packageReview.comment || '');
+              setPackageAnonymous(packageReview.is_anonymous || false);
+            }
+            
+            if (driverReview) {
+              setExistingDriverReview(driverReview);
+              setDriverRating(driverReview.rating);
+              setDriverComment(driverReview.comment || '');
+              setDriverAnonymous(driverReview.is_anonymous || false);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading existing reviews:', error);
+        }
+      }
+      
+      setLoadingReviews(false);
     };
     
-    loadAnonymousSetting();
-  }, []);
+    loadData();
+  }, [booking?.id, user?.id]);
 
-  const renderStars = (rating, onPress) => {
+  const renderStars = (rating, onPress, disabled = false) => {
     const stars = [];
     for (let i = 1; i <= 5; i++) {
       stars.push(
         <TouchableOpacity
           key={i}
-          onPress={() => onPress(i)}
-          style={styles.starButton}
-          activeOpacity={0.7}
+          onPress={disabled ? undefined : () => onPress(i)}
+          style={[styles.starButton, disabled && styles.starButtonDisabled]}
+          activeOpacity={disabled ? 1 : 0.7}
+          disabled={disabled}
         >
           <Ionicons
             name={i <= rating ? 'star' : 'star-outline'}
@@ -69,6 +108,12 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
   };
 
   const handleSubmit = async () => {
+    // Check if reviews already exist
+    if (existingPackageReview || existingDriverReview) {
+      Alert.alert('Review Already Submitted', 'You have already submitted a review for this booking.');
+      return;
+    }
+    
     if (packageRating === 0 && driverRating === 0) {
       Alert.alert('Rating Required', 'Please provide at least one rating before submitting.');
       return;
@@ -169,23 +214,32 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
             </View>
             <Text style={styles.packageName}>{tourPackage?.name || tourPackage?.package_name || booking?.package_name || booking?.package_data?.package_name || 'Tour Package'}</Text>
             
-            {renderStars(packageRating, setPackageRating)}
+            {existingPackageReview && (
+              <View style={styles.existingReviewBanner}>
+                <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+                <Text style={styles.existingReviewText}>Review already submitted</Text>
+              </View>
+            )}
+            
+            {renderStars(packageRating, setPackageRating, !!existingPackageReview)}
             
             <TextInput
-              style={styles.commentInput}
+              style={[styles.commentInput, existingPackageReview && styles.commentInputDisabled]}
               value={packageComment}
-              onChangeText={setPackageComment}
-              placeholder="Share your experience with this tour package..."
+              onChangeText={existingPackageReview ? undefined : setPackageComment}
+              placeholder={existingPackageReview ? "" : "Share your experience with this tour package..."}
               placeholderTextColor="#999"
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              editable={!existingPackageReview}
             />
             
             <TouchableOpacity
-              style={styles.anonymousToggle}
-              onPress={() => setPackageAnonymous(!packageAnonymous)}
-              activeOpacity={0.7}
+              style={[styles.anonymousToggle, existingPackageReview && styles.anonymousToggleDisabled]}
+              onPress={existingPackageReview ? undefined : () => setPackageAnonymous(!packageAnonymous)}
+              activeOpacity={existingPackageReview ? 1 : 0.7}
+              disabled={!!existingPackageReview}
             >
               <Ionicons
                 name={packageAnonymous ? 'checkmark-circle' : 'ellipse-outline'}
@@ -206,27 +260,36 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
             </View>
             <Text style={styles.driverName}>{driver?.name || booking?.driver_name || 'Your Driver'}</Text>
             
-            {renderStars(driverRating, setDriverRating)}
+            {existingDriverReview && (
+              <View style={styles.existingReviewBanner}>
+                <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+                <Text style={styles.existingReviewText}>Review already submitted</Text>
+              </View>
+            )}
+            
+            {renderStars(driverRating, setDriverRating, !!existingDriverReview)}
             
             <TextInput
-              style={styles.commentInput}
+              style={[styles.commentInput, existingDriverReview && styles.commentInputDisabled]}
               value={driverComment}
-              onChangeText={setDriverComment}
-              placeholder="How was your experience with the driver?"
+              onChangeText={existingDriverReview ? undefined : setDriverComment}
+              placeholder={existingDriverReview ? "" : "How was your experience with the driver?"}
               placeholderTextColor="#999"
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              editable={!existingDriverReview}
             />
             
             <TouchableOpacity
-              style={styles.anonymousToggle}
-              onPress={() => {
+              style={[styles.anonymousToggle, existingDriverReview && styles.anonymousToggleDisabled]}
+              onPress={existingDriverReview ? undefined : () => {
                 const newValue = !driverAnonymous;
                 console.log('[ReviewSubmissionScreen] Driver anonymous toggle:', driverAnonymous, '->', newValue);
                 setDriverAnonymous(newValue);
               }}
-              activeOpacity={0.7}
+              activeOpacity={existingDriverReview ? 1 : 0.7}
+              disabled={!!existingDriverReview}
             >
               <Ionicons
                 name={driverAnonymous ? 'checkmark-circle' : 'ellipse-outline'}
@@ -244,14 +307,19 @@ export default function ReviewSubmissionScreen({ navigation, route }) {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                loading && styles.submitButtonDisabled
+                (loading || (existingPackageReview && existingDriverReview)) && styles.submitButtonDisabled
               ]}
               onPress={handleSubmit}
-              disabled={loading}
+              disabled={loading || (existingPackageReview && existingDriverReview)}
               activeOpacity={0.8}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
+              ) : (existingPackageReview && existingDriverReview) ? (
+                <>
+                  <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                  <Text style={styles.submitButtonText}>Already Reviewed</Text>
+                </>
               ) : (
                 <>
                   <Ionicons name="send" size={16} color="#fff" />
@@ -404,5 +472,33 @@ const styles = StyleSheet.create({
   anonymousText: {
     fontSize: 14,
     color: '#666',
+  },
+  existingReviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#d4edda',
+    borderColor: '#c3e6cb',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  existingReviewText: {
+    fontSize: 12,
+    color: '#155724',
+    fontWeight: '600',
+  },
+  starButtonDisabled: {
+    opacity: 0.6,
+  },
+  commentInputDisabled: {
+    backgroundColor: '#f5f5f5',
+    color: '#666',
+    opacity: 0.8,
+  },
+  anonymousToggleDisabled: {
+    opacity: 0.6,
   },
 });
