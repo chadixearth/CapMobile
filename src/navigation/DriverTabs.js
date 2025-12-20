@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import DriverHomeScreen from '../screens/main/DriverHomeScreen';
 import DriverBreakevenScreen from '../screens/main/DriverBreakevenScreen';
@@ -44,7 +45,13 @@ export default function DriverTabs({ setRole }) {
           } else if (route.name === Routes.GOODS_SERVICES) {
             return <Ionicons name="pricetags-outline" size={size} color={color} />;
           } else if (route.name === 'Carriage') {
-            return <Ionicons name="car-outline" size={size} color={color} />;
+            return (
+              <Image 
+                source={require('../../assets/carriage-icon.png')} 
+                style={{ width: size, height: size, tintColor: color }} 
+                resizeMode="contain" 
+              />
+            );
           } else if (route.name === 'Menu') {
             return <Ionicons name="settings-outline" size={size} color={color} />;
           }

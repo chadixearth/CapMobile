@@ -38,9 +38,13 @@ const RoleSelectionScreen = ({ navigation }) => {
             activeOpacity={0.8}
           >
             <View style={styles.roleIcon}>
-              <Ionicons name="car" size={32} color="#6B2E2B" />
+              <Image 
+                source={require('../../../assets/carriage-icon.png')} 
+                style={{ width: 32, height: 32 }} 
+                resizeMode="contain" 
+              />
             </View>
-            <Text style={styles.roleTitle}>Driver</Text>
+            <Text style={styles.roleTitle}>Cochero</Text>
             <Text style={styles.roleDescription}>
               Drive tartanilla, offer tour packages, and earn income
             </Text>

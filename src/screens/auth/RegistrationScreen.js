@@ -15,6 +15,7 @@ import {
   Easing,
   LayoutAnimation,
   Dimensions,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerUser } from '../../services/authService';
@@ -32,8 +33,8 @@ const ROLE_META = {
     subtitle: 'Create an account to start booking rides',
   },
   driver: {
-    icon: 'car',
-    label: 'Driver',
+    icon: 'horse-variant',
+    label: 'Cochero',
     subtitle: 'Apply to drive a tartanilla',
   },
   owner: {
@@ -461,7 +462,15 @@ const RegistrationScreen = ({ navigation, route }) => {
         {/* Hero */}
         <View style={styles.heroHeader}>
           <View style={styles.heroIconCircle}>
-            <Ionicons name={heroIcon} size={26} color={ACCENT} />
+            {role === 'driver' ? (
+              <Image 
+                source={require('../../../assets/carriage-icon.png')} 
+                style={{ width: 26, height: 26 }} 
+                resizeMode="contain" 
+              />
+            ) : (
+              <Ionicons name={heroIcon} size={26} color={ACCENT} />
+            )}
           </View>
           <View style={{ marginLeft: 12, flex: 1 }}>
             <View style={styles.roleChip}>
